@@ -1,0 +1,12 @@
+{
+  "name": "hellgato",
+  "version": "0.0.1-beta",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "prepare:cora": "node scripts/prepare-cora.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

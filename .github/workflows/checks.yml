@@ -1,0 +1,40 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.7'
+          architecture: x64
+      - name: Prepare dependencies
+        run: |
+          python -m pip install -r installer/requirements-build.txt
+          if ($LASTEXITCODE) { throw 'Dependency installation failed' }
+          python scripts/prepare-windows.py
+          if ($LASTEXITCODE) { throw 'Runtime preparation failed' }
+          ./work/build-runtime/node.exe scripts/prepare-cora.mjs
+          if ($LASTEXITCODE) { throw 'CORA preparation failed' }
+      - name: Test
+        run: |
+          python -m unittest discover -s test -p 'test_*.py'
+          if ($LASTEXITCODE) { throw 'Python checks failed' }
+          ./work/build-runtime/node.exe --test test/*.test.mjs
+          if ($LASTEXITCODE) { throw 'CORA checks failed' }

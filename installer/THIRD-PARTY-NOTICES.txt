@@ -1,0 +1,44 @@
+Hellgato 0.0.1 beta includes these separately licensed components:
+
+Mirabox StreamDock Device SDK (MIT)
+https://github.com/MiraboxSpace/StreamDock-Device-SDK
+Revision: 87ff56674cb3772dc2a13376d174c33c37964607
+License: licenses/Mirabox/LICENSE
+
+DeckBridge (MIT), copyright 2026 Lukas
+https://github.com/lukasMega/DeckBridge
+Revision: 7c00693d01ac6c47c071907835ed0724d28d8183
+Adaptations: Node TCP transport, disabled mDNS, TypeScript transformation.
+License: licenses/DeckBridge/LICENSE
+
+Node.js 24.19.0 and bundled third-party components
+License: licenses/NODE-LICENSE.txt
+
+Python 3.13 runtime
+License: licenses/Python/LICENSE.txt
+
+Tk 8.6 GUI toolkit
+License: licenses/Tk/license.terms
+
+Pillow 12.0.0 and bundled image libraries
+License: licenses/Pillow/LICENSE
+
+pystray 0.19.5 (LGPL-3.0-or-later), copyright Moses Palmer
+https://github.com/moses-palmer/pystray
+Licenses: licenses/pystray/COPYING and COPYING.LGPL
+Unmodified Python source is shipped separately under _internal/pystray.
+It can be inspected or replaced there without rebuilding Hellgato.
+
+pefile 2023.2.7 (MIT), copyright Ero Carrera
+https://github.com/erocarrera/pefile
+License: licenses/pefile/LICENSE
+
+six 1.17.0 (MIT), copyright Benjamin Peterson
+https://github.com/benjaminp/six
+License: licenses/six/LICENSE
+
+PyInstaller builds the executable under its bootloader distribution exception.
+https://pyinstaller.org/en/v6.16.0/license.html
+
+The Stream Deck application and third-party Stream Deck plugins are not bundled.
+Hellgato is independent of Elgato and Mirabox.

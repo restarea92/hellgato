@@ -1,0 +1,30 @@
+name: Translation feedback
+description: Suggest a correction to an interface translation.
+title: "Translation: "
+body:
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      placeholder: e.g. Spanish (es)
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current text
+      description: Include the message key from app/locales if known.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested translation
+      description: Preserve product names and placeholders such as "{count}".
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Explain the wording or describe where it appears in the app.
