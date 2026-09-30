@@ -38,3 +38,7 @@ jobs:
           if ($LASTEXITCODE) { throw 'Python checks failed' }
           ./work/build-runtime/node.exe --test test/*.test.mjs
           if ($LASTEXITCODE) { throw 'CORA checks failed' }
+          ./work/build-runtime/node.exe scripts/build-npm.mjs
+          if ($LASTEXITCODE) { throw 'npm package build failed' }
+          ./work/build-runtime/node.exe scripts/verify-npm.mjs
+          if ($LASTEXITCODE) { throw 'npm tarball checks failed' }

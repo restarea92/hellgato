@@ -75,6 +75,20 @@ Build inputs are pinned and verified against upstream source metadata and checks
 
 Open an issue or submit a pull request with a focused change. Run both test suites and add tests for changed behavior. Include the hardware and Stream Deck version for physical tests. Do not commit personal profiles, logs or generated build output.
 
+### npm bridge packages
+
+`hellgato` re-exports `@hellgato/core`. Both are built from `app/cora/bridge.mjs`, which the Windows app also uses. See [the core API](../packages/core) for usage and supported scope.
+
+With the pinned Node 24 runtime prepared, build and pack from the repository root:
+
+```powershell
+./work/build-runtime/node.exe scripts/build-npm.mjs
+npm pack ./packages/core --pack-destination ./work
+npm pack ./packages/hellgato --pack-destination ./work
+```
+
+Keep both package versions and the facade's exact core dependency in sync. The root package stays private. Packages include the prepared DeckBridge runtime and its license, so consumers need no Git checkout or build step. Publish the reviewed tarballs with the `beta` tag; npm publication is manual and is independent of the Windows installer release.
+
 ### Translations
 
 The interface supports English, Korean, Spanish, Japanese, French, German, Russian, Italian, Brazilian Portuguese, Simplified Chinese and Traditional Chinese. Initial translations are open to native-speaker review.

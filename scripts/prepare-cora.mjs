@@ -30,6 +30,10 @@ function compile(file) {
   } else {
     source = stripTypeScriptTypes(readFileSync(file, 'utf8'), { mode: 'transform' });
     source = source.replaceAll('__LOG_LEVEL__', '1');
+    if (path === 'shared/types.ts') {
+      source = source.replace("return (typeof tjs !== 'undefined' ? tjs.env['DECKBRIDGE_BIND'] : undefined) ?? '0.0.0.0';", "return '127.0.0.1';");
+      if (!source.includes("return '127.0.0.1';")) throw new Error('Loopback binding adaptation failed');
+    }
     source = source.replace(/(from\s+['"])(\.[^'"]+)(['"])/g, (_, prefix, specifier, suffix) => {
       const dependency = resolve(dirname(file), specifier.replace(/\.js$/, '.ts'));
       compile(dependency);
@@ -45,5 +49,5 @@ for (const file of ['cora/primary-server.ts', 'cora/child-server.ts', 'cora/resp
 }
 copyFileSync(resolve(checkout, 'LICENSE'), resolve(outputRoot, 'LICENSE'));
 writeFileSync(resolve(outputRoot, 'package.json'), JSON.stringify({ type: 'module' }));
-writeFileSync(resolve(outputRoot, 'provenance.json'), JSON.stringify({ repository: 'https://github.com/lukasMega/DeckBridge', revision, modules: [...visited].map(p => relative(sourceRoot, p)), adaptations: ['Node TCP transport', 'manual pairing only; mDNS disabled', 'log level info', 'TypeScript transformed by Node'] }, null, 2));
+writeFileSync(resolve(outputRoot, 'provenance.json'), JSON.stringify({ repository: 'https://github.com/lukasMega/DeckBridge', revision, modules: [...visited].map(p => relative(sourceRoot, p)).sort(), adaptations: ['Node TCP transport', 'loopback binding only', 'manual pairing only; mDNS disabled', 'log level info', 'TypeScript transformed by Node'] }, null, 2));
 console.log(`Prepared ${visited.size} modules from ${revision}`);

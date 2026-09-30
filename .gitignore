@@ -15,3 +15,7 @@ __pycache__/
 .pytest_cache/
 *.streamDeckProfile
 *.hellgatoProfiles
+packages/core/dist/
+packages/*/LICENSE
+packages/core/THIRD-PARTY-NOTICES.txt
+*.tgz

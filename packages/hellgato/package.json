@@ -1,0 +1,15 @@
+{
+  "name": "hellgato",
+  "version": "0.0.1-beta",
+  "description": "Stream Deck network bridge for third-party hardware",
+  "type": "module",
+  "exports": "./index.mjs",
+  "files": ["index.mjs", "LICENSE"],
+  "license": "MIT",
+  "engines": { "node": ">=24 <25" },
+  "dependencies": { "@hellgato/core": "0.0.1-beta" },
+  "repository": { "type": "git", "url": "git+https://github.com/restarea92/hellgato.git", "directory": "packages/hellgato" },
+  "bugs": "https://github.com/restarea92/hellgato/issues",
+  "homepage": "https://github.com/restarea92/hellgato#readme",
+  "publishConfig": { "access": "public", "tag": "beta", "registry": "https://registry.npmjs.org/" }
+}

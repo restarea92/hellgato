@@ -70,6 +70,8 @@ Longer term: explore a shared Rust core and macOS support, after the Windows bet
 
 Bug fixes, hardware reports and translation polish are welcome. See the [contributor guide](docs/guide.md#contributing), browse the [language files](app/locales), or send [translation feedback](https://github.com/restarea92/hellgato/issues/new?template=translation.yml).
 
+For device developers, the [Node bridge API](packages/core) is available as `hellgato@beta` and `@hellgato/core@beta`. Both share the desktop app's bridge implementation; USB adapters and Windows compatibility adjustments remain separate.
+
 ## License
 
 [MIT](LICENSE). Bundled dependencies keep their own licenses; see [third-party notices](installer/THIRD-PARTY-NOTICES.txt).

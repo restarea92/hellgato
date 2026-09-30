@@ -1,0 +1,14 @@
+{
+  "name": "@hellgato/core",
+  "version": "0.0.1-beta",
+  "description": "Node.js bridge for Stream Deck network input and display events",
+  "type": "module",
+  "exports": "./dist/bridge.mjs",
+  "files": ["dist", "LICENSE", "THIRD-PARTY-NOTICES.txt"],
+  "license": "MIT",
+  "engines": { "node": ">=24 <25" },
+  "repository": { "type": "git", "url": "git+https://github.com/restarea92/hellgato.git", "directory": "packages/core" },
+  "bugs": "https://github.com/restarea92/hellgato/issues",
+  "homepage": "https://github.com/restarea92/hellgato#readme",
+  "publishConfig": { "access": "public", "tag": "beta", "registry": "https://registry.npmjs.org/" }
+}
