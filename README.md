@@ -1,107 +1,55 @@
-# Hellgato
+<p align="center">
+  <img src="app/assets/icons/hellgato-master.png" alt="Hellgato icon" width="160">
+</p>
 
-**N4 Pro hardware. Stream Deck software.**
+<h1 align="center">Hellgato</h1>
 
-Hellgato is an open-source Windows bridge that connects a stock Mirabox N4 Pro to the official Elgato Stream Deck application. Use ten LCD keys and four dials, with actions, profiles and plugins configured in Stream Deck.
+<p align="center">
+  <strong>Unofficial hardware. Official software.</strong><br>
+  A little mischief. A lot of buttons.
+</p>
 
-**Current version: 0.0.1-beta.** Supports one N4 Pro on Windows x64.
+<p align="center">
+  <a href="https://github.com/restarea92/hellgato/releases">Download</a> ·
+  <a href="docs/guide.md">Guide &amp; development</a> ·
+  <a href="https://github.com/restarea92/hellgato/issues">Report an issue</a>
+</p>
 
-## Installation
+Hellgato is an open-source Windows bridge that brings third-party hardware into the official Elgato Stream Deck app. Set up your actions, profiles and plugins in Stream Deck. Let Hellgato handle the introductions.
 
-1. Install the official [Stream Deck application](https://www.elgato.com/downloads). StreamDock is not required.
-2. Download `Hellgato-0.0.1-beta-Setup.exe` from [Releases](https://github.com/restarea92/hellgato/releases) and install it.
-3. Connect the N4 Pro over USB and open Hellgato.
-4. On first use, open Network in Stream Deck and connect to `127.0.0.1:5343`.
+**Currently supported:** one stock Mirabox N4 Pro — ten LCD keys and four dials — on Windows x64. **Version:** `0.0.1-beta`.
 
-Subsequent starts reuse the saved device identity. The installer includes the Python and Node runtimes and the USB SDK. Install Stream Deck and any additional plugins separately. The beta installer is unsigned.
+## Plug in. Stir things up.
 
-## Everyday use
+1. Install the official [Stream Deck app](https://www.elgato.com/downloads).
+2. Grab `Hellgato-0.0.1-beta-Setup.exe` from [Releases](https://github.com/restarea92/hellgato/releases) and install it.
+3. Connect your N4 Pro over USB and open Hellgato.
+4. In Stream Deck, open **Network** and connect to `127.0.0.1:5343` on first use.
 
-- **Connection:** the control changes between Connect, Cancel and Disconnect to match the current state. USB reconnects are handled automatically.
-- **File menu:** export this device's profiles into one `.hellgatoProfiles` bundle (`Ctrl+E`), or import a bundle or several `.streamDeckProfile` files (`Ctrl+I`). Imports back up replaced profiles and restart Stream Deck.
-- **Tray:** closing the window keeps Hellgato running. Choose Open or Exit from its tray menu.
-- **Startup:** the installer offers Windows sign-in startup, enabled by default.
-- **Settings → Preferences:** choose the interface language. Changes apply immediately and persist across restarts. First launch uses the Windows display language, with English as fallback.
+The installer bundles the runtimes and USB SDK. No StreamDock required. Install any extra Stream Deck plugins separately.
 
-The main window shows the device and connection status. Profile tasks display a separate progress or result notification that can be dismissed when complete. Menus support keyboard navigation with `Alt+F`, `Alt+S` and `Alt+H`, arrow keys, Enter and Escape. The title bar uses dark Windows styling where supported.
+## Small app. Useful tricks.
 
-Stream Deck account files are not included, and the automatic app-switching field is reset. Action settings are retained and may contain personal paths or credentials; review a profile bundle before sharing it. After transferring profiles, configure app switching and check action paths on the destination PC.
+- **Your setup travels.** Export profiles as a `.hellgatoProfiles` bundle (`Ctrl+E`), or import bundles and `.streamDeckProfile` files (`Ctrl+I`). Imports back up replaced profiles and restart Stream Deck.
+- **Close the window. Keep the buttons.** Hellgato stays in the tray; use its menu to exit.
+- **Make yourself at home.** Eleven interface languages, plus optional startup at Windows sign-in.
 
-## Compatibility and beta limits
+Need logs, backup locations or build instructions? They're in the [guide](docs/guide.md).
 
-Hellgato checks Stream Deck's internal structure and live device geometry before connecting. The current resolver has been validated on **Stream Deck 7.6.0.23012**; compatibility with every later release is not guaranteed.
+## A little beta, a little bite.
 
-Ten-key support requires temporary changes to the running Stream Deck process's memory. Its executable on disk is unchanged. Simultaneous use with a genuine Stream Deck + is outside this beta's scope.
+The installer is unsigned. Compatibility has been validated with **Stream Deck 7.6.0.23012**; later releases may need updates.
 
-Encoder release/hold behavior, touch alignment, sustained animation and Windows reboot recovery need further hardware validation. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
+Ten-key support temporarily adjusts the running Stream Deck process's memory; the executable on disk stays unchanged. Using a genuine Stream Deck + at the same time is outside this beta's scope. Some dial, touch, animation and reboot behavior still needs hardware testing.
 
-## Local data
+Found a gremlin? [Open an issue](https://github.com/restarea92/hellgato/issues) with your device, Stream Deck version and steps to reproduce it. Review logs and exported profiles for personal information before sharing.
 
-| Location | Contents |
-| --- | --- |
-| `%LOCALAPPDATA%\Programs\Hellgato` | Installed application |
-| `%LOCALAPPDATA%\Hellgato\settings.json` | Persistent device identity |
-| `%LOCALAPPDATA%\Hellgato\preferences.json` | Interface language |
-| `%LOCALAPPDATA%\Hellgato\bridge.log` | Connection and error logs |
-| `%LOCALAPPDATA%\Hellgato\traces` and `images` | Local device events and received display images |
-| `%LOCALAPPDATA%\Hellgato\profile-backups` | Profiles saved before Stream Deck restarts |
-| `%LOCALAPPDATA%\Hellgato\profile-import-backups` | Profiles replaced during import |
+## Bring something to the party.
 
-Use **Help → Open logs** to access the data folder, or **Help → About Hellgato** for version and license information. Uninstalling keeps settings and backups. Existing device identities and profile formats remain compatible.
-
-## Build and test
-
-Use Python 3.13 x64, Git and Inno Setup 6.7.3. In PowerShell, from the repository root:
-
-```powershell
-python -m venv work/build-venv
-./work/build-venv/Scripts/python.exe -m pip install -r installer/requirements-build.txt
-./work/build-venv/Scripts/python.exe scripts/prepare-windows.py
-./work/build-runtime/node.exe scripts/prepare-cora.mjs
-
-./work/build-venv/Scripts/python.exe -m unittest discover -s test -p 'test_*.py'
-./work/build-runtime/node.exe --test test/*.test.mjs
-
-$env:HELLGATO_NODE = (Resolve-Path ./work/build-runtime/node.exe).Path
-./work/build-venv/Scripts/python.exe app/hellgato.py
-```
-
-Build the installer:
-
-```powershell
-./scripts/build-windows.ps1 -Python ./work/build-venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
-```
-
-Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.0.1-beta-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. Releases run manually through the Windows beta release workflow; normal pushes run checks without publishing.
-
-| Directory | Purpose |
-| --- | --- |
-| `app/` | Windows launcher, interface and localization |
-| `app/n4/` | Hardware input, display, profiles and compatibility |
-| `app/cora/` | Stream Deck network transport |
-| `app/locales/` | Interface translations |
-| `scripts/` | Dependency preparation, geometry adjustment and builds |
-| `installer/` | Packaging and third-party notices |
-| `test/` | Compatibility, profiles, UI state and CORA checks |
-
-## Contributing
-
-Open an issue or submit a pull request with a focused change. Run both test suites and add tests for changed behavior. Include the hardware and Stream Deck version for physical tests. Do not commit personal profiles, logs or generated build output.
-
-### Translations
-
-The interface supports English, Korean, Spanish, Japanese, French, German, Russian, Italian, Brazilian Portuguese, Simplified Chinese and Traditional Chinese. Initial translations are open to native-speaker review.
-
-1. Open the appropriate file in [`app/locales`](app/locales). `en.json` is the source catalog.
-2. Edit the text values, keeping message keys and placeholders such as `{count}` and `{filename}` unchanged. Use concise, neutral product language and consistent action names. Keep product names unchanged.
-3. Preview the language in Hellgato and submit a pull request. You can use GitHub's file editor without setting up a local build.
-
-Translation checks validate JSON, duplicate keys, missing/extra messages and placeholders. If you cannot submit a PR, use the [translation feedback form](https://github.com/restarea92/hellgato/issues/new?template=translation.yml).
-
-The catalogs use standard flat JSON, compatible with translation platforms such as Weblate. No paid translation service or API key is required to run or build Hellgato.
+Bug fixes, hardware reports and translation polish are welcome. See the [contributor guide](docs/guide.md#contributing), browse the [language files](app/locales), or send [translation feedback](https://github.com/restarea92/hellgato/issues/new?template=translation.yml).
 
 ## License
 
-[MIT](LICENSE). Bundled dependencies retain their own licenses; see [third-party notices](installer/THIRD-PARTY-NOTICES.txt).
+[MIT](LICENSE). Bundled dependencies keep their own licenses; see [third-party notices](installer/THIRD-PARTY-NOTICES.txt).
 
-Hellgato is independent of, and is not affiliated with or endorsed by, Elgato or Mirabox.
+Hellgato is an independent project, not affiliated with or endorsed by Elgato or Mirabox.
