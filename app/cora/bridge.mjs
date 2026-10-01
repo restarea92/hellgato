@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { profile } from './profiles.mjs';
+import { withDisplayCommands } from './display-server.mjs';
 
 const runtimeRoot = new URL('../../work/cora-runtime/', import.meta.url);
 
@@ -45,7 +46,8 @@ export async function createBridge(options = {}) {
   ]);
   const primary = new ElgatoServer(geometry, port, true, { childPort });
   primary.setDeviceConfig(config);
-  const child = new ElgatoChildServer(geometry, childPort, config, false);
+  const DisplayServer = withDisplayCommands(ElgatoChildServer);
+  const child = new DisplayServer(geometry, childPort, config, false);
   return new Bridge(primary, child, geometry);
 }
 

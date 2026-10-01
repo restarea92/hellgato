@@ -88,6 +88,30 @@ test('public bridge delivers key, dial, touch, and received image bytes over TCP
   }
 });
 
+test('brightness applies while sleep and fill commands only receive acknowledgements', { timeout: 5000 }, async () => {
+  const bridge = await createBridge({ port: 0, childPort: 0 });
+  await bridge.start();
+  let socket;
+  try {
+    socket = await connectChild(bridge);
+    const levels = [];
+    bridge.on('brightness', level => levels.push(level));
+    const ack = receive(socket, payload => payload.length === 4);
+    socket.write(encodeCoraFrame(Buffer.from([3, 8, 35]), 0xc000, 1, 101));
+    await ack;
+    const fillAck = receive(socket, payload => payload.length === 4);
+    socket.write(encodeCoraFrame(Buffer.from([3, 5, 1, 2, 3]), 0xc000, 1, 102));
+    await fillAck;
+    const sleepAck = receive(socket, payload => payload.length === 4);
+    socket.write(encodeCoraFrame(Buffer.from([3, 0x0d, 60, 0, 0, 0]), 0xc000, 1, 103));
+    await sleepAck;
+    assert.deepEqual(levels, [35]);
+  } finally {
+    socket?.destroy();
+    await bridge.stop();
+  }
+});
+
 test('failed startup frees its child port and permits retry', async () => {
   const occupied = createServer();
   occupied.listen(0, '127.0.0.1');

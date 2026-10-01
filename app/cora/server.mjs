@@ -28,6 +28,7 @@ for (const event of ['clientConnected', 'clientDisconnected', 'log', 'comm']) {
 const images = new URL(`images/${config.childSerialNumber}-${runId}/`, stateRoot);
 mkdirSync(images, { recursive: true });
 let imageSequence = 0;
+bridge.on('brightness', level => record('brightness', { level }));
 bridge.on('image', event => {
   const file = `key-${event.keyIndex}.${event.format === 'jpeg' ? 'jpg' : 'bin'}`;
   writeFileSync(new URL(file, images), event.data);
@@ -36,7 +37,8 @@ bridge.on('image', event => {
 bridge.on('touchImage', event => {
   const file = `strip-${imageSequence++}.jpg`;
   writeFileSync(new URL(file, images), event.data);
-  record('touchImage', { bytes: event.data.length, region: event.region, file });
+  record('touchImage', { bytes: event.data.length,
+    region: event.region ?? { x: 0, y: 0, w: 800, h: 100 }, file });
 });
 let stopping = false;
 async function stop() {

@@ -174,21 +174,19 @@ def main():
                 trace = trace_path.open(encoding='utf-8')
             if trace is not None:
                 pending += trace.read()
-                lines = pending.split('\n')
-                pending = lines.pop()
-                for line in lines:
+                updates = []
+                while '\n' in pending:
+                    line, pending = pending.split('\n', 1)
                     if line:
                         event = json.loads(line)
-                        if event.get('event') in ('keyImage', 'touchImage'):
-                            try:
-                                display.stage(event)
-                            except OSError as error:
-                                print(f'Display update failed: {error}', flush=True)
-            try:
-                display.flush(minimum_interval=1 / 30)
-            except OSError as error:
-                print(f'Display update failed: {error}', flush=True)
-            time.sleep(0.01)
+                        if event.get('event') in ('keyImage', 'touchImage', 'brightness'):
+                            updates.append(event)
+                if updates:
+                    try:
+                        display.apply_batch(updates)
+                    except OSError as error:
+                        print(f'Display update failed: {error}', flush=True)
+            time.sleep(0.002)
         if process.poll() not in (None, 0):
             raise RuntimeError(f'CORA bridge exited with code {process.returncode}')
     except KeyboardInterrupt:
