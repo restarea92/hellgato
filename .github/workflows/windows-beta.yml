@@ -1,6 +1,9 @@
 name: Windows beta release
 
 on:
+  push:
+    branches: [main]
+    paths: ['docs/releases/*.md']
   workflow_dispatch:
 
 permissions:
@@ -47,5 +50,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.0.1-beta dist/Hellgato-0.0.1-beta-Setup.exe dist/Hellgato-0.0.1-beta-Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title 'Hellgato 0.0.1 beta' --notes-file docs/releases/0.0.1-beta.md
+          gh release create v0.0.2-beta dist/Hellgato-0.0.2-beta-Setup.exe dist/Hellgato-0.0.2-beta-Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title 'Hellgato 0.0.2 beta' --notes-file docs/releases/0.0.2-beta.md
           if ($LASTEXITCODE) { throw 'Release publishing failed; an existing release is never overwritten automatically' }

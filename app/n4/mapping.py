@@ -6,6 +6,16 @@ from enum import Enum
 def enum_value(item):
     return item.value if isinstance(item, Enum) else item
 
+def input_commands(event):
+    command = input_command(event)
+    if command is None:
+        return []
+    # N4 Pro knob clicks report a press pulse without a separate release.
+    if enum_value(event.get('event_type')) == 'knob_press' and event.get('state') == 1:
+        return [command, command.removesuffix('down') + 'up']
+    return [command]
+
+
 def input_command(event):
     kind = enum_value(event.get('event_type'))
     if kind == 'button':

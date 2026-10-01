@@ -1,4 +1,4 @@
-#define AppVersion "0.0.1-beta"
+#define AppVersion "0.0.2-beta"
 [Setup]
 AppId={{FB7179C2-B55A-487C-B462-C50E15F91B1B}
 AppName=Hellgato N4 Pro
@@ -11,7 +11,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.19041
 OutputDir=..\dist
-OutputBaseFilename=Hellgato-0.0.1-beta-Setup
+OutputBaseFilename=Hellgato-0.0.2-beta-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

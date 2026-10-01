@@ -1,6 +1,6 @@
 import unittest
 from enum import Enum, IntEnum
-from app.n4.mapping import input_command
+from app.n4.mapping import input_command, input_commands
 
 
 class EventType(Enum):
@@ -20,6 +20,31 @@ class ButtonKey(IntEnum):
     KEY_10 = 10
 
 class MappingTests(unittest.TestCase):
+    def test_repeated_knob_clicks_release_before_the_next_press(self):
+        for index in range(4):
+            event = {'event_type': 'knob_press', 'knob_id': f'knob_{index + 1}', 'state': 1}
+            commands = input_commands(event) + input_commands(event)
+            pressed = False
+            clicks = 0
+            for command in commands:
+                self.assertEqual(command.split()[1], str(index))
+                down = command.endswith('down')
+                self.assertNotEqual(pressed, down)
+                clicks += int(down)
+                pressed = down
+            self.assertEqual(clicks, 2)
+            self.assertFalse(pressed)
+            self.assertEqual(input_commands({**event, 'state': 0}), [f'press {index} up'])
+
+    def test_click_pulses_do_not_change_other_inputs(self):
+        for state, name in ((1, 'down'), (0, 'up')):
+            self.assertEqual(input_commands({'event_type': 'button', 'key': 1, 'state': state}),
+                             [f'key 0 {name}'])
+        self.assertEqual(input_commands({'event_type': 'knob_rotate', 'knob_id': 'knob_1', 'direction': 'left'}),
+                         ['rotate 0 -1'])
+        self.assertEqual(input_commands({'event_type': 'knob_press', 'knob_id': 'knob_5', 'state': 1}), [])
+        self.assertEqual(input_commands({'event_type': 'knob_press', 'knob_id': 'knob_1', 'state': 2}), [])
+
     def test_main_keys_are_independent_and_secondary_keys_are_excluded(self):
         self.assertEqual([input_command({'event_type': 'button', 'key': i, 'state': 1}) for i in range(1, 11)],
                          [f'key {i} down' for i in range(10)])

@@ -19,6 +19,54 @@ test('saved identities retain their original serial format', () => {
   }
 });
 
+test('back-to-back dial clicks deliver both release edges over TCP', { timeout: 5000 }, async () => {
+  const { geometry, config } = profile('target');
+  const child = new ElgatoChildServer(geometry, 0, config, false);
+  let socket;
+  try {
+    await child.start();
+    const accepted = once(child, 'clientConnected');
+    socket = connect(child.server.address().port, '127.0.0.1');
+    await once(socket, 'connect');
+    await accepted;
+    const expected = [];
+    const reports = new Promise((resolve, reject) => {
+      let pending = Buffer.alloc(0);
+      const states = [];
+      const timer = setTimeout(() => reject(new Error('Missing dial release reports')), 2000);
+      socket.on('data', chunk => {
+        pending = Buffer.concat([pending, chunk]);
+        while (pending.length >= 16) {
+          const size = pending.readUInt32LE(12);
+          if (pending.length < 16 + size) break;
+          const payload = pending.subarray(16, 16 + size);
+          if (payload[0] === 1 && payload[1] === 3 && payload[4] === 0) {
+            states.push([...payload.subarray(5, 9)]);
+          }
+          pending = pending.subarray(16 + size);
+        }
+        if (states.length === 16) {
+          clearTimeout(timer);
+          resolve(states);
+        }
+      });
+    });
+    for (let index = 0; index < 4; index++) {
+      for (let click = 0; click < 2; click++) {
+        const pressed = [0, 0, 0, 0];
+        pressed[index] = 1;
+        expected.push(pressed, [0, 0, 0, 0]);
+        child.sendDial({ kind: 'press', index, state: 'down' });
+        child.sendDial({ kind: 'press', index, state: 'up' });
+      }
+    }
+    assert.deepEqual(await reports, expected);
+  } finally {
+    socket?.destroy();
+    await child.stop();
+  }
+});
+
 function receive(socket, predicate) {
   return new Promise((resolve, reject) => {
     let pending = Buffer.alloc(0);

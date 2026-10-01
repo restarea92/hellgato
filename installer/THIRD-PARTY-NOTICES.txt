@@ -1,4 +1,4 @@
-Hellgato 0.0.1 beta includes these separately licensed components:
+Hellgato 0.0.2 beta includes these separately licensed components:
 
 Mirabox StreamDock Device SDK (MIT)
 https://github.com/MiraboxSpace/StreamDock-Device-SDK

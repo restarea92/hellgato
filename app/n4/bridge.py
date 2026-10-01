@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 
-from mapping import input_command, enum_value
+from mapping import input_commands, enum_value
 from display import DisplayMirror
 from touch import TouchGesture
 from settings import load_settings
@@ -105,21 +105,23 @@ def main():
     def forward(_, event):
         if args.raw:
             record_input('deviceInput', asdict(event))
-        command = input_command(asdict(event))
+        commands = input_commands(asdict(event))
         kind = enum_value(event.event_type)
         if kind == 'swipe':
             command = touch.finish(time.monotonic(), enum_value(event.direction))
+            commands = [command] if command is not None else []
         elif kind == 'button' and enum_value(event.key) in (11, 12, 13, 14) and event.state == 0:
             command = touch.finish(time.monotonic())
-        if command is None:
+            commands = [command] if command is not None else []
+        if not commands:
             return
-        if args.profile == 'control' and command.startswith(('key 8 ', 'key 9 ')):
+        if args.profile == 'control' and commands[0].startswith(('key 8 ', 'key 9 ')):
             return
         with write_lock:
             if process is None or process.poll() is not None:
                 return
             try:
-                process.stdin.write(command + '\n')
+                process.stdin.write('\n'.join(commands) + '\n')
                 process.stdin.flush()
             except (BrokenPipeError, OSError):
                 pass
