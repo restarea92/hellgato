@@ -124,13 +124,28 @@ class LauncherView:
         menu_bar = tk.Frame(window, bg=SURFACE, padx=14, pady=3)
         menu_bar.pack(fill='x')
         self.menu_buttons = {}
+        self._native_menus = {}
         for key, accelerator in zip(self.menus, ('f', 's', 'h')):
-            button = self.button(menu_bar, key, lambda key=key: self.open_menu(key))
-            button.configure(bg=SURFACE, padx=12, pady=5, highlightthickness=0)
+            button = tk.Menubutton(menu_bar, text=self.translator.text(key), bg=SURFACE,
+                fg=TEXT, activebackground=BORDER, activeforeground=TEXT, relief='flat',
+                padx=12, pady=5, highlightthickness=0, takefocus=True)
+            popup = tk.Menu(button, tearoff=False)
+            for command in self.menus[key]:
+                if command is None:
+                    popup.add_separator()
+                    continue
+                popup.add_command(label=self.translator.text(command),
+                    accelerator=self.shortcuts.get(command, ''),
+                    state='normal' if self.command_states[command] else 'disabled',
+                    command=lambda command=command: self.invoke_command(command))
+                self._menu_items[command] = (popup, popup.index('end'))
+            button.configure(menu=popup)
             button.pack(side='left')
+            self._native_menus[key] = popup
             self.menu_buttons[key] = button
             self._labels.append((button, key))
             window.bind(f'<Alt-{accelerator}>', lambda event, key=key: self.open_menu(key))
+        window.bind('<Configure>', self._window_moved, add='+')
         tk.Frame(window, height=1, bg=BORDER).pack(fill='x')
         for key, letter in (('ui.export', 'e'), ('ui.import', 'i')):
             window.bind(f'<Control-{letter}>', lambda event, key=key: self.invoke_command(key))
@@ -210,64 +225,20 @@ class LauncherView:
         return 'break'
 
     def open_menu(self, key):
-        same_menu = key == self._menu_key
         self.close_menu()
-        if same_menu or self._closing or self._dialog is not None:
+        if self._closing or self._dialog is not None:
             return 'break'
         self._menu_key = key
+        popup = self._popup = self._native_menus[key]
         anchor = self.menu_buttons[key]
-        anchor.configure(bg=BORDER)
-        popup = self._popup = tk.Toplevel(self.window, bg=BORDER)
-        popup.withdraw()
-        popup.overrideredirect(True)
-        popup.transient(self.window)
-        popup.attributes('-topmost', self.window.attributes('-topmost'))
-        body = tk.Frame(popup, bg=SURFACE, padx=4, pady=4)
-        body.pack(padx=1, pady=1)
-        for command in self.menus[key]:
-            if command is None:
-                tk.Frame(body, bg=BORDER, height=1).pack(fill='x', padx=8, pady=5)
-                continue
-            label = self.translator.text(command)
-            if command in self.shortcuts:
-                label += '    ' + self.shortcuts[command]
-            item = self.button(body, label, lambda command=command: self.invoke_command(command))
-            item.configure(anchor='w', bg=SURFACE, pady=8,
-                           state='normal' if self.command_states[command] else 'disabled')
-            item.pack(fill='x')
-            self._menu_items[command] = item
-        popup.update_idletasks()
-        x = min(anchor.winfo_rootx(), popup.winfo_screenwidth() - popup.winfo_reqwidth())
-        y = anchor.winfo_rooty() + anchor.winfo_height() + 3
-        popup.geometry(f'+{max(0, x)}+{y}')
-        popup.deiconify()
-        popup.lift()
-        popup.grab_set()
-        popup.bind('<Escape>', lambda event: self.close_menu())
-        popup.bind('<Button-1>', self._menu_click)
-        popup.bind('<Up>', lambda event: self._move_menu_focus(-1))
-        popup.bind('<Down>', lambda event: self._move_menu_focus(1))
-        popup.bind('<Left>', lambda event: self._next_menu(-1))
-        popup.bind('<Right>', lambda event: self._next_menu(1))
-        popup.bind('<Return>', lambda event: self._activate_menu_focus())
-        popup.bind('<FocusOut>', lambda event: self.window.after_idle(self._menu_focus_out))
-        popup.focus_force()
-        self._move_menu_focus(1)
+        popup.post(anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height())
+        if self._popup is popup and popup.winfo_ismapped():
+            popup.grab_set()
+            popup.focus_set()
         return 'break'
 
-    def _menu_click(self, event):
-        popup = self._popup
-        if popup and not (popup.winfo_rootx() <= event.x_root < popup.winfo_rootx() + popup.winfo_width()
-                          and popup.winfo_rooty() <= event.y_root < popup.winfo_rooty() + popup.winfo_height()):
-            for key, button in self.menu_buttons.items():
-                if (button.winfo_rootx() <= event.x_root < button.winfo_rootx() + button.winfo_width()
-                        and button.winfo_rooty() <= event.y_root < button.winfo_rooty() + button.winfo_height()):
-                    return self.open_menu(key)
-            return self.close_menu()
-
-    def _menu_focus_out(self):
-        focus = self.window.focus_get()
-        if self._popup and (focus is None or focus.winfo_toplevel() != self._popup):
+    def _window_moved(self, event):
+        if event.widget is self.window:
             self.close_menu(restore_focus=False)
 
     def _window_hidden(self, event):
@@ -275,34 +246,16 @@ class LauncherView:
             self.close_menu(restore_focus=False)
             self.close_dialog()
 
-    def _move_menu_focus(self, direction):
-        items = [item for item in self._menu_items.values() if item.cget('state') == 'normal']
-        if items:
-            focus = self.window.focus_get()
-            index = items.index(focus) if focus in items else (-1 if direction > 0 else 0)
-            items[(index + direction) % len(items)].focus_set()
-        return 'break'
-
-    def _activate_menu_focus(self):
-        focus = self.window.focus_get()
-        if focus in self._menu_items.values():
-            focus.invoke()
-        return 'break'
-
-    def _next_menu(self, direction):
-        keys = list(self.menus)
-        return self.open_menu(keys[(keys.index(self._menu_key) + direction) % len(keys)])
-
     def close_menu(self, restore_focus=True):
-        if self._popup:
-            self._popup.grab_release()
-            self._popup.destroy()
-            self._popup = None
-            if restore_focus:
-                self.menu_buttons[self._menu_key].focus_set()
-            self.menu_buttons[self._menu_key].configure(bg=SURFACE)
-            self._menu_key = None
-            self._menu_items = {}
+        for menu in self._native_menus.values():
+            menu.unpost()
+        grab = self.window.grab_current()
+        if grab is not None and self._dialog is None:
+            grab.grab_release()
+        if self._menu_key and restore_focus:
+            self.menu_buttons[self._menu_key].focus_set()
+        self._popup = None
+        self._menu_key = None
         return 'break'
 
     def _open_dialog(self, title_key):
@@ -395,7 +348,8 @@ class LauncherView:
         for key in ('ui.export', 'ui.import'):
             self.command_states[key] = not (busy or closing or (running and stopping))
             if key in self._menu_items:
-                self._menu_items[key].configure(state='normal' if self.command_states[key] else 'disabled')
+                menu, index = self._menu_items[key]
+                menu.entryconfigure(index, state='normal' if self.command_states[key] else 'disabled')
         if closing:
             self.close_menu()
             self.close_dialog()
@@ -421,6 +375,8 @@ class LauncherView:
             self._transfer = None
 
     def retranslate(self):
+        for key, (menu, index) in self._menu_items.items():
+            menu.entryconfigure(index, label=self.translator.text(key))
         self.close_menu()
         for widget, key in self._labels + self._dialog_labels:
             widget.configure(text=self.translator.text(key))

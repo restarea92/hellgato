@@ -3,7 +3,7 @@ import sys
 from tempfile import TemporaryDirectory
 import tkinter as tk
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'app'))
 from i18n import Message, ROOT, Translator
@@ -83,19 +83,36 @@ class ProfilePresentationTest(unittest.TestCase):
         self.import_profiles.assert_called_once()
         self.assertEqual(self.view.connection_button.cget('text'), 'Connect')
 
-    def test_menu_escape_releases_grab_and_busy_actions_cannot_run(self):
+    def test_standard_menu_preserves_disabled_actions_and_closing(self):
         self.window.deiconify()
         self.window.update()
         self.view.render_connection('connected', Message('detail.connected'), True, busy=True)
-        self.view.open_menu('menu.file')
-        self.window.update()
-        self.assertEqual(self.view._menu_items['ui.export'].cget('state'), 'disabled')
-        self.view._menu_items['ui.export'].invoke()
+        menu, index = self.view._menu_items['ui.export']
+        self.assertIsInstance(menu, tk.Menu)
+        self.assertEqual(menu.entrycget(index, 'state'), 'disabled')
+        menu.invoke(index)
         self.export.assert_not_called()
-        self.view._popup.event_generate('<Escape>')
-        self.window.update()
-        self.assertIsNone(self.view._popup)
+        self.view.close_menu()
         self.assertIsNone(self.window.grab_current())
+
+    def test_menu_uses_current_anchor_after_window_moves(self):
+        self.window.geometry('+100+100')
+        self.window.deiconify()
+        self.window.update()
+        menu = self.view._native_menus['menu.file']
+        with patch.object(menu, 'post') as post:
+            self.view.open_menu('menu.file')
+            first = post.call_args.args
+            self.window.geometry('+250+200')
+            self.window.update()
+            self.assertIsNone(self.view._popup)
+            self.view.open_menu('menu.file')
+            self.assertEqual(post.call_args.args, (first[0] + 150, first[1] + 100))
+            self.view.close_menu()
+            self.window.geometry('+-200+100')
+            self.window.update()
+            self.view.open_menu('menu.file')
+            self.assertLess(post.call_args.args[0], 0)
 
     def test_preferences_translate_immediately_and_close_releases_grab(self):
         self.window.deiconify()
@@ -113,13 +130,11 @@ class ProfilePresentationTest(unittest.TestCase):
         self.assertIsNone(self.window.grab_current())
         self.assertIsNone(self.view._dialog)
 
-    def test_keyboard_menu_selection_runs_once_and_hiding_releases_dialog(self):
+    def test_native_menu_selection_runs_once_and_hiding_releases_dialog(self):
         self.window.deiconify()
         self.window.update()
-        self.view.open_menu('menu.file')
-        self.window.update()
-        self.view._popup.event_generate('<Down>')
-        self.view._popup.event_generate('<Return>')
+        menu, index = self.view._menu_items['ui.import']
+        menu.invoke(index)
         self.window.update()
         self.import_profiles.assert_called_once()
         self.export.assert_not_called()

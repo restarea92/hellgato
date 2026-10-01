@@ -14,7 +14,7 @@ try {
     if ($LASTEXITCODE) { throw 'Executable build failed' }
     & $Iscc /Q installer/hellgato.iss
     if ($LASTEXITCODE) { throw 'Installer build failed' }
-    $installer = Get-Item 'dist/Hellgato-0.0.3-beta-Setup.exe'
+    $installer = Get-Item 'dist/Hellgato-0.0.4-beta-Setup.exe'
     $checksum = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     "$checksum  $($installer.Name)" | Set-Content -LiteralPath "$($installer.FullName).sha256" -Encoding ascii
     Write-Output $installer.FullName
