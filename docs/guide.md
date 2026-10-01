@@ -20,7 +20,7 @@ Hellgato checks Stream Deck's internal structure and live device geometry before
 
 Ten-key support requires temporary changes to the running Stream Deck process's memory. Its executable on disk is unchanged. Simultaneous use with a genuine Stream Deck + is outside this beta's scope.
 
-Encoder release/hold behavior, touch alignment, sustained animation and Windows reboot recovery need further hardware validation. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
+N4 Pro dial clicks are forwarded as press/release pairs because the device does not report a separate release. Dial holds are not supported. Touch alignment, sustained animation and Windows reboot recovery need further hardware validation. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
 
 ## Local data
 
@@ -59,7 +59,7 @@ Build the installer:
 ./scripts/build-windows.ps1 -Python ./work/build-venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
 ```
 
-Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.0.1-beta-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. Releases run manually through the Windows beta release workflow; normal pushes run checks without publishing.
+Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.0.2-beta-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. The Windows beta release workflow runs manually or when release notes under `docs/releases/` are added or changed on `main`. Update the version, installer filenames and workflow release command together before publishing release notes. Other pushes run checks without publishing.
 
 | Directory | Purpose |
 | --- | --- |
