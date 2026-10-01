@@ -18,7 +18,7 @@ Stream Deck account files are not included, and the automatic app-switching fiel
 
 Hellgato checks Stream Deck's internal structure and live device geometry before connecting. The current resolver has been validated on **Stream Deck 7.6.0.23012**; compatibility with every later release is not guaranteed.
 
-Ten-key support requires temporary changes to the running Stream Deck process's memory. Its executable on disk is unchanged. Simultaneous use with a genuine Stream Deck + is outside this beta's scope.
+Ten-key support and touch strip feedback scheduling require temporary changes to the running Stream Deck process's memory. Screen update requests enable 16 ms feedback checks for that composer; after two seconds without requests, it returns to Stream Deck's original idle wait. This improves animation delivery without polling continuously while idle. Internal code signatures and loaded bytes are checked before patching; unsupported layouts are rejected. Its executable on disk is unchanged. Simultaneous use with a genuine Stream Deck + is outside this beta's scope.
 
 N4 Pro dial clicks are forwarded as press/release pairs because the device does not report a separate release. Dial holds are not supported. Touch alignment, sustained animation and Windows reboot recovery need further hardware validation. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
 
@@ -59,7 +59,7 @@ Build the installer:
 ./scripts/build-windows.ps1 -Python ./work/build-venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
 ```
 
-Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.0.2-beta-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. The Windows beta release workflow runs manually or when release notes under `docs/releases/` are added or changed on `main`. Update the version, installer filenames and workflow release command together before publishing release notes. Other pushes run checks without publishing.
+Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.0.3-beta-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. The Windows beta release workflow runs manually or when release notes under `docs/releases/` are added or changed on `main`. Update the version, installer filenames and workflow release command together before publishing release notes. Other pushes run checks without publishing.
 
 | Directory | Purpose |
 | --- | --- |

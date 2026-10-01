@@ -15,7 +15,7 @@ import time
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 STATE = Path(os.environ.get('HELLGATO_STATE_DIR', Path(os.environ['LOCALAPPDATA']) / 'Hellgato'))
-VERSION = '0.0.2-beta'
+VERSION = '0.0.3-beta'
 os.environ['HELLGATO_STATE_DIR'] = str(STATE)
 sys.path.insert(0, str(ROOT / 'app/n4'))
 from compatibility import INCOMPATIBLE

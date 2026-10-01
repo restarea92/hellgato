@@ -19,7 +19,8 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'app/n4'))
-from compatibility import INCOMPATIBLE, MESSAGE, IncompatibleError, require, resolve, validate_controllers
+from compatibility import Executable, INCOMPATIBLE, MESSAGE, IncompatibleError, require, resolve, validate_controllers
+from feedback import install_feedback, resolve_feedback
 
 STATE = Path(os.environ.get('HELLGATO_STATE_DIR', ROOT / 'work'))
 RESULTS = STATE / 'results'
@@ -49,7 +50,9 @@ def main():
     args = parser.parse_args()
     if c.sizeof(c.c_void_p) != 8:
         parser.error('64-bit Python is required')
-    spec = resolve(args.exe.read_bytes())
+    executable = args.exe.read_bytes()
+    spec = resolve(executable)
+    spec['feedback'] = resolve_feedback(Executable(executable))
     RESULTS.mkdir(parents=True, exist_ok=True)
     SPEC.write_text(json.dumps(spec, indent=2), encoding='utf-8')
     if args.check_only:
@@ -73,6 +76,7 @@ def main():
         'ReadProcessMemory': ([w.HANDLE, c.c_void_p, c.c_void_p, c.c_size_t, c.POINTER(c.c_size_t)], w.BOOL),
         'WriteProcessMemory': ([w.HANDLE, c.c_void_p, c.c_void_p, c.c_size_t, c.POINTER(c.c_size_t)], w.BOOL),
         'VirtualProtectEx': ([w.HANDLE, c.c_void_p, c.c_size_t, w.DWORD, c.POINTER(w.DWORD)], w.BOOL),
+        'VirtualAllocEx': ([w.HANDLE, c.c_void_p, c.c_size_t, w.DWORD, w.DWORD], c.c_void_p),
         'FlushInstructionCache': ([w.HANDLE, c.c_void_p, c.c_size_t], w.BOOL),
         'GetThreadContext': ([w.HANDLE, c.c_void_p], w.BOOL),
         'SetThreadContext': ([w.HANDLE, c.c_void_p], w.BOOL),
@@ -190,6 +194,7 @@ def main():
                 require(read(constructor, len(original)) == original, 'Constructor changed')
                 require(read(target, len(startup_original)) == startup_original, 'Initialization boundary changed')
                 write_code(constructor, patched)
+                feedback = install_feedback(k, process.process, base, spec['feedback'], read, write_code)
                 # The static model table is ready, but no caller has consumed its geometry.
                 write_code(target, b'\xcc' + startup_original[1:])
             elif kind == 6:
@@ -236,6 +241,7 @@ def main():
                               'modelPreparedBeforeFirstLookup': True,
                               'keypad': [5, 2], 'backgroundTiles': 10, 'profilesPreserved': True,
                               'compatibility': 'structural', 'sha256': spec['sha256']}
+                    report['feedback'] = feedback
                     (RESULTS / 'startup-ready.json').write_text(json.dumps(report, indent=2))
                     print(json.dumps(report), flush=True)
                     break

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/restarea92/hellgato/releases/download/v0.0.2-beta/Hellgato-0.0.2-beta-Setup.exe"><strong>Download for Windows (.exe)</strong></a> ·
+  <a href="https://github.com/restarea92/hellgato/releases/download/v0.0.3-beta/Hellgato-0.0.3-beta-Setup.exe"><strong>Download for Windows (.exe)</strong></a> ·
   <a href="docs/guide.md">Guide &amp; development</a> ·
   <a href="https://github.com/restarea92/hellgato/issues">Report an issue</a>
 </p>
@@ -28,14 +28,14 @@ Hellgato is an open-source Windows bridge that brings third-party hardware into 
 | --- | --- | --- | --- |
 | Mirabox N4 Pro (stock firmware) | 10 LCD keys, 4 dials | Windows x64 | ✅ Tested — supported in the current beta |
 
-**Version:** `0.0.2-beta`. Currently supports one connected N4 Pro. Other devices have not been validated. Remaining hardware checks are listed below.
+**Version:** `0.0.3-beta`. Currently supports one connected N4 Pro. Other devices have not been validated. Remaining hardware checks are listed below.
 
 ## Get started
 
-**[Download the Windows installer](https://github.com/restarea92/hellgato/releases/download/v0.0.2-beta/Hellgato-0.0.2-beta-Setup.exe)** — download the `.exe` file and run it. No source code or build tools needed.
+**[Download the Windows installer](https://github.com/restarea92/hellgato/releases/download/v0.0.3-beta/Hellgato-0.0.3-beta-Setup.exe)** — download the `.exe` file and run it. No source code or build tools needed.
 
 1. Install the official [Stream Deck app](https://www.elgato.com/downloads).
-2. Download and run the [Hellgato Windows installer](https://github.com/restarea92/hellgato/releases/download/v0.0.2-beta/Hellgato-0.0.2-beta-Setup.exe).
+2. Download and run the [Hellgato Windows installer](https://github.com/restarea92/hellgato/releases/download/v0.0.3-beta/Hellgato-0.0.3-beta-Setup.exe).
 3. Connect your N4 Pro over USB and open Hellgato.
 4. In Stream Deck, open **Network** and connect to `127.0.0.1:5343` on first use.
 
@@ -53,7 +53,7 @@ Need logs, backup locations or build instructions? They're in the [guide](docs/g
 
 The installer is unsigned. Compatibility has been validated with **Stream Deck 7.6.0.23012**; later releases may need updates.
 
-Ten-key support temporarily adjusts the running Stream Deck process's memory; the executable on disk stays unchanged. Using a genuine Stream Deck + at the same time is outside this beta's scope. Some dial, touch, animation and reboot behavior still needs hardware testing.
+Ten-key support and touch strip feedback scheduling temporarily adjust the running Stream Deck process's memory; the executable on disk stays unchanged. Using a genuine Stream Deck + at the same time is outside this beta's scope. Some dial, touch, animation and reboot behavior still needs hardware testing.
 
 Found an issue? [Let us know](https://github.com/restarea92/hellgato/issues) with your device, Stream Deck version and steps to reproduce it. Review logs and exported profiles for personal information before sharing.
 
