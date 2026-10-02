@@ -54,8 +54,6 @@ The Python USB worker combines the **Mirabox SDK** for hardware communication wi
 
 DisplayMirror merges repeated updates to the same key or touch region within each batch. In the default frame mode, it sends only the updated touch-strip region after the initial frame, reducing redundant USB work.
 
-An [interactive diagram and reusable 3D assets](docs/visuals/README.md) are also included.
-
 ## Everyday essentials
 
 - **Your setup travels.** Export profiles as a `.hellgatoProfiles` bundle (`Ctrl+E`), or import bundles and `.streamDeckProfile` files (`Ctrl+I`). Imports back up replaced profiles and stop Stream Deck while applying them. An active Hellgato session resumes afterward.
