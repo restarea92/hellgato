@@ -5,7 +5,7 @@
 ## Everyday use
 
 - **Connection:** the control changes between Connect, Cancel and Disconnect to match the current state. USB reconnects are handled automatically.
-- **File menu:** export this device's profiles into one `.hellgatoProfiles` bundle (`Ctrl+E`), or import a bundle or several `.streamDeckProfile` files (`Ctrl+I`). Imports back up replaced profiles and restart Stream Deck.
+- **File menu:** export this device's profiles into one `.hellgatoProfiles` bundle (`Ctrl+E`), or import a bundle or several `.streamDeckProfile` files (`Ctrl+I`). Imports back up replaced profiles and stop Stream Deck while applying them. An active Hellgato session resumes afterward.
 - **Tray:** closing the window keeps Hellgato running. Choose Open or Exit from its tray menu.
 - **Startup:** the installer offers Windows sign-in startup, enabled by default.
 - **Settings → Preferences:** choose the interface language. Changes apply immediately and persist across restarts. First launch uses the Windows display language, with English as fallback.
@@ -20,7 +20,7 @@ Hellgato checks Stream Deck's internal structure and live device geometry before
 
 Ten-key support and touch strip feedback scheduling require temporary changes to the running Stream Deck process's memory. Screen update requests enable 16 ms feedback checks for that composer; after two seconds without requests, it returns to Stream Deck's original idle wait. This improves animation delivery without polling continuously while idle. Internal code signatures and loaded bytes are checked before patching; unsupported layouts are rejected. Its executable on disk is unchanged. Simultaneous use with a genuine Stream Deck + is outside this beta's scope.
 
-N4 Pro dial clicks are forwarded as press/release pairs because the device does not report a separate release. Dial holds are not supported. Touch alignment, sustained animation and Windows reboot recovery need further hardware validation. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
+N4 Pro dial clicks are forwarded as press/release pairs because the device does not report a separate release. Dial holds are not supported. Brightness commands reach the hardware, while sleep and screen-fill commands are currently acknowledged without changing its display. Touch alignment, sustained animation and Windows reboot recovery need further hardware validation. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
 
 ## Local data
 
@@ -59,7 +59,7 @@ Build the installer:
 ./scripts/build-windows.ps1 -Python ./work/build-venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
 ```
 
-Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.0.5-beta-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. The Windows beta release workflow runs manually or when release notes under `docs/releases/` are added or changed on `main`. Update the version, installer filenames and workflow release command together before publishing release notes. Other pushes run checks without publishing.
+Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.0.6-beta-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. The Windows beta release workflow runs manually or when release notes under `docs/releases/` are added or changed on `main`. Update the version, installer filenames and workflow release command together before publishing release notes. Other pushes run checks without publishing.
 
 | Directory | Purpose |
 | --- | --- |

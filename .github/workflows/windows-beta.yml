@@ -50,5 +50,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.0.5-beta dist/Hellgato-0.0.5-beta-Setup.exe dist/Hellgato-0.0.5-beta-Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title 'Hellgato 0.0.5 beta' --notes-file docs/releases/0.0.5-beta.md
+          gh release create v0.0.6-beta dist/Hellgato-0.0.6-beta-Setup.exe dist/Hellgato-0.0.6-beta-Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title 'Hellgato 0.0.6 beta' --notes-file docs/releases/0.0.6-beta.md
           if ($LASTEXITCODE) { throw 'Release publishing failed; an existing release is never overwritten automatically' }
