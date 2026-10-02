@@ -1,0 +1,31 @@
+{
+  "width": 800,
+  "height": 800,
+  "targetFps": 24,
+  "averageFps": 24,
+  "frameDurations": [
+    40,
+    40,
+    50,
+    40,
+    40,
+    40,
+    40,
+    40,
+    50,
+    40,
+    40,
+    40
+  ],
+  "frames": 12,
+  "period": 500,
+  "cycleMs": 20000,
+  "packets": 80,
+  "background": "#ffffff",
+  "loopEndpointMatches": true,
+  "gif": "hellgato-network.gif",
+  "bytes": 381461,
+  "loop": 0,
+  "palette": "shared 256 colors",
+  "dither": "none"
+}

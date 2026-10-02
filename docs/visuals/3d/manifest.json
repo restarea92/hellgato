@@ -1,0 +1,174 @@
+{
+  "format": "glTF 2.0 binary",
+  "coordinateSystem": "Y-up, local origin at the device footprint center",
+  "units": "diagram units; not physical dimensions",
+  "threeRevision": "170",
+  "assets": [
+    {
+      "file": "hellgato.glb",
+      "name": "Hellgato",
+      "role": "CORA bridge",
+      "preview": "previews/hellgato.png",
+      "diagramPosition": [
+        0,
+        0,
+        0
+      ],
+      "bytes": 205588,
+      "sha256": "b0d04e81a9a46bee5bb6079a87f00fef66ff6a4cc89f81694564bd836c279f6a",
+      "meshes": 89,
+      "triangles": 2302,
+      "textures": 1,
+      "bounds": {
+        "min": [
+          -1.6150000095367432,
+          -0.049746866747565344,
+          -1.199999988079071
+        ],
+        "max": [
+          1.6150000095367432,
+          2.589746866747565,
+          0.9672716530641527
+        ]
+      },
+      "translucentAlpha": [],
+      "extensions": [
+        "KHR_texture_transform",
+        "KHR_materials_unlit"
+      ]
+    },
+    {
+      "file": "n4-pro.glb",
+      "name": "N4 Pro",
+      "role": "Physical controller",
+      "preview": "previews/n4-pro.png",
+      "diagramPosition": [
+        0,
+        0,
+        6.2
+      ],
+      "bytes": 100680,
+      "sha256": "22c1632f9716a898226ec7a31fe61b1749e299045dd271ac8692c65b35cf690f",
+      "meshes": 119,
+      "triangles": 3464,
+      "textures": 12,
+      "bounds": {
+        "min": [
+          -1.6150000095367432,
+          -0.049746866747565344,
+          -1.199999988079071
+        ],
+        "max": [
+          1.6150000095367432,
+          2.589746866747565,
+          0.9672716530641527
+        ]
+      },
+      "translucentAlpha": [],
+      "extensions": [
+        "KHR_materials_unlit"
+      ]
+    },
+    {
+      "file": "usb-worker.glb",
+      "name": "USB Worker",
+      "role": "Mirabox SDK and DisplayMirror",
+      "preview": "previews/usb-worker.png",
+      "diagramPosition": [
+        -6.2,
+        0,
+        0
+      ],
+      "bytes": 109808,
+      "sha256": "4df0038386d8890325398db5f8959e73696f615e3cb2bd8b69802ead5f6c1591",
+      "meshes": 126,
+      "triangles": 2876,
+      "textures": 0,
+      "bounds": {
+        "min": [
+          -1.784999966621399,
+          -0.013999999999999999,
+          -1.684999942779541
+        ],
+        "max": [
+          1.784999966621399,
+          0.7845000001341105,
+          1.684999942779541
+        ]
+      },
+      "translucentAlpha": [],
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ]
+    },
+    {
+      "file": "stream-deck-app.glb",
+      "name": "Stream Deck App",
+      "role": "Actions and plugins",
+      "preview": "previews/stream-deck-app.png",
+      "diagramPosition": [
+        0,
+        0,
+        -6.2
+      ],
+      "bytes": 76316,
+      "sha256": "813f40b6586fd315f86918f84409e1cb985c178a902e29083bd543561da45b86",
+      "meshes": 60,
+      "triangles": 1242,
+      "textures": 1,
+      "bounds": {
+        "min": [
+          -1.909999966621399,
+          -0.013999999999999999,
+          -1.7599999904632568
+        ],
+        "max": [
+          1.909999966621399,
+          2.8939887807348312,
+          1.7599999904632568
+        ]
+      },
+      "translucentAlpha": [],
+      "extensions": [
+        "KHR_materials_unlit",
+        "KHR_materials_emissive_strength"
+      ]
+    },
+    {
+      "file": "virtual-stream-deck.glb",
+      "name": "Virtual Stream Deck",
+      "role": "Network device identity exposed by CORA",
+      "preview": "previews/virtual-stream-deck.png",
+      "diagramPosition": [
+        6.2,
+        0,
+        0
+      ],
+      "bytes": 104804,
+      "sha256": "54dc1cbdee025a1f35bdd7249d65626ee0c28b00411478f0c9b13d03d1c439ca",
+      "meshes": 119,
+      "triangles": 3464,
+      "textures": 12,
+      "bounds": {
+        "min": [
+          -1.6150000095367432,
+          -0.049746866747565344,
+          -1.199999988079071
+        ],
+        "max": [
+          1.6150000095367432,
+          2.589746866747565,
+          0.9672716530641527
+        ]
+      },
+      "translucentAlpha": [
+        0.19,
+        0.38,
+        0.55
+      ],
+      "extensions": [
+        "KHR_materials_unlit"
+      ]
+    }
+  ]
+}

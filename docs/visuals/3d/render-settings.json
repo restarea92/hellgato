@@ -1,0 +1,101 @@
+{
+  "threeVersion": "0.170.0",
+  "materialTheme": "dark",
+  "outputColorSpace": "SRGBColorSpace",
+  "diagram": {
+    "projection": "orthographic",
+    "cameraPosition": [
+      14,
+      20,
+      14
+    ],
+    "cameraTarget": [
+      0,
+      0,
+      0
+    ],
+    "framing": "fit to scene bounds",
+    "objectCanvasScale": "display dimensions / 1.65 on desktop, / 1.4 on compact layouts",
+    "imageRendering": "pixelated",
+    "antialias": false,
+    "groundShadowOpacity": 0.38,
+    "groundY": -0.035
+  },
+  "isolatedPreview": {
+    "projection": "orthographic",
+    "cameraPosition": [
+      14,
+      21.1,
+      14
+    ],
+    "cameraTarget": [
+      0,
+      1.1,
+      0
+    ],
+    "left": -3.35,
+    "right": 3.35,
+    "top": 3.35,
+    "bottom": -3.35,
+    "near": 0.1,
+    "far": 100,
+    "renderSize": [
+      256,
+      256
+    ],
+    "pngSize": [
+      512,
+      512
+    ],
+    "upscaleFilter": "nearest",
+    "background": "transparent"
+  },
+  "lights": [
+    {
+      "type": "HemisphereLight",
+      "position": [
+        0,
+        1,
+        0
+      ],
+      "color": "#ffffff",
+      "intensity": 1.25,
+      "groundColor": "#7e7e7e",
+      "castShadow": false
+    },
+    {
+      "type": "DirectionalLight",
+      "position": [
+        -7,
+        14,
+        8
+      ],
+      "color": "#ffffff",
+      "intensity": 1.8,
+      "castShadow": true
+    },
+    {
+      "type": "DirectionalLight",
+      "position": [
+        8,
+        5,
+        -9
+      ],
+      "color": "#ffffff",
+      "intensity": 0.45,
+      "castShadow": false
+    }
+  ],
+  "textures": {
+    "minFilter": "NearestFilter",
+    "magFilter": "NearestFilter",
+    "mipmaps": false
+  },
+  "virtualDevice": {
+    "castShadow": false,
+    "receiveShadow": false,
+    "alphaMode": "BLEND",
+    "depthWrite": false
+  },
+  "wiresAndPackets": "Separate smooth rendering layer; not included in device GLBs"
+}

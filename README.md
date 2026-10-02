@@ -41,6 +41,20 @@ Hellgato is an open-source Windows bridge that brings third-party hardware into 
 
 The installer bundles the runtimes and USB SDK. No StreamDock required. Install any extra Stream Deck plugins separately.
 
+## How it works
+
+Hellgato presents your N4 Pro as a network-connected Stream Deck. The official app runs your actions and plugins and sends display updates back to the hardware.
+
+<p align="center">
+  <img src="docs/visuals/hellgato-network.gif" alt="Animated Hellgato architecture: N4 Pro exchanges input and display updates with a Python USB worker, a Node.js CORA bridge and the Stream Deck app. A translucent Virtual Stream Deck shows the identity recognized by the app." width="800">
+</p>
+
+**Blue** carries key, dial and touch input toward the app. **Orange** carries key images, touch-screen updates and brightness toward the device. The translucent **Virtual Stream Deck** represents the device identity exposed by CORA.
+
+The Python USB worker combines the **Mirabox SDK** for hardware communication with **DisplayMirror** for screen updates. It sends input commands to the Node.js **CORA bridge** through `stdin` and reads returning images and events from JPEG files and JSONL. CORA communicates with Stream Deck over local TCP: `127.0.0.1:5343` for pairing and `127.0.0.1:5344` for input and display traffic.
+
+DisplayMirror merges repeated updates to the same key or touch region within each batch. In the default frame mode, it sends only the updated touch-strip region after the initial frame, reducing redundant USB work.
+
 ## Everyday essentials
 
 - **Your setup travels.** Export profiles as a `.hellgatoProfiles` bundle (`Ctrl+E`), or import bundles and `.streamDeckProfile` files (`Ctrl+I`). Imports back up replaced profiles and restart Stream Deck.
