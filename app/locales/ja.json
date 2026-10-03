@@ -61,6 +61,8 @@
   "error.file": "ファイルとフォルダーの権限を確認してください。詳細はログで確認できます。",
   "dialog.import": "プロファイルを選択",
   "dialog.export": "プロファイルをエクスポート",
+  "dialog.export_confirm_title": "プロファイルをエクスポートしますか？",
+  "dialog.export_confirm_message": "バンドルには、機密性の高いプラグイン設定、ローカルパス、認証情報が残る場合があります。共有前に内容を確認してください。エクスポートを続けますか？",
   "dialog.profile_files": "Stream Deck / Hellgato プロファイル",
   "dialog.bundle": "Hellgato プロファイルバンドル",
   "dialog.all_files": "すべてのファイル",

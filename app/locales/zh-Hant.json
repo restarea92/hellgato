@@ -61,6 +61,8 @@
   "error.file": "請檢查所選檔案與資料夾權限。詳情請見記錄。",
   "dialog.import": "選擇要匯入的設定檔",
   "dialog.export": "匯出裝置設定檔",
+  "dialog.export_confirm_title": "匯出設定檔？",
+  "dialog.export_confirm_message": "匯出套件會保留外掛設定、本機路徑和憑證，其中可能包含敏感資訊。分享前請檢查內容。要繼續匯出嗎？",
   "dialog.profile_files": "Stream Deck / Hellgato 設定檔",
   "dialog.bundle": "Hellgato 設定檔套件",
   "dialog.all_files": "所有檔案",
