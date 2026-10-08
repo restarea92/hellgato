@@ -61,6 +61,8 @@
   "error.file": "请检查所选文件和文件夹权限。详情见日志。",
   "dialog.import": "选择要导入的配置文件",
   "dialog.export": "导出设备配置文件",
+  "dialog.export_confirm_title": "导出配置文件？",
+  "dialog.export_confirm_message": "导出包会保留插件设置、本地路径和凭据，其中可能包含敏感信息。分享前请检查内容。继续导出吗？",
   "dialog.profile_files": "Stream Deck / Hellgato 配置文件",
   "dialog.bundle": "Hellgato 配置文件包",
   "dialog.all_files": "所有文件",

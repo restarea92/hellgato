@@ -61,6 +61,8 @@
   "error.file": "Check the selected file and folder permissions. Details are in the logs.",
   "dialog.import": "Select profiles to import",
   "dialog.export": "Export device profiles",
+  "dialog.export_confirm_title": "Export profiles?",
+  "dialog.export_confirm_message": "The bundle retains plugin settings, local paths, and credentials that may be sensitive. Review it before sharing. Continue exporting?",
   "dialog.profile_files": "Stream Deck / Hellgato profiles",
   "dialog.bundle": "Hellgato profile bundle",
   "dialog.all_files": "All files",

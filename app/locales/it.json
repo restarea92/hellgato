@@ -50,6 +50,8 @@
   "error.file": "Verifica il file selezionato e le autorizzazioni della cartella. Per i dettagli, consulta i registri.",
   "dialog.import": "Seleziona i profili da importare",
   "dialog.export": "Esporta profili del dispositivo",
+  "dialog.export_confirm_title": "Esportare i profili?",
+  "dialog.export_confirm_message": "Il pacchetto conserva impostazioni dei plugin, percorsi locali e credenziali che potrebbero essere sensibili. Controlla il contenuto prima di condividerlo. Continuare con l’esportazione?",
   "dialog.profile_files": "Profili Stream Deck / Hellgato",
   "dialog.bundle": "Pacchetto profili Hellgato",
   "dialog.all_files": "Tutti i file",

@@ -50,6 +50,8 @@
   "error.file": "Überprüfe die ausgewählte Datei und die Ordnerberechtigungen. Details findest du in den Protokollen.",
   "dialog.import": "Profile zum Importieren auswählen",
   "dialog.export": "Geräteprofile exportieren",
+  "dialog.export_confirm_title": "Profile exportieren?",
+  "dialog.export_confirm_message": "Das Paket behält Plugin-Einstellungen, lokale Pfade und Zugangsdaten bei, die vertraulich sein können. Prüfe den Inhalt vor dem Teilen. Export fortsetzen?",
   "dialog.profile_files": "Stream Deck- / Hellgato-Profile",
   "dialog.bundle": "Hellgato-Profilpaket",
   "dialog.all_files": "Alle Dateien",

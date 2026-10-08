@@ -356,6 +356,13 @@ def main():
                 filetypes=[(translator.text('dialog.bundle'), '*.hellgatoProfiles')])
         if not chosen or lifecycle.closing:
             return
+        if not importing:
+            confirmed = messagebox.askokcancel(
+                translator.text('dialog.export_confirm_title'),
+                translator.text('dialog.export_confirm_message'),
+                parent=window, icon=messagebox.WARNING, default=messagebox.CANCEL)
+            if not confirmed or lifecycle.closing:
+                return
         transfer_busy = True
         was_running = session.running
         view.render_transfer(Message('transfer.importing' if importing else 'transfer.exporting'), busy=True)
