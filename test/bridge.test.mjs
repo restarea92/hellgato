@@ -88,14 +88,18 @@ test('public bridge delivers key, dial, touch, and received image bytes over TCP
   }
 });
 
-test('brightness applies while sleep and fill commands only receive acknowledgements', { timeout: 5000 }, async () => {
+test('display controls are decoded, acknowledged, and sleep timing is readable', { timeout: 5000 }, async () => {
   const bridge = await createBridge({ port: 0, childPort: 0 });
   await bridge.start();
   let socket;
   try {
     socket = await connectChild(bridge);
     const levels = [];
+    const commands = [];
+    const durations = [];
     bridge.on('brightness', level => levels.push(level));
+    bridge.on('displayCommand', command => commands.push(command));
+    bridge.on('sleepDuration', seconds => durations.push(seconds));
     const ack = receive(socket, payload => payload.length === 4);
     socket.write(encodeCoraFrame(Buffer.from([3, 8, 35]), 0xc000, 1, 101));
     await ack;
@@ -106,6 +110,65 @@ test('brightness applies while sleep and fill commands only receive acknowledgem
     socket.write(encodeCoraFrame(Buffer.from([3, 0x0d, 60, 0, 0, 0]), 0xc000, 1, 103));
     await sleepAck;
     assert.deepEqual(levels, [35]);
+    assert.deepEqual(commands, [{ type: 'fill', color: [1, 2, 3] }]);
+    assert.deepEqual(durations, [60]);
+    const logoAck = receive(socket, payload => payload.length === 4);
+    socket.write(encodeCoraFrame(Buffer.from([3, 2]), 0xc000, 1, 104));
+    await logoAck;
+    const keyAck = receive(socket, payload => payload.length === 4);
+    socket.write(encodeCoraFrame(Buffer.from([3, 6, 9, 4, 5, 6]), 0xc000, 1, 105));
+    await keyAck;
+    assert.deepEqual(commands.slice(1), [{ type: 'showLogo' }, { type: 'fill', keyIndex: 9, color: [4, 5, 6] }]);
+    const duration = receive(socket, payload => payload[0] === 0x0a);
+    socket.write(encodeCoraFrame(Buffer.from([0x0a]), 0x8000, 2, 106));
+    assert.equal((await duration).readInt32LE(2), 60);
+  } finally {
+    socket?.destroy();
+    await bridge.stop();
+  }
+});
+
+test('full LCD frames cross TCP and incomplete transfers do not cross sessions', async () => {
+  const bridge = await createBridge({ port: 0, childPort: 0, sleepDuration: 120 });
+  await bridge.start();
+  let socket;
+  const images = [];
+  let started = 0;
+  bridge.on('lcdFrameStarted', () => started++);
+  bridge.on('lcdImage', event => images.push(event));
+  function chunk(index, bytes, last = false) {
+    const payload = Buffer.alloc(8 + bytes.length);
+    payload.set([2, 8, 0, Number(last)]);
+    payload.writeUInt16LE(bytes.length, 4);
+    payload.writeUInt16LE(index, 6);
+    bytes.copy(payload, 8);
+    socket.write(encodeCoraFrame(payload, 0x4000, 0, 200 + index));
+  }
+  try {
+    socket = await connectChild(bridge);
+    const duration = receive(socket, payload => payload[0] === 0x0a);
+    socket.write(encodeCoraFrame(Buffer.from([0x0a]), 0x8000, 2, 199));
+    assert.equal((await duration).readInt32LE(2), 120);
+    let ack = receive(socket, payload => payload.length === 4);
+    chunk(0, Buffer.from([0xff, 0xd8]));
+    await ack;
+    assert.equal(started, 1);
+    assert.equal(images.length, 0);
+    const received = once(bridge, 'lcdImage');
+    chunk(1, Buffer.from([0xff, 0xd9]), true);
+    assert.deepEqual((await received)[0], { data: Buffer.from([0xff, 0xd8, 0xff, 0xd9]), format: 'jpeg' });
+    ack = receive(socket, payload => payload.length === 4);
+    chunk(0, Buffer.from([1, 2]));
+    await ack;
+    const disconnected = once(bridge, 'clientDisconnected');
+    socket.destroy();
+    await disconnected;
+    socket = await connectChild(bridge);
+    ack = receive(socket, payload => payload.length === 4);
+    chunk(1, Buffer.from([3, 4]), true);
+    await ack;
+    assert.equal(images.length, 1);
+    assert.equal(started, 2);
   } finally {
     socket?.destroy();
     await bridge.stop();

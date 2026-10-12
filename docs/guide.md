@@ -20,7 +20,29 @@ Hellgato checks Stream Deck's internal structure and live device geometry before
 
 Ten-key support and touch strip feedback scheduling require temporary changes to the running Stream Deck process's memory. Screen update requests enable 16 ms feedback checks for that composer; after two seconds without requests, it returns to Stream Deck's original idle wait. This improves animation delivery without polling continuously while idle. Internal code signatures and loaded bytes are checked before patching; unsupported layouts are rejected. Its executable on disk is unchanged. Simultaneous use with a genuine Stream Deck + is outside this beta's scope.
 
-N4 Pro dial clicks are forwarded as press/release pairs because the device does not report a separate release. Dial holds are not supported. Brightness commands reach the hardware, while sleep and screen-fill commands are currently acknowledged without changing its display. Touch alignment, sustained animation and Windows reboot recovery need further hardware validation. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
+N4 Pro does not report dial release events, so holds, release-triggered actions, press-duration detection, momentary actions, hold-to-repeat, press-and-turn and overlapping held dial presses cannot be reproduced accurately. This limit concerns dial buttons, not LCD keys or touch-strip holds.
+
+Brightness, idle timeout, full LCD images, full-screen and individual-key color fills are forwarded to hardware. Configure screensavers in Stream Deck as usual: Hellgato reads the selected original from Stream Deck's settings and plays cached full-screen frames through the N4 SDK. Animated WebP/GIF frame timing is preserved without sending separate images for every key. The SDK streams from the PC; this does not store the animation in device firmware.
+
+Sleep without a screensaver uses N4 Pro's native screen-off command. With a screensaver, the image appears first and dims over 0.3 seconds to the LCD's minimum brightness, while knob lighting turns off immediately. Wake restores action images while dim/off, then fades back to the Stream Deck brightness; knob brightness follows it. Display animations do not reset the idle timer. Sleep timing is stored per virtual device and returned to Stream Deck after reconnection. Manual Sleep is recognized early when a recent key release is followed by timeout-disable and brightness-fade commands; when Stream Deck sends only brightness changes, screen-off waits for its zero-brightness command.
+
+Five-minute idle activation, screensaver dimming and wake behavior have been confirmed on the test device. Touch alignment across profiles and plugins, extended animation playback and Windows reboot recovery need broader hardware testing. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
+
+Advanced standby-image set/reset is not supported: its unhandled image-upload command can disconnect the virtual device. An equivalent N4 Pro API for persistent standby-image storage has not been confirmed.
+
+## How it works
+
+The design goal is Stream Deck's native user experience with the hardware's native performance. Keep configuration, actions and profiles in the official app, and use the device SDK for execution wherever it avoids unnecessary conversion or transport. Input and output may take different paths: forward input to Stream Deck, while displays can use its saved assets directly. Preserve the user's selected content, timing and behavior when choosing an output path.
+
+Hellgato presents N4 Pro as a network-connected Stream Deck. The official app runs actions and plugins; the Mirabox SDK handles USB input and display output.
+
+<p align="center">
+  <img src="visuals/hellgato-network.gif" alt="N4 Pro exchanges input and display updates with the Python USB worker, Node.js CORA bridge and Stream Deck app." width="800">
+</p>
+
+Blue carries input toward Stream Deck; orange carries display updates toward N4 Pro. The virtual device is the identity exposed by CORA. The Python worker sends input over `stdin` and reads display events and images from local files. CORA uses `127.0.0.1:5343` for pairing and `127.0.0.1:5344` for device traffic. Screensavers use the original asset saved by Stream Deck, bypassing its per-frame display transport.
+
+DisplayMirror combines repeated updates to each key or touch region within a batch. The default frame mode sends only the changed touch-strip region after its initial frame.
 
 ## Local data
 
@@ -29,6 +51,8 @@ N4 Pro dial clicks are forwarded as press/release pairs because the device does 
 | `%LOCALAPPDATA%\Programs\Hellgato` | Installed application |
 | `%LOCALAPPDATA%\Hellgato\settings.json` | Persistent device identity |
 | `%LOCALAPPDATA%\Hellgato\preferences.json` | Interface language |
+| `%LOCALAPPDATA%\Hellgato\display-HGMOCK*.json` | Per-device idle timeout |
+| `%APPDATA%\Elgato\StreamDeck\Assets` | Screen saver originals saved by Stream Deck; the selection is in its per-device Windows registry settings |
 | `%LOCALAPPDATA%\Hellgato\bridge.log` | Connection and error logs |
 | `%LOCALAPPDATA%\Hellgato\traces` and `images` | Local device events and received display images |
 | `%LOCALAPPDATA%\Hellgato\profile-backups` | Profiles saved before Stream Deck restarts |
@@ -59,7 +83,7 @@ Build the installer:
 ./scripts/build-windows.ps1 -Python ./work/build-venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
 ```
 
-Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.0.6-beta-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. The Windows beta release workflow runs manually or when release notes under `docs/releases/` are added or changed on `main`. Update the version, installer filenames and workflow release command together before publishing release notes. Other pushes run checks without publishing.
+Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.0.7-beta-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. The Windows beta release workflow runs manually or when release notes under `docs/releases/` are added or changed on `main`. Update the version, installer filenames and workflow release command together before publishing release notes. Other pushes run checks without publishing.
 
 | Directory | Purpose |
 | --- | --- |

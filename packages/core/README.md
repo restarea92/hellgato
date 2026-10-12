@@ -40,6 +40,7 @@ process.once('SIGINT', () => { void bridge.stop(); });
 - `createN4ProProfile(identity?, dockIdentity?)`: returns the existing 10-key, four-dial N4 Pro geometry and stable serial configuration. Default identity: `2`.
 - `options.geometry`, `options.config`: override profile fields. Use a stable, distinct identity for each device.
 - `options.port`, `options.childPort`: default to `5343` and `5344`. Use `0` for automatically assigned test ports.
+- `options.sleepDuration`: initial idle timeout in seconds, from `0` (disabled) to `2147483647`. The adapter is responsible for persistence and the hardware idle timer.
 - `bridge.start()`, `bridge.stop()`: start and stop both servers. Repeated calls are safe; failed startup releases acquired ports.
 - `bridge.ports`: actual `{ primary, child }` listening ports, or `null` values while stopped.
 - `bridge.primaryConnected`, `bridge.childConnected`: connection state.
@@ -50,11 +51,18 @@ process.once('SIGINT', () => { void bridge.stop(); });
 Input methods return `false` when no child client is connected, otherwise `true`.
 Invalid input throws. Do not send a release before its matching press has been delivered.
 
-Events: `image`, `touchImage`, `brightness`, `clientConnected`, `clientDisconnected`, `log`, `comm`.
+Events: `image`, `touchImage`, `lcdImage`, `lcdFrameStarted`, `displayCommand`, `sleepDuration`, `brightness`, `clientConnected`, `clientDisconnected`, `log`, `comm`.
 Connection, log and communication events provide `{ role, detail }`, where `role` is
 `primary` or `child` and `detail` contains the upstream event arguments.
 Image and brightness events retain their DeckBridge payloads. Add an event listener
 before starting the bridge. Store or forward images in your adapter as needed.
+
+`lcdImage` provides `{ data, format: 'jpeg' }` for the complete 800×480 LCD.
+`lcdFrameStarted` signals the first nonempty valid chunk, before the image is complete.
+`sleepDuration` provides an integer number of seconds. `displayCommand` provides
+`{ type: 'showLogo' }` or `{ type: 'fill', color: [r, g, b], keyIndex? }`; an absent
+`keyIndex` fills the whole LCD. The adapter implements these operations. Malformed,
+out-of-order or oversized full LCD transfers are discarded.
 
 ## Scope
 

@@ -23,6 +23,8 @@ export async function createBridge(options = {}) {
   config.macAddress = [...config.macAddress];
   const port = options.port ?? 5343;
   const childPort = options.childPort ?? 5344;
+  const sleepDuration = options.sleepDuration ?? 0;
+  integer(sleepDuration, 0, 0x7fffffff, 'sleepDuration');
   integer(port, 0, 65535, 'port');
   integer(childPort, 0, 65535, 'childPort');
   if (port !== 0 && port === childPort) throw new RangeError('Ports must be different');
@@ -48,6 +50,7 @@ export async function createBridge(options = {}) {
   primary.setDeviceConfig(config);
   const DisplayServer = withDisplayCommands(ElgatoChildServer);
   const child = new DisplayServer(geometry, childPort, config, false);
+  child.sleepSeconds = sleepDuration;
   return new Bridge(primary, child, geometry);
 }
 
@@ -68,7 +71,7 @@ class Bridge extends EventEmitter {
         server.on(event, (...detail) => this.emit(event, { role, detail }));
       }
     }
-    for (const event of ['image', 'touchImage', 'brightness']) {
+    for (const event of ['image', 'touchImage', 'lcdFrameStarted', 'lcdImage', 'displayCommand', 'sleepDuration', 'brightness']) {
       child.on(event, detail => this.emit(event, detail));
     }
   }

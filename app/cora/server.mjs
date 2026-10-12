@@ -4,16 +4,19 @@ import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { profile } from './profiles.mjs';
 import { createBridge } from './bridge.mjs';
+import { loadDisplayState, saveDisplayState } from './display-state.mjs';
 
 const name = process.argv[2] ?? 'target';
 const { geometry, config } = profile(name, process.argv[3]);
 // Dock and child identities are independently persisted by the launcher.
 if (process.argv[4] !== undefined) config.childSerialNumber = profile(name, process.argv[4]).config.childSerialNumber;
-const bridge = await createBridge({ geometry, config });
 const stateRoot = process.env.HELLGATO_STATE_DIR
   ? pathToFileURL(resolve(process.env.HELLGATO_STATE_DIR) + '/')
   : new URL('../../work/', import.meta.url);
 mkdirSync(new URL('traces/', stateRoot), { recursive: true });
+const displaySettings = new URL(`display-${config.childSerialNumber}.json`, stateRoot);
+const savedDisplay = loadDisplayState(displaySettings);
+const bridge = await createBridge({ geometry, config, sleepDuration: savedDisplay.sleepDuration ?? 0 });
 const runId = process.env.HELLGATO_RUN_ID ?? String(Date.now());
 if (!/^\d+$/.test(runId)) throw new Error('HELLGATO_RUN_ID must contain decimal digits only');
 const trace = new URL(`traces/${name}-${runId}.jsonl`, stateRoot);
@@ -28,7 +31,13 @@ for (const event of ['clientConnected', 'clientDisconnected', 'log', 'comm']) {
 const images = new URL(`images/${config.childSerialNumber}-${runId}/`, stateRoot);
 mkdirSync(images, { recursive: true });
 let imageSequence = 0;
+let nativeScreensaver = false;
 bridge.on('brightness', level => record('brightness', { level }));
+bridge.on('sleepDuration', seconds => {
+  saveDisplayState(displaySettings, { sleepDuration: seconds });
+  record('sleepDuration', { seconds });
+});
+bridge.on('displayCommand', detail => record('displayCommand', detail));
 bridge.on('image', event => {
   const file = `key-${event.keyIndex}.${event.format === 'jpeg' ? 'jpg' : 'bin'}`;
   writeFileSync(new URL(file, images), event.data);
@@ -40,6 +49,15 @@ bridge.on('touchImage', event => {
   record('touchImage', { bytes: event.data.length,
     region: event.region ?? { x: 0, y: 0, w: 800, h: 100 }, file });
 });
+bridge.on('lcdFrameStarted', () => {
+  if (nativeScreensaver) record('screensaver', {});
+});
+bridge.on('lcdImage', event => {
+  if (nativeScreensaver) return;
+  const file = `lcd-${imageSequence++}.jpg`;
+  writeFileSync(new URL(file, images), event.data);
+  record('lcdImage', { bytes: event.data.length, file });
+});
 let stopping = false;
 async function stop() {
   if (stopping) return;
@@ -49,12 +67,20 @@ async function stop() {
 try { await bridge.start(); }
 catch (error) { await stop(); throw error; }
 record('started', { geometry, config, images: images.pathname });
+record('sleepDuration', { seconds: savedDisplay.sleepDuration ?? 0 });
 console.log('Hellgato: pair 127.0.0.1:5343 in Stream Deck on first use.');
 const input = createInterface({ input: process.stdin, output: process.stdout });
 input.on('line', line => {
   const [command, indexText, value, ...extra] = line.trim().split(/\s+/);
   if (command === 'quit') { input.close(); return; }
   if (command === 'status') { record('status', { primaryConnected: bridge.primaryConnected, childConnected: bridge.childConnected }); return; }
+  if (command === 'screensaver') {
+    if (value !== undefined || !['native', 'stream'].includes(indexText)) {
+      console.error('Use screensaver native|stream'); return;
+    }
+    nativeScreensaver = indexText === 'native';
+    return;
+  }
   if (command === 'touch') {
     const numbers = [value, ...extra].map(Number);
     const count = indexText === 'swipe' ? 4 : 2;

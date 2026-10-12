@@ -6,6 +6,7 @@ from enum import Enum
 import gc
 import json
 import os
+import queue
 from pathlib import Path
 import subprocess
 import sys
@@ -13,9 +14,10 @@ import threading
 import time
 
 from mapping import input_commands, enum_value
-from display import DisplayMirror
+from display import DisplayMirror, DISPLAY_EVENTS
 from touch import TouchGesture
 from settings import load_settings
+from screensaver import ScreensaverSource
 
 
 root = Path(__file__).resolve().parents[2]
@@ -82,7 +84,16 @@ def main():
     run_id = str(time.time_ns())
     trace_path = state_root / 'traces' / f'{args.profile}-{run_id}.jsonl'
     images_dir = state_root / 'images' / f'HGMOCK{args.identity:06d}-{run_id}'
-    display = DisplayMirror(device, images_dir, args.strip_mode)
+    def native_screensaver_mode(enabled):
+        with write_lock:
+            if process is not None and process.poll() is None:
+                process.stdin.write(f"screensaver {'native' if enabled else 'stream'}\n")
+                process.stdin.flush()
+
+    display = DisplayMirror(device, images_dir, args.strip_mode, columns=5 if args.profile == 'target' else 4,
+                            screensaver_source=ScreensaverSource(f'HGMOCK{args.identity:06d}'),
+                            on_native_source=native_screensaver_mode)
+    activity = queue.SimpleQueue()
     input_path = state_root / 'traces' / f'n4-bridge-{run_id}.jsonl'
     input_path.parent.mkdir(parents=True, exist_ok=True)
     input_lock = threading.Lock()
@@ -107,6 +118,9 @@ def main():
             record_input('deviceInput', asdict(event))
         commands = input_commands(asdict(event))
         kind = enum_value(event.event_type)
+        if kind in ('knob_rotate', 'knob_press', 'swipe') or (kind == 'button' and enum_value(event.key) in range(1, 15)):
+            release = ((kind == 'button' and event.state == 0) or kind == 'knob_press')
+            activity.put((time.monotonic(), release))
         if kind == 'swipe':
             command = touch.finish(time.monotonic(), enum_value(event.direction))
             commands = [command] if command is not None else []
@@ -128,6 +142,8 @@ def main():
 
     def touch_point(_, event):
         touch.point(event.x, event.y, time.monotonic())
+        if 0 <= event.x < 800 and 0 <= event.y < 112:
+            activity.put((time.monotonic(), False))
         if args.raw:
             record_input('touchPoint', {'x': event.x, 'y': event.y})
 
@@ -172,6 +188,11 @@ def main():
                     print('N4 Pro disconnected', flush=True)
                     break
                 next_usb_check = time.monotonic() + 2
+            latest_activity = None
+            while not activity.empty():
+                latest_activity = activity.get_nowait()
+            if latest_activity is not None:
+                display.notify_input(latest_activity[0], key_release=latest_activity[1])
             if trace is None and trace_path.exists():
                 trace = trace_path.open(encoding='utf-8')
             if trace is not None:
@@ -181,13 +202,17 @@ def main():
                     line, pending = pending.split('\n', 1)
                     if line:
                         event = json.loads(line)
-                        if event.get('event') in ('keyImage', 'touchImage', 'brightness'):
+                        if event.get('event') in DISPLAY_EVENTS:
                             updates.append(event)
                 if updates:
                     try:
                         display.apply_batch(updates)
                     except OSError as error:
                         print(f'Display update failed: {error}', flush=True)
+            try:
+                display.tick()
+            except (OSError, ValueError) as error:
+                print(f'Screensaver update failed: {error}', flush=True)
             time.sleep(0.002)
         if process.poll() not in (None, 0):
             raise RuntimeError(f'CORA bridge exited with code {process.returncode}')

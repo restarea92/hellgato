@@ -40,7 +40,8 @@ datas += [
 a = Analysis([str(root / 'app/hellgato.py')], pathex=[str(root / 'app/n4')],
              datas=datas, binaries=[],
              module_collection_mode={'pystray': 'py'},
-             hiddenimports=['PIL.Image', 'PIL.ImageSequence', 'ctypes.util', 'ctypes.wintypes', 'csv', 'hashlib', 'struct',
+             hiddenimports=['PIL.Image', 'PIL.ImageSequence', 'PIL.ImageOps', 'bisect', 'urllib.parse', 'winreg',
+                            'ctypes.util', 'ctypes.wintypes', 'csv', 'hashlib', 'struct',
                             'argparse', 'dataclasses', 'enum', 'gc', 'typing', 'platform', 'tempfile',
                             'copy', 'io', 'random', 'datetime', 'shutil', 'pefile', 'pystray._win32'],
              excludes=['numpy', 'matplotlib', 'scipy', 'pytest', 'IPython', 'wmi', 'pythoncom'])
