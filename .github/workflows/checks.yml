@@ -51,6 +51,8 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           npm install --global npm@11.9.0 --ignore-scripts
+          # Windows global npm installs outside setup-node's first PATH entry.
+          npm prefix --global >> "$GITHUB_PATH"
       - name: Release metadata and full-diff impact
         env:
           IMPACT_BASE: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
@@ -59,6 +61,7 @@ jobs:
           node scripts/check-release-impact.mjs --base "$IMPACT_BASE"
       - name: Prepare CORA and run JavaScript checks
         run: |
+          node --input-type=module -e "import { assertNpmVersion } from './scripts/npm-release.mjs'; assertNpmVersion();"
           pnpm run prepare:cora
           pnpm test
           pnpm run build:npm

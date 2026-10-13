@@ -91,6 +91,12 @@ test('bot PR workflows dispatch checks pinned to exact head and all external act
   }
 });
 
+test('Windows CI promotes the installed global npm prefix before checking its pin', async () => {
+  const yaml = await readFile(new URL('../.github/workflows/checks.yml', import.meta.url), 'utf8');
+  assert.match(yaml, /npm install --global npm@11\.9\.0 --ignore-scripts\n[^\n]*\n\s+npm prefix --global >> "\$GITHUB_PATH"/);
+  assert.ok(yaml.indexOf('npm prefix --global') < yaml.indexOf('assertNpmVersion();'));
+});
+
 test('npm GitHub finalizer resumes its own draft and completed retry is immutable', async t => {
   const root = await mkdtemp(join(tmpdir(), 'hellgato-finalize-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));

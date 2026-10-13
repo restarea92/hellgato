@@ -59,6 +59,8 @@ package 2FA protections. See [npm trusted publishing](https://docs.npmjs.com/tru
 
 At implementation time the active ruleset only blocks deletion and non-fast-
 forward updates of `main`; it does not enforce CI checks or protect release tags.
+The separate legacy branch-protection endpoint returns HTTP 403 to the connected
+integration, so protection settings outside the visible ruleset remain unverified.
 
 - Require a pull request and the observed checks above before merging into main.
 - Require the branch up to date, so stale version plans are regenerated.
