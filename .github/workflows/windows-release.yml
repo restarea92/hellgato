@@ -1,56 +1,75 @@
 name: Windows release
 
+# Publication is never triggered by a code push, PR, tag push or release event.
 on:
-  push:
-    branches: [main]
-    paths: ['docs/releases/0.1.1.md', '.github/workflows/windows-release.yml', 'native/**']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing stable tag at this main commit (vMAJOR.MINOR.PATCH)'
+        required: true
+        type: string
+      confirm:
+        description: 'Publish this explicitly prepared new stable version'
+        required: true
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
+  contents: read
 
+# Serialize all stable publications, including retries and different versions.
 concurrency:
   group: windows-release
   cancel-in-progress: false
 
 jobs:
-  release:
-    if: github.repository == 'restarea92/hellgato'
-    runs-on: windows-2022
-    timeout-minutes: 20
-    defaults:
-      run:
-        shell: pwsh
+  preflight:
+    if: github.repository == 'restarea92/hellgato' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13.7'
-          architecture: x64
-      - name: Install build dependencies
-        run: |
-          python -m pip install -r installer/requirements-build.txt
-          if ($LASTEXITCODE) { throw 'Python build dependency installation failed' }
-          $setup = Join-Path $env:RUNNER_TEMP 'innosetup.exe'
-          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $setup
-          if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732') { throw 'Inno Setup checksum mismatch' }
-          $compiler = Join-Path $env:RUNNER_TEMP 'InnoSetup'
-          Start-Process $setup -ArgumentList '/CURRENTUSER','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOICONS',"/DIR=`"$compiler`"" -WindowStyle Hidden -Wait
-      - name: Test and build
-        run: |
-          python -m unittest discover -s test -p 'test_*.py'
-          if ($LASTEXITCODE) { throw 'Python checks failed' }
-          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File test/test_installer_migration.ps1
-          if ($LASTEXITCODE) { throw 'Installer migration checks failed' }
-          ./scripts/build-windows.ps1 -Iscc (Join-Path $env:RUNNER_TEMP 'InnoSetup/ISCC.exe')
-          if ($LASTEXITCODE) { throw 'Windows build failed' }
-          ./work/build-runtime/node.exe --test test/*.test.mjs
-          if ($LASTEXITCODE) { throw 'CORA checks failed' }
-      - name: Publish stable release
+      - name: Validate release request without publishing
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create v0.1.1 dist/Hellgato-0.1.1-Setup.exe dist/Hellgato-0.1.1-Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --latest --title 'Hellgato Stream Dog 0.1.1' --notes-file docs/releases/0.1.1.md
-          if ($LASTEXITCODE) { throw 'Release publishing failed; an existing release is never overwritten automatically' }
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_CONFIRM: ${{ inputs.confirm }}
+        run: python scripts/windows_release.py check
+
+  build:
+    needs: preflight
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows-build.yml
+
+  publish:
+    needs: [preflight, build]
+    if: github.repository == 'restarea92/hellgato' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.7'
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist
+      - name: Revalidate and publish the exact tested installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_CONFIRM: ${{ inputs.confirm }}
+        run: python scripts/windows_release.py publish
