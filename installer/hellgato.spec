@@ -3,7 +3,7 @@ import importlib.metadata
 import sys
 
 root = Path(SPECPATH).parent
-icon = root / 'app/assets/icons/hellgato-front.ico'
+icon = root / 'app/assets/icons/stream-dog.ico'
 datas = []
 
 def include_tree(relative, suffixes):
@@ -23,7 +23,7 @@ datas += [
     (str(root / 'work/build-native-ui-package/HellgatoNativeUiV2.dll'), 'native'),
     (str(root / 'LICENSE'), '.'),
     (str(icon), 'app/assets/icons'),
-    (str(root / 'app/assets/icons/hellgato-64.png'), 'app/assets/icons'),
+    (str(root / 'app/assets/icons/stream-dog-64.png'), 'app/assets/icons'),
     (str(root / 'app/assets/icons/hellgato-front-64.png'), 'app/assets/icons'),
     (str(root / 'work/build-runtime/node.exe'), 'runtime'),
     (str(root / 'work/build-runtime/provenance.json'), 'runtime'),

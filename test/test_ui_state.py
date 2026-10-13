@@ -37,9 +37,23 @@ class ProfilePresentationTest(unittest.TestCase):
         def change_language(language):
             self.translator.select(language, persist=True)
             self.view.retranslate()
-        self.view = LauncherView(self.window, ROOT, '0.0.1-beta', 'HGMOCK000042',
+        self.view = LauncherView(self.window, ROOT, '0.1.0', 'HGMOCK000042',
                                  Mock(), self.export, self.import_profiles, Mock(), self.translator,
                                  change_language, Mock(), Mock())
+
+    def test_remembered_device_keeps_selection_after_disconnect_and_translation(self):
+        row = {'id': 'device-one', 'name': 'Mirabox N4 Pro',
+               'virtualSerial': 'HGMOCK000042', 'connected': True}
+        self.view.render_devices([row])
+        self.view.device_list.selection_set(row['id'])
+        self.view.render_devices([{**row, 'connected': False}])
+        self.assertEqual(self.view.device_list.selection(), (row['id'],))
+        self.assertEqual(self.view.device_list.item(row['id'], 'values'),
+                         ('Mirabox N4 Pro', 'HGMOCK000042', 'Disconnected'))
+        self.translator.select('ko')
+        self.view.retranslate()
+        self.assertEqual(self.view.device_list.item(row['id'], 'values')[-1], '미연결')
+        self.assertEqual(self.view.device_list.selection(), (row['id'],))
 
     def test_main_window_only_shows_transfer_notice_after_a_task(self):
         self.assertEqual(self.view.notice.winfo_manager(), '')

@@ -14,7 +14,7 @@
   "menu.help": "ヘルプ",
   "menu.preferences": "環境設定…",
   "menu.hide": "トレイに最小化",
-  "menu.about": "Hellgatoについて",
+  "menu.about": "Hellgato Stream Dogについて",
   "preferences.title": "環境設定",
   "preferences.language_hint": "言語の変更はすぐに適用されます。",
   "about.description": "N4 ProをStream Deckアプリに接続します。",
@@ -83,5 +83,13 @@
   "connection.setup": "Stream Deckを準備",
   "detail.startup_setup": "初回にStream Deckを準備すると、起動するたびに10キーが有効になります。Windowsで管理者権限の承認を求められる場合があります。",
   "detail.startup_reopen": "Stream Deckをトレイメニューから終了し、手動で起動し直すと10キー対応が適用されます。",
-  "error.startup_setup": "準備に失敗しました。Stream Deckを手動で終了してから、もう一度お試しください。詳細はログを確認してください。"
+  "error.startup_setup": "準備に失敗しました。Stream Deckを手動で終了してから、もう一度お試しください。詳細はログを確認してください。",
+  "ui.devices": "デバイス一覧",
+  "ui.device_name": "デバイス名",
+  "ui.device_serial": "割り当てシリアル",
+  "ui.device_status": "接続状態",
+  "ui.devices_empty": "N4 Proを接続すると、この一覧に保存されます。",
+  "device.connected": "接続済み",
+  "device.offline": "未接続",
+  "detail.device_mismatch": "別のデバイスが接続されています。登録済みのN4 Proを接続してください。このバージョンは登録済みデバイス1台に対応します。"
 }

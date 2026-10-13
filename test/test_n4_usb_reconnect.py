@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'app/n4'))
 from app.n4 import bridge
 from app.n4.device_controls import DeviceControls
 from app.n4.display import DisplayMirror
+from device_registry import DeviceRegistry
 
 
 def device(path, serial='N4-A'):
@@ -30,7 +31,7 @@ def device(path, serial='N4-A'):
 
 
 class UsbReconnectTests(unittest.TestCase):
-    def attachment(self, directory, devices):
+    def attachment(self, directory, devices, registry=None):
         display = DisplayMirror(bridge.DisconnectedDisplay(), Path(directory), 'frame')
         writes = []
         controls = DeviceControls(None, directory, 'HGMOCK000003', led_writer=writes.append)
@@ -43,7 +44,7 @@ class UsbReconnectTests(unittest.TestCase):
         display.led_writer = led
         events, closed = [], Mock(return_value=True)
         attachment = bridge.UsbAttachment(display, controls, lambda: devices[:], Mock(),
-                                         initialize=True, report=events.append, close=closed)
+                                         initialize=True, report=events.append, close=closed, registry=registry)
         return attachment, display, controls, writes, events, closed
 
     def test_one_missed_observation_preserves_handle_and_restores_pending_display(self):
@@ -153,6 +154,7 @@ class UsbReconnectTests(unittest.TestCase):
             with patch.dict(sys.modules, modules), patch.object(sys, 'argv', ['bridge.py', '--init']), \
                     patch.object(sys, 'platform', 'linux'), patch.dict(bridge.os.environ, {}, clear=True), \
                     patch.object(bridge, 'state_root', Path(directory)), \
+                    patch.object(bridge, 'settings_path', return_value=Path(directory) / 'settings.json'), \
                     patch.object(bridge, 'load_settings', return_value={'identity': 3, 'dockIdentity': 1, 'stripMode': 'frame'}), \
                     patch.object(bridge, 'ScreensaverSource', return_value=None), \
                     patch.object(bridge, 'DeviceControlServer'), patch.object(bridge, 'type', named_type, create=True), \
@@ -174,6 +176,53 @@ class UsbReconnectTests(unittest.TestCase):
             self.assertEqual(events.count('bridgeReady'), 1)
             self.assertEqual([call.args[0] for call in process.stdin.write.call_args_list],
                              ['key 4 down\n', 'key 4 up\n'])
+            self.assertEqual(DeviceRegistry(directory, 3).devices()[0]['virtualSerial'], 'HGMOCK000003')
+            self.assertEqual(start.call_args.args[0][-2:], ['1', '3'])
+
+    def test_registry_identity_is_reported_on_usb_ready_disconnect_and_reconnect(self):
+        with TemporaryDirectory() as directory:
+            registry = DeviceRegistry(directory, 3)
+            first, second = device(b'first'), device(b'second')
+            devices = [first]
+            attachment, _, _, _, events, _ = self.attachment(directory, devices, registry)
+            attachment.poll()
+            first.transport.enumerate_devices.return_value = []
+            attachment.poll()
+            attachment.poll()
+            devices[:] = [second]
+            attachment.poll()
+            row = registry.devices()[0]
+            self.assertEqual([event['event'] for event in events],
+                             ['deviceReady', 'deviceDisconnected', 'deviceReconnected', 'deviceReady'])
+            self.assertTrue(all(event['detail']['deviceId'] == row['id'] for event in events))
+            self.assertTrue(all(event['detail']['virtualSerial'] == 'HGMOCK000003' for event in events))
+            self.assertEqual(len(registry.devices()), 1)
+
+    def test_registry_rejects_different_device_before_open_after_bridge_restart(self):
+        with TemporaryDirectory() as directory:
+            registry = DeviceRegistry(directory, 3)
+            registry.remember(registry.prepare(device(b'first')))
+            other = device(b'other', 'N4-B')
+            restarted = DeviceRegistry(directory, 3)
+            attachment, _, _, _, events, _ = self.attachment(directory, [other], restarted)
+            attachment.poll()
+            other.open.assert_not_called()
+            attachment.configure.assert_not_called()
+            self.assertEqual(events[0]['event'], 'deviceWaiting')
+            self.assertEqual(events[0]['detail']['reason'], 'registered-device-mismatch')
+            self.assertIsNone(attachment.device)
+
+    def test_failed_usb_open_does_not_record_a_previously_connected_device(self):
+        with TemporaryDirectory() as directory:
+            registry = DeviceRegistry(directory, 3)
+            unavailable = device(b'first')
+            unavailable.open.return_value = False
+            attachment, _, _, _, events, closed = self.attachment(directory, [unavailable], registry)
+            attachment.poll()
+            self.assertFalse(registry.path.exists())
+            self.assertEqual(registry.devices(), [])
+            self.assertEqual(events[0]['event'], 'deviceError')
+            closed.assert_called_once()
 
 
 if __name__ == '__main__':

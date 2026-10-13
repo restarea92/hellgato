@@ -14,7 +14,7 @@
   "menu.help": "Справка",
   "menu.preferences": "Параметры…",
   "menu.hide": "Свернуть в трей",
-  "menu.about": "О Hellgato",
+  "menu.about": "О Hellgato Stream Dog",
   "preferences.title": "Параметры",
   "preferences.language_hint": "Язык меняется сразу.",
   "about.description": "Подключение N4 Pro к приложению Stream Deck.",
@@ -83,5 +83,13 @@
   "connection.setup": "Подготовить Stream Deck",
   "detail.startup_setup": "Подготовьте Stream Deck один раз, чтобы при каждом запуске были доступны десять клавиш. Windows может запросить разрешение администратора.",
   "detail.startup_reopen": "Завершите работу Stream Deck через меню в системном трее, затем запустите его вручную, чтобы включить поддержку десяти клавиш.",
-  "error.startup_setup": "Не удалось выполнить подготовку. Закройте Stream Deck вручную и повторите попытку. Подробности смотрите в журнале."
+  "error.startup_setup": "Не удалось выполнить подготовку. Закройте Stream Deck вручную и повторите попытку. Подробности смотрите в журнале.",
+  "ui.devices": "УСТРОЙСТВА",
+  "ui.device_name": "Название",
+  "ui.device_serial": "Серийный номер",
+  "ui.device_status": "Подключение",
+  "ui.devices_empty": "Подключите N4 Pro, чтобы сохранить его здесь.",
+  "device.connected": "Подключено",
+  "device.offline": "Не подключено",
+  "detail.device_mismatch": "Подключено другое устройство. Подключите зарегистрированный N4 Pro; эта версия поддерживает одно зарегистрированное устройство."
 }

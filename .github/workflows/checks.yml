@@ -36,6 +36,8 @@ jobs:
         run: |
           python -m unittest discover -s test -p 'test_*.py'
           if ($LASTEXITCODE) { throw 'Python checks failed' }
+          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File test/test_installer_migration.ps1
+          if ($LASTEXITCODE) { throw 'Installer migration checks failed' }
           ./work/build-runtime/node.exe --test test/*.test.mjs
           if ($LASTEXITCODE) { throw 'CORA checks failed' }
           ./work/build-runtime/node.exe scripts/build-npm.mjs

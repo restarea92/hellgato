@@ -2,10 +2,10 @@
 
 The Node.js network bridge behind [Hellgato](https://github.com/restarea92/hellgato).
 Connect hardware inputs and display output to the official Stream Deck application.
-ESM, Node 24, no npm dependencies. Experimental API in `0.0.1-beta`.
+ESM, Node 24, no npm dependencies. API version `0.1.0`.
 
 ```sh
-npm install @hellgato/core@beta
+npm install @hellgato/core
 ```
 
 ## Example
@@ -70,8 +70,9 @@ This package provides local network transport. It does not include a USB driver,
 the desktop GUI, or Stream Deck process-memory adjustments. Servers bind only to
 `127.0.0.1`; pairing is manual and mDNS is disabled. It has no installation scripts.
 
-The complete Windows application targets Stream Deck 7.5.1 and later, tested
-through 7.6.0.23012 with one Mirabox N4 Pro E running stock firmware
+The Windows client, Hellgato Stream Dog, targets Stream Deck 7.5.1 and later. Startup,
+USB reconnection and manual Stream Deck relaunch were verified on 7.6.0.23012
+with one Mirabox N4 Pro E running stock firmware
 `V4.N4 Pro E.02.010`. See the [tested software versions](../../README.md#stream-deck-compatibility)
 and [device firmware](../../README.md#supported-devices) for the validated scope.
 N4 Pro ten-key support also needs the desktop application's

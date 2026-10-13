@@ -14,7 +14,7 @@
   "menu.help": "說明",
   "menu.preferences": "偏好設定…",
   "menu.hide": "最小化至系統匣",
-  "menu.about": "關於 Hellgato",
+  "menu.about": "關於 Hellgato Stream Dog",
   "preferences.title": "偏好設定",
   "preferences.language_hint": "語言變更會立即套用。",
   "about.description": "將 N4 Pro 連接至 Stream Deck 應用程式。",
@@ -83,5 +83,13 @@
   "connection.setup": "準備 Stream Deck",
   "detail.startup_setup": "只需準備一次，即可在每次啟動 Stream Deck 時啟用十個按鍵。Windows 可能會要求系統管理員權限。",
   "detail.startup_reopen": "請從系統匣選單結束 Stream Deck，再手動重新開啟，以啟用十鍵支援。",
-  "error.startup_setup": "準備失敗。請手動結束 Stream Deck 後重試。詳細資訊請查看記錄。"
+  "error.startup_setup": "準備失敗。請手動結束 Stream Deck 後重試。詳細資訊請查看記錄。",
+  "ui.devices": "裝置清單",
+  "ui.device_name": "裝置名稱",
+  "ui.device_serial": "指派的序號",
+  "ui.device_status": "連線狀態",
+  "ui.devices_empty": "連接 N4 Pro 後會將其儲存在此清單中。",
+  "device.connected": "已連線",
+  "device.offline": "未連線",
+  "detail.device_mismatch": "已連接其他裝置。請重新連接已登記的 N4 Pro；目前版本支援一台已登記裝置。"
 }

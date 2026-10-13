@@ -86,6 +86,8 @@ class LauncherView:
         self.version, self.change_language = version, change_language
         self._labels = []
         self._last_connection = None
+        self._last_devices = None
+        self._devices = []
         self._transfer_busy = False
         self._transfer = None
         self._closing = False
@@ -102,8 +104,8 @@ class LauncherView:
                       'menu.settings': ('menu.preferences',),
                       'menu.help': ('ui.logs', 'menu.about')}
         self.shortcuts = {'ui.export': 'Ctrl+E', 'ui.import': 'Ctrl+I'}
-        window.title('Hellgato · N4 Pro')
-        window.iconbitmap(default=str(root / 'app/assets/icons/hellgato-front.ico'))
+        window.title('Hellgato Stream Dog')
+        window.iconbitmap(default=str(root / 'app/assets/icons/stream-dog.ico'))
         window.configure(bg=BACKGROUND)
         window.geometry('740x600')
         window.minsize(740, 600)
@@ -119,6 +121,16 @@ class LauncherView:
         style.map('Hellgato.TCombobox', fieldbackground=[('readonly', SURFACE)],
                   foreground=[('readonly', TEXT)], selectbackground=[('readonly', SURFACE)],
                   selectforeground=[('readonly', TEXT)])
+        style.configure('Devices.Treeview', background=SURFACE, fieldbackground=SURFACE,
+                        foreground=TEXT, borderwidth=0, bordercolor=SURFACE,
+                        lightcolor=SURFACE, darkcolor=SURFACE, rowheight=30, font=FONT)
+        style.configure('Devices.Treeview.Heading', background=SURFACE, foreground=MUTED,
+                        relief='flat', font=('Segoe UI', 9))
+        style.map('Devices.Treeview', background=[('selected', BORDER)],
+                  foreground=[('selected', TEXT)])
+        style.configure('Devices.Vertical.TScrollbar', background=BORDER,
+                        troughcolor=SURFACE, bordercolor=SURFACE, arrowcolor=MUTED,
+                        lightcolor=BORDER, darkcolor=BORDER)
         window.option_add('*TCombobox*Listbox.background', SURFACE)
         window.option_add('*TCombobox*Listbox.foreground', TEXT)
         window.option_add('*TCombobox*Listbox.selectBackground', BORDER)
@@ -155,29 +167,41 @@ class LauncherView:
         content.pack(fill='both', expand=True, padx=28, pady=24)
         header = tk.Frame(content, bg=BACKGROUND)
         header.pack(fill='x', pady=(0, 24))
-        self.logo = tk.PhotoImage(file=str(root / 'app/assets/icons/hellgato-64.png'))
+        self.logo = tk.PhotoImage(file=str(root / 'app/assets/icons/stream-dog-64.png'))
         tk.Label(header, image=self.logo, bg=BACKGROUND).pack(side='left', padx=(0, 14))
         brand = tk.Frame(header, bg=BACKGROUND)
         brand.pack(side='left')
-        tk.Label(brand, text='HELLGATO', font=('Segoe UI', 24, 'bold'),
+        tk.Label(brand, text='Hellgato Stream Dog', font=('Segoe UI', 22, 'bold'),
                  bg=BACKGROUND, fg=ACCENT).pack(anchor='w')
         subtitle = tk.Label(brand, bg=BACKGROUND, fg=MUTED)
         subtitle.pack(anchor='w')
         self._labels.append((subtitle, 'app.subtitle'))
-        tk.Label(header, text=f'BETA  {version.removesuffix("-beta")}', bg='#203341',
+        tk.Label(header, text=version, bg='#203341',
                  fg=ACCENT, font=('Segoe UI', 9), padx=10, pady=5).pack(side='right', anchor='n', pady=5)
         device = Card(content)
         device.pack(fill='x')
         top = tk.Frame(device.body, bg=SURFACE)
         top.pack(fill='x')
-        for key, side in (('ui.device', 'left'), ('ui.hardware', 'right')):
+        for key, side in (('ui.devices', 'left'), ('ui.hardware', 'right')):
             label = tk.Label(top, fg=MUTED, bg=SURFACE, font=('Segoe UI', 9))
             label.pack(side=side)
             self._labels.append((label, key))
-        tk.Label(device.body, text='Mirabox N4 Pro', fg=TEXT, bg=SURFACE,
-                 font=('Segoe UI', 20, 'bold')).pack(anchor='w', pady=(8, 0))
-        tk.Label(device.body, text=serial, fg=MUTED, bg=SURFACE,
-                 font=('Consolas', 10)).pack(anchor='w', pady=(2, 18))
+        table = tk.Frame(device.body, bg=SURFACE)
+        table.pack(fill='x', pady=(10, 14))
+        self.device_list = ttk.Treeview(table, columns=('name', 'serial', 'status'),
+                                       show='headings', height=3, style='Devices.Treeview',
+                                       selectmode='browse')
+        self.device_list.column('name', width=240, minwidth=180)
+        self.device_list.column('serial', width=180, minwidth=150)
+        self.device_list.column('status', width=160, minwidth=120)
+        scroll = ttk.Scrollbar(table, orient='vertical', command=self.device_list.yview,
+                               style='Devices.Vertical.TScrollbar')
+        self.device_list.configure(yscrollcommand=scroll.set)
+        scroll.pack(side='right', fill='y')
+        self.device_list.pack(side='left', fill='x', expand=True)
+        self.empty_devices = tk.Label(self.device_list, bg=SURFACE, fg=MUTED,
+                                      font=('Segoe UI', 9), wraplength=540)
+        self._labels.append((self.empty_devices, 'ui.devices_empty'))
         tk.Frame(device.body, height=1, bg=BORDER).pack(fill='x', pady=(0, 17))
         connection = tk.Frame(device.body, bg=SURFACE)
         connection.pack(fill='x')
@@ -316,7 +340,7 @@ class LauncherView:
         body = self._open_dialog('menu.about')
         if body is None:
             return
-        tk.Label(body, text='Hellgato', bg=BACKGROUND, fg=ACCENT, font=('Segoe UI', 20, 'bold')).pack(anchor='w')
+        tk.Label(body, text='Hellgato Stream Dog', bg=BACKGROUND, fg=ACCENT, font=('Segoe UI', 20, 'bold')).pack(anchor='w')
         tk.Label(body, text=self.version, bg=BACKGROUND, fg=TEXT).pack(anchor='w', pady=(4, 16))
         for key in ('about.description', 'about.license', 'ui.tray_hint'):
             self._dialog_label(body, key).pack(fill='x', pady=(0, 12))
@@ -358,6 +382,34 @@ class LauncherView:
             for button in self.menu_buttons.values():
                 button.configure(state='disabled')
 
+    def render_devices(self, devices):
+        """Update remembered rows in place so selection and scroll position survive."""
+        self._devices = devices
+        rows = [(item['id'], item['name'], item['virtualSerial'],
+                 'device.connected' if item.get('connected') else 'device.offline')
+                for item in devices]
+        snapshot = (rows, self.translator.language)
+        if snapshot == self._last_devices:
+            return
+        self._last_devices = snapshot
+        for column in ('name', 'serial', 'status'):
+            self.device_list.heading(column, text=self.translator.text(f'ui.device_{column}'), anchor='w')
+        remaining = set(self.device_list.get_children())
+        for index, (device_id, name, serial, status) in enumerate(rows):
+            values = (name, serial, self.translator.text(status))
+            if device_id in remaining:
+                self.device_list.item(device_id, values=values)
+                remaining.remove(device_id)
+            else:
+                self.device_list.insert('', 'end', iid=device_id, values=values)
+            self.device_list.move(device_id, '', index)
+        for device_id in remaining:
+            self.device_list.delete(device_id)
+        if rows:
+            self.empty_devices.place_forget()
+        else:
+            self.empty_devices.place(relx=.5, rely=.62, anchor='center')
+
     def render_transfer(self, message, busy=False, failed=False):
         self._transfer = (message, busy, failed)
         self.notice.pack(fill='x', pady=(16, 0))
@@ -387,5 +439,6 @@ class LauncherView:
             if self._dialog_title == 'preferences.title':
                 self.language_choice.set(LANGUAGES[self.translator.language])
         self._last_connection = None
+        self.render_devices(self._devices)
         if self._transfer:
             self.render_transfer(*self._transfer)

@@ -73,7 +73,7 @@
   "menu.help": "Ajuda",
   "menu.preferences": "Preferências…",
   "menu.hide": "Minimizar para a bandeja",
-  "menu.about": "Sobre o Hellgato",
+  "menu.about": "Sobre o Hellgato Stream Dog",
   "preferences.title": "Preferências",
   "preferences.language_hint": "As alterações de idioma são aplicadas imediatamente.",
   "about.description": "Conecte o N4 Pro ao aplicativo Stream Deck.",
@@ -83,5 +83,13 @@
   "connection.setup": "Preparar o Stream Deck",
   "detail.startup_setup": "Prepare o Stream Deck uma vez para habilitar dez teclas a cada inicialização. O Windows pode solicitar permissão de administrador.",
   "detail.startup_reopen": "Feche o Stream Deck pelo menu da bandeja do sistema e abra-o novamente manualmente para ativar o suporte a dez teclas.",
-  "error.startup_setup": "Falha na preparação. Feche o Stream Deck manualmente e tente novamente. Consulte o log para obter detalhes."
+  "error.startup_setup": "Falha na preparação. Feche o Stream Deck manualmente e tente novamente. Consulte o log para obter detalhes.",
+  "ui.devices": "DISPOSITIVOS",
+  "ui.device_name": "Nome",
+  "ui.device_serial": "Serial atribuído",
+  "ui.device_status": "Conexão",
+  "ui.devices_empty": "Conecte um N4 Pro para salvá-lo aqui.",
+  "device.connected": "Conectado",
+  "device.offline": "Desconectado",
+  "detail.device_mismatch": "Outro dispositivo está conectado. Reconecte o N4 Pro registrado; esta versão aceita um dispositivo registrado."
 }

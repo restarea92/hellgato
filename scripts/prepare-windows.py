@@ -1,4 +1,4 @@
-"""Fetch pinned runtime inputs for the Windows beta build."""
+"""Fetch pinned runtime inputs for the Windows build."""
 
 import hashlib
 import json

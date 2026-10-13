@@ -16,11 +16,12 @@ import time
 from mapping import input_commands, enum_value
 from display import DisplayMirror, DISPLAY_EVENTS
 from touch import TouchGesture
-from settings import load_settings
+from settings import load_settings, settings_path
 from screensaver import ScreensaverSource
 from shutdown import close_device, install_interruptible_heartbeat
 from device_controls import DeviceControls
 from device_control_server import DeviceControlServer
+from device_registry import DeviceIdentityConflict, DeviceRegistry
 
 
 root = Path(__file__).resolve().parents[2]
@@ -51,7 +52,7 @@ class DisconnectedDisplay:
 
 class UsbAttachment:
     def __init__(self, display, controls, discover, configure, *, initialize=False,
-                 report=print, close=None):
+                 report=print, close=None, registry=None):
         self.display = display
         self.controls = controls
         self.discover = discover
@@ -67,6 +68,13 @@ class UsbAttachment:
         self.path = None
         self.retired = None
         self.waiting_reason = None
+        self.registry = registry
+        self.record = None
+
+    def identity_detail(self):
+        if self.record is None:
+            return {}
+        return {'deviceId': self.record['id'], 'virtualSerial': self.record['virtualSerial']}
 
     def _waiting(self, reason, **detail):
         if reason != self.waiting_reason:
@@ -118,7 +126,8 @@ class UsbAttachment:
                     return
                 self.detach(notify=False)
                 self.report({'event': 'deviceDisconnected', 'detail': {
-                    'reason': 'usb-absent', 'serial': self.serial, 'observations': self.missing}})
+                    'reason': 'usb-absent', 'serial': self.serial, 'observations': self.missing,
+                    **self.identity_detail()}})
                 return
             devices = self.discover()
             if len(devices) != 1:
@@ -126,6 +135,13 @@ class UsbAttachment:
                 return
             device = devices[0]
             serial = device.serial_number or ''
+            try:
+                record = self.registry.prepare(device) if self.registry is not None else None
+            except DeviceIdentityConflict as error:
+                self._waiting('registered-device-mismatch', serial=serial,
+                              expectedDeviceId=error.expected['id'],
+                              virtualSerial=error.expected['virtualSerial'])
+                return
             if self.path is not None and (serial != self.serial if self.serial else device.path != self.path):
                 self._waiting('different-device', serial=serial)
                 return
@@ -138,6 +154,8 @@ class UsbAttachment:
                 if self.initialize:
                     device.init()
                 self._restore()
+                if self.registry is not None:
+                    self.record = self.registry.remember(record)
             except Exception:
                 self.detach(notify=False)
                 raise
@@ -147,8 +165,8 @@ class UsbAttachment:
             self.waiting_reason = None
             if reconnected:
                 self.report({'event': 'deviceReconnected', 'detail': {
-                    'reason': 'usb-returned', 'serial': serial}})
-            self.report({'event': 'deviceReady', 'detail': {'serial': serial}})
+                    'reason': 'usb-returned', 'serial': serial, **self.identity_detail()}})
+            self.report({'event': 'deviceReady', 'detail': {'serial': serial, **self.identity_detail()}})
         except (OSError, ValueError, RuntimeError) as error:
             self.report({'event': 'deviceError', 'detail': {'operation': 'usb-presence', 'error': str(error)}})
 
@@ -177,6 +195,7 @@ def main():
         parser.error('Mirabox SDK is missing from work/references/mirabox')
     try:
         settings = load_settings(identity=args.identity, dock_identity=args.dock_identity)
+        registry = DeviceRegistry(settings_path().parent, settings['identity'], settings['dockIdentity'])
     except (OSError, ValueError) as error:
         parser.error(str(error))
     args.identity = settings['identity']
@@ -330,7 +349,7 @@ def main():
         attachment = UsbAttachment(display, controls,
             lambda: [device for device in DeviceManager().enumerate()
                      if type(device).__name__ == 'StreamDockN4Pro'],
-            configure_device, initialize=args.init, report=shutdown_report)
+            configure_device, initialize=args.init, report=shutdown_report, registry=registry)
         print(json.dumps({'event': 'bridgeReady'}), flush=True)
         ready_file = os.environ.get('HELLGATO_READY_FILE')
         if ready_file:

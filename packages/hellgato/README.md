@@ -4,10 +4,10 @@
 
 The Node.js network bridge behind [Hellgato](https://github.com/restarea92/hellgato).
 This package re-exports `@hellgato/core`; both use the same implementation.
-ESM, Node 24. Experimental API in `0.0.1-beta`.
+ESM, Node 24. API version `0.1.0`.
 
 ```sh
-npm install hellgato@beta
+npm install hellgato
 ```
 
 ```js
@@ -23,7 +23,7 @@ See the [core API and input examples](https://github.com/restarea92/hellgato/tre
 Your hardware adapter handles USB and renders received images.
 
 This is a developer library, not the Windows installer. For the ready-to-use N4 Pro
-application, [download Hellgato for Windows](https://github.com/restarea92/hellgato/releases).
+application, [download Hellgato Stream Dog for Windows](https://github.com/restarea92/hellgato/releases).
 The library does not include the desktop application's Stream Deck compatibility
 or ten-key geometry adjustments. Other devices and operating systems are unvalidated.
 

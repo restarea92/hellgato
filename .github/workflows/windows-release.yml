@@ -1,16 +1,16 @@
-name: Windows beta release
+name: Windows release
 
 on:
   push:
     branches: [main]
-    paths: ['docs/releases/*.md']
+    paths: ['docs/releases/0.1.0.md']
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: windows-beta-release
+  group: windows-release
   cancel-in-progress: false
 
 jobs:
@@ -42,13 +42,15 @@ jobs:
         run: |
           python -m unittest discover -s test -p 'test_*.py'
           if ($LASTEXITCODE) { throw 'Python checks failed' }
+          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File test/test_installer_migration.ps1
+          if ($LASTEXITCODE) { throw 'Installer migration checks failed' }
           ./scripts/build-windows.ps1 -Iscc (Join-Path $env:RUNNER_TEMP 'InnoSetup/ISCC.exe')
           if ($LASTEXITCODE) { throw 'Windows build failed' }
           ./work/build-runtime/node.exe --test test/*.test.mjs
           if ($LASTEXITCODE) { throw 'CORA checks failed' }
-      - name: Publish beta prerelease
+      - name: Publish stable release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.0.7-beta dist/Hellgato-0.0.7-beta-Setup.exe dist/Hellgato-0.0.7-beta-Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title 'Hellgato 0.0.7 beta' --notes-file docs/releases/0.0.7-beta.md
+          gh release create v0.1.0 dist/Hellgato-0.1.0-Setup.exe dist/Hellgato-0.1.0-Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --latest --title 'Hellgato Stream Dog 0.1.0' --notes-file docs/releases/0.1.0.md
           if ($LASTEXITCODE) { throw 'Release publishing failed; an existing release is never overwritten automatically' }

@@ -1,4 +1,4 @@
-"""Windows launcher for the N4 Pro beta bridge."""
+"""Hellgato Stream Dog desktop client."""
 
 import ctypes
 import json
@@ -15,7 +15,7 @@ import time
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 STATE = Path(os.environ.get('HELLGATO_STATE_DIR', Path(os.environ['LOCALAPPDATA']) / 'Hellgato'))
-VERSION = '0.0.7-beta'
+VERSION = '0.1.0'
 os.environ['HELLGATO_STATE_DIR'] = str(STATE)
 sys.path.insert(0, str(ROOT / 'app/n4'))
 from compatibility import INCOMPATIBLE
@@ -88,6 +88,7 @@ class Session:
         self.connected = threading.Event()
         self.listening = threading.Event()
         self.device_ready = threading.Event()
+        self.active_device_id = None
         self.bridge_ready = threading.Event()
         self.phase = 'idle'
         self.detail = Message('detail.idle')
@@ -119,6 +120,7 @@ class Session:
         self.stop.clear()
         self.connected.clear()
         self.device_ready.clear()
+        self.active_device_id = None
         self.bridge_ready.clear()
         self.listening.clear()
         self.status('detail.checking', 'checking')
@@ -136,6 +138,7 @@ class Session:
             if event.get('event') == 'bridgeReady':
                 self.bridge_ready.set()
             elif event.get('event') in ('deviceReady', 'deviceReconnected'):
+                self.active_device_id = event.get('detail', {}).get('deviceId')
                 self.device_ready.set()
                 if self.connected.is_set():
                     self.status('detail.connected', 'connected')
@@ -143,7 +146,13 @@ class Session:
                     self.status('detail.pairing', 'pairing')
             elif event.get('event') == 'deviceDisconnected':
                 self.device_ready.clear()
+                self.active_device_id = None
                 self.status('detail.disconnected', 'waiting')
+            elif (event.get('event') == 'deviceWaiting' and
+                  event.get('detail', {}).get('reason') == 'registered-device-mismatch'):
+                self.device_ready.clear()
+                self.active_device_id = None
+                self.status('detail.device_mismatch', 'waiting')
             elif event.get('event') == 'started':
                 self.listening.set()
             elif event.get('event') == 'child.clientConnected':
@@ -298,6 +307,7 @@ def main():
     from tkinter import messagebox, filedialog
     from profile_transfer import ProfileError, export_profiles, read_profiles, install_profiles
     from settings import load_settings
+    from device_registry import DeviceRegistry
     import pystray
     from PIL import Image
     STATE.mkdir(parents=True, exist_ok=True)
@@ -346,8 +356,21 @@ def main():
     transfer_busy = False
     tray_ready = threading.Event()
     profiles_root = Path(os.environ['APPDATA']) / 'Elgato/StreamDeck/ProfilesV3'
+    device_rows = []
+    registry_stamp = None
 
     def refresh():
+        nonlocal device_rows, registry_stamp
+        try:
+            registry_path = STATE / 'devices.json'
+            stamp = registry_path.stat().st_mtime_ns if registry_path.exists() else 0
+            if stamp != registry_stamp:
+                registry_stamp = stamp
+                device_rows = DeviceRegistry(STATE, settings['identity'], settings['dockIdentity']).devices()
+        except (OSError, ValueError):
+            logging.exception('Cannot read remembered devices')
+        active_id = session.active_device_id if session.device_ready.is_set() and session.running else None
+        view.render_devices([{**item, 'connected': item['id'] == active_id} for item in device_rows])
         view.render_connection(session.phase, session.detail, session.running,
                                session.stop.is_set(), transfer_busy, lifecycle.closing)
 
@@ -469,8 +492,8 @@ def main():
             logging.exception('Tray unavailable')
             callbacks.put(lambda: messagebox.showerror('Hellgato', translator.text('error.tray'), parent=window))
 
-    tray = pystray.Icon('Hellgato.N4Pro', Image.open(ROOT / 'app/assets/icons/hellgato-front-64.png'),
-                        'Hellgato · N4 Pro', menu=pystray.Menu(
+    tray = pystray.Icon('Hellgato.N4Pro', Image.open(ROOT / 'app/assets/icons/stream-dog-64.png'),
+                        'Hellgato Stream Dog', menu=pystray.Menu(
                             pystray.MenuItem(lambda item: translator.text('tray.open'), lambda: callbacks.put(show), default=True),
                             pystray.Menu.SEPARATOR,
                             pystray.MenuItem(lambda item: translator.text('tray.exit'), lambda: callbacks.put(close))))
