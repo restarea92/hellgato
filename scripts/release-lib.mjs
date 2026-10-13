@@ -21,6 +21,38 @@ export function pnpm(root, args, { capture = false } = {}) {
   const command = process.env.HELLGATO_PNPM || (process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm');
   return execFileSync(command, args, { cwd: root, encoding: 'utf8', stdio: capture ? 'pipe' : ['ignore', 'inherit', 'inherit'], shell: process.platform === 'win32', env: { ...process.env, CI: 'true' }, maxBuffer: 64 * 1024 * 1024 });
 }
+// Keep structural validation dependency-free. Deliberately accept only this
+// repository's small YAML subset; aliases, inline lists, duplicate keys, escaped
+// strings, and additional settings must be reviewed with a parser policy change.
+export function parseWorkspacePackages(source) {
+  const members = [];
+  let packagesSeen = false;
+  let buildsSeen = false;
+  let inPackages = false;
+  for (const [index, line] of source.replace(/^\uFEFF/, '').split(/\r?\n/).entries()) {
+    if (/^ *(?:#.*)?$/.test(line)) continue;
+    if (/^packages: *(?:#.*)?$/.test(line)) {
+      invariant(!packagesSeen, 'Unsupported workspace YAML: duplicate packages key');
+      packagesSeen = true;
+      inPackages = true;
+      continue;
+    }
+    if (/^allowBuilds: *\{\} *(?:#.*)?$/.test(line)) {
+      invariant(!buildsSeen, 'Unsupported workspace YAML: duplicate allowBuilds key');
+      buildsSeen = true;
+      inPackages = false;
+      continue;
+    }
+    // Match comments only after an entire scalar. A # inside quotes is never
+    // mistaken for a comment, and unsupported YAML never disappears silently.
+    const member = /^  - +(?:([A-Za-z0-9_.\/-]+)|"([A-Za-z0-9_.\/-]+)"|'([A-Za-z0-9_.\/-]+)')(?: +#.*)? *$/.exec(line);
+    invariant(inPackages && member, `Unsupported workspace YAML at line ${index + 1}; use the explicit packages block list and allowBuilds: {}`);
+    members.push(member[1] ?? member[2] ?? member[3]);
+  }
+  invariant(packagesSeen && buildsSeen, 'Unsupported workspace YAML: packages and allowBuilds: {} are required');
+  invariant(new Set(members).size === members.length, 'Unsupported workspace YAML: duplicate member');
+  return members.sort();
+}
 export async function configuration(root) {
   const config = await readJson(resolve(root, '.release/components.json'));
   invariant(config.schemaVersion === 1 && config.repository === 'restarea92/hellgato', 'Unsupported component configuration');
@@ -31,7 +63,7 @@ export async function configuration(root) {
   const entries = await readdir(resolve(root, 'packages'), { withFileTypes: true });
   for (const entry of entries) if (entry.isDirectory() && existsSync(resolve(root, 'packages', entry.name, 'package.json'))) invariant(expected.has(`packages/${entry.name}`), `Unclassified workspace: packages/${entry.name}`);
   const workspace = await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8');
-  const members = [...workspace.matchAll(/^\s+-\s+['"]?([^\s'"]+)['"]?\s*$/gm)].map(m => m[1]).sort();
+  const members = parseWorkspacePackages(workspace);
   invariant(JSON.stringify(members) === JSON.stringify([...expected.keys()].sort()), 'Workspace membership differs from the release allowlist');
   const rootPackage = await readJson(resolve(root, 'package.json'));
   invariant(rootPackage.name === 'hellgato-workspace' && rootPackage.private === true && rootPackage.workspaces === undefined && rootPackage.packageManager === 'pnpm@11.10.0' && rootPackage.devDependencies?.['@changesets/cli'] === '3.0.3', 'Release toolchain pins or private root changed');

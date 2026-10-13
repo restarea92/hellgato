@@ -20,6 +20,7 @@
     "app/release.json",
     "docs/guide.md",
     "docs/release-setup.md",
+    "docs/release-validation.md",
     "docs/windows-releases.md",
     "installer/THIRD-PARTY-NOTICES.txt",
     "installer/hellgato.iss",

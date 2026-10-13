@@ -4,7 +4,7 @@ import { mkdtemp, rm, cp, mkdir, writeFile, readFile, symlink } from 'node:fs/pr
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { ROOT, git, json, put, readJson, parseChangeset, pendingChangesets } from '../scripts/release-lib.mjs';
+import { ROOT, git, json, put, readJson, parseChangeset, pendingChangesets, parseWorkspacePackages } from '../scripts/release-lib.mjs';
 import { generateReleasePlan, validateReleasePlan } from '../scripts/release-version.mjs';
 import { syncReleaseMetadata } from '../scripts/sync-release-metadata.mjs';
 import { checkReleaseImpact } from '../scripts/check-release-impact.mjs';
@@ -214,4 +214,29 @@ test('fixtures stay isolated from future source versions and real pending change
   await syncReleaseMetadata({ root, check: true });
   assert.equal((await readJson(resolve(root, 'app/release.json'))).version, '0.1.2');
   assert.equal(await readFile(resolve(root, 'docs/releases/0.1.2.md'), 'utf8'), await readFile(resolve(sourceRoot, 'docs/releases/0.1.2.md'), 'utf8'));
+});
+
+test('workspace parser accepts exact quoted members and comments without ignoring values', () => {
+  assert.deepEqual(parseWorkspacePackages('packages: # explicit workspace members\n  - "packages/core" # public core\n  - \'packages/hellgato\' # facade\n  - packages/windows-release # private metadata\nallowBuilds: {} # no lifecycle scripts\n'), ['packages/core', 'packages/hellgato', 'packages/windows-release']);
+});
+
+test('workspace additions with comments, quotes, or inline YAML fail closed', async t => {
+  const root = await fixture(t);
+  const base = git(root, 'rev-parse', 'HEAD').trim();
+  const baseline = await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8');
+  for (const extra of ['  - docs/unclassified # new public workspace', '  - "docs/unclassified" # new public workspace', "  - 'docs/unclassified' # new public workspace"]) {
+    await put(root, 'pnpm-workspace.yaml', baseline.replace('packages:\n', `packages:\n${extra}\n`));
+    await assert.rejects(checkReleaseImpact({ root, base, workingTree: true }), /Workspace membership differs/);
+  }
+  for (const unsupported of [
+    'packages: [packages/core, packages/hellgato, packages/windows-release, docs/unclassified]\nallowBuilds: {}\n',
+    baseline.replace('packages:', 'packages: &members'),
+    baseline + '\npackages: [docs/unclassified]\n',
+    baseline.replace('packages/core', '"packages/core # not a comment"'),
+    baseline + '\n<<: *extraWorkspaces\n',
+    baseline + '\n---\npackages: [docs/unclassified]\n',
+  ]) {
+    await put(root, 'pnpm-workspace.yaml', unsupported);
+    await assert.rejects(checkReleaseImpact({ root, base, workingTree: true }), /Unsupported workspace YAML/);
+  }
 });
