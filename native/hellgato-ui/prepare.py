@@ -3,6 +3,7 @@
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import urllib.request
 
@@ -28,7 +29,11 @@ def main():
         raise RuntimeError('Qt development archive differs from the pinned official package')
     kit = folder / '6.5.3/msvc2019_64'
     if not (kit / 'include/QtWidgets/QApplication').is_file():
-        subprocess.run(['tar', '-xf', str(archive), '-C', str(folder)], check=True)
+        seven_zip = shutil.which('7z')
+        if seven_zip:
+            subprocess.run([seven_zip, 'x', '-y', f'-o{folder}', str(archive)], check=True)
+        else:
+            subprocess.run(['tar', '-xf', str(archive), '-C', str(folder)], check=True)
     (folder / 'provenance.json').write_text(json.dumps({'qtVersion': '6.5.3', 'url': URL, 'sha256': SHA256}, indent=2), encoding='utf-8')
     print(kit)
 
