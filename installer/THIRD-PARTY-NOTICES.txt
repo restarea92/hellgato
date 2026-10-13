@@ -41,4 +41,7 @@ PyInstaller builds the executable under its bootloader distribution exception.
 https://pyinstaller.org/en/v6.16.0/license.html
 
 The Stream Deck application and third-party Stream Deck plugins are not bundled.
+The native preferences extension uses the public Qt 6 APIs supplied by Stream Deck.
+It is built against Qt 6.5.3; no Qt runtime libraries or plugins are redistributed.
+Qt licensing and source: https://www.qt.io/licensing/
 Hellgato is independent of Elgato and Mirabox.

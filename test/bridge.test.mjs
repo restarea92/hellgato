@@ -191,6 +191,25 @@ test('failed startup frees its child port and permits retry', async () => {
   await bridge.stop();
 });
 
+test('stopping the bridge closes active primary and child sockets promptly', { timeout: 2000 }, async () => {
+  const bridge = await createBridge({ port: 0, childPort: 0 });
+  await bridge.start();
+  const sockets = [connect(bridge.ports.primary, '127.0.0.1'), connect(bridge.ports.child, '127.0.0.1')];
+  try {
+    await Promise.all(sockets.map(socket => once(socket, 'connect')));
+    for (const socket of sockets) socket.resume();
+    const closed = sockets.map(socket => once(socket, 'close'));
+    const started = performance.now();
+    await bridge.stop();
+    await Promise.all(closed);
+    assert.ok(performance.now() - started < 500);
+    assert.deepEqual(bridge.ports, { primary: null, child: null });
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await bridge.stop();
+  }
+});
+
 test('public input validation rejects invalid geometry, ports, keys, and gestures', async () => {
   await assert.rejects(createBridge({ port: -1 }), RangeError);
   await assert.rejects(createBridge({ geometry: { keyCount: 11 } }), RangeError);

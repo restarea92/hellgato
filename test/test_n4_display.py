@@ -7,6 +7,7 @@ from unittest.mock import Mock
 from PIL import Image
 
 from app.n4.display import DisplayMirror
+from app.n4.device_controls import DeviceControls
 
 
 class SavedScreensaver:
@@ -32,6 +33,25 @@ def saved_animation(root):
 
 
 class DisplayTests(unittest.TestCase):
+    def test_independent_knob_brightness_follows_sleep_and_wake_without_changing_lcd(self):
+        with tempfile.TemporaryDirectory() as directory:
+            now = [0]
+            device = Mock()
+            writes = []
+            controls = DeviceControls(device, directory, 'HGMOCK000003', led_writer=writes.append)
+            mirror = DisplayMirror(device, Path(directory), 'frame', clock=lambda: now[0],
+                                   led_writer=lambda level, normal, asleep: controls.apply_led_level(
+                                       level, normal, sleeping=asleep))
+            mirror.apply({'event': 'brightness', 'detail': {'level': 20}})
+            controls.set_knob_brightness(65)
+            mirror.apply({'event': 'brightness', 'detail': {'level': 0}})
+            self.assertEqual(writes[-1], 0)
+            mirror.notify_input()
+            now[0] = .4
+            mirror.tick()
+            self.assertEqual(writes[-1], 65)
+            self.assertEqual(device.set_brightness.call_args.args, (20,))
+
     def test_brightness_validates_and_applies_percent(self):
         device = Mock()
         mirror = DisplayMirror(device, Path('.'))

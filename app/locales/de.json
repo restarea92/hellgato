@@ -40,7 +40,7 @@
   "transfer.failed": "Profile konnten nicht übertragen werden. {reason}",
   "error.runtime": "Überprüfe die Geräteverbindung und Berechtigungen, und versuche es erneut. Details findest du in den Protokollen.",
   "error.incompatible": "Diese Stream Deck-Version ist nicht mit Hellgato kompatibel.",
-  "error.startup": "Stream Deck konnte nicht gestartet werden. Überprüfe die Installation und Berechtigungen.",
+  "error.startup": "Das laufende Stream Deck konnte nicht vorbereitet werden. Prüfen Sie die Installation und Berechtigungen.",
   "error.device": "Das Gerät konnte nicht gestartet werden. Schließe nur ein N4 Pro an und prüfe die Protokolle.",
   "error.settings": "Geräteeinstellungen konnten nicht geladen werden. Überprüfe settings.json im Protokollordner.",
   "error.language": "Die Sprache konnte nicht gespeichert werden. Überprüfe die Ordnerberechtigungen.",
@@ -77,5 +77,7 @@
   "preferences.title": "Einstellungen",
   "preferences.language_hint": "Sprachänderungen werden sofort übernommen.",
   "about.description": "Verbinde dein N4 Pro mit der Stream Deck-Anwendung.",
-  "about.license": "Open-Source-Software · MIT-Lizenz"
+  "about.license": "Open-Source-Software · MIT-Lizenz",
+  "detail.host_waiting": "Öffnen Sie Stream Deck, wenn Sie bereit sind. Hellgato wartet, ohne es zu starten.",
+  "error.app_running": "Schließen Sie Stream Deck selbst, bevor Sie Profile importieren."
 }

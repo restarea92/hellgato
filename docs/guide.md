@@ -4,13 +4,15 @@
 
 ## Everyday use
 
-- **Connection:** the control changes between Connect, Cancel and Disconnect to match the current state. USB reconnects are handled automatically.
-- **File menu:** export this device's profiles into one `.hellgatoProfiles` bundle (`Ctrl+E`), or import a bundle or several `.streamDeckProfile` files (`Ctrl+I`). Imports back up replaced profiles and stop Stream Deck while applying them. An active Hellgato session resumes afterward.
+- **Connection:** open Stream Deck normally. Hellgato watches for the running app and one N4 Pro, then prepares the connection when both are available. It does not start, restart or stop Stream Deck. USB reconnects and a later manual Stream Deck launch are detected automatically. Complete Stream Deck's pairing confirmation when prompted. The control changes between Connect, Cancel and Disconnect to match the current state.
+- **File menu:** export this device's profiles into one `.hellgatoProfiles` bundle (`Ctrl+E`), or import a bundle or several `.streamDeckProfile` files (`Ctrl+I`). Close Stream Deck yourself before importing. Imports back up replaced profiles; Hellgato resumes watching afterward. Open Stream Deck again when the import has finished.
 - **Tray:** closing the window keeps Hellgato running. Choose Open or Exit from its tray menu.
-- **Startup:** the installer offers Windows sign-in startup, enabled by default.
+- **Startup:** the installer offers Hellgato startup at Windows sign-in, enabled by default. Stream Deck keeps its own startup setting.
 - **Settings → Preferences:** choose the interface language. Changes apply immediately and persist across restarts. First launch uses the Windows display language, with English as fallback.
 
 The main window shows the device and connection status. Profile tasks display a separate progress or result notification that can be dismissed when complete. Menus support keyboard navigation with `Alt+F`, `Alt+S` and `Alt+H`, arrow keys, Enter and Escape. The title bar uses dark Windows styling where supported.
+
+Select the virtual N4 Pro in Stream Deck's device preferences to find **Knob brightness** below its standard brightness control. It uses the same control appearance and interaction as display brightness. Dragging updates the knobs immediately; the final independent value is saved per virtual device when the adjustment finishes. Sleep and wake still dim and restore the knobs with the display transition. The control appears only for the configured virtual N4 Pro and is disabled while its authenticated local connection or physical device is unavailable.
 
 Stream Deck account files are not included, and the automatic app-switching field is reset. Action settings are retained and may contain personal paths or credentials; review a profile bundle before sharing it. Export asks for confirmation after you choose a save location; Cancel leaves the destination unchanged and creates no bundle. After transferring profiles, configure app switching and check action paths on the destination PC.
 
@@ -20,13 +22,13 @@ Hellgato targets **Stream Deck 7.5.1 and later** on Windows x64, tested through 
 
 The tested device is a **Mirabox N4 Pro E** running stock firmware **`V4.N4 Pro E.02.010`**. One connected N4 Pro is supported at a time; see the [device and firmware table](../README.md#supported-devices) for the tested hardware scope.
 
-Ten-key support and touch strip feedback scheduling require temporary changes to the running Stream Deck process's memory. Screen update requests enable 16 ms feedback checks for that composer; after two seconds without requests, it returns to Stream Deck's original idle wait. This improves animation delivery without polling continuously while idle. Internal code signatures and loaded bytes are checked before patching; unsupported layouts are rejected. Its executable on disk is unchanged. Simultaneous use with a genuine Stream Deck + is outside this beta's scope.
+Ten-key support and touch strip feedback scheduling require temporary changes to the running Stream Deck process's memory. Hellgato attaches to that process, verifies its code and live model, stages geometry allocations while its threads can run, then briefly pauses them for a coherent commit. Existing verified hooks and ten-key coordinates are reused on reconnection. Screen update requests enable 16 ms feedback checks for that composer; after two seconds without requests, it returns to Stream Deck's original idle wait. Unsupported code changes are rejected, and threads are resumed if preparation fails. Its executable on disk is unchanged. The constructor and live object changes target CORA Plus; USB Plus objects are excluded. Simultaneous use with a genuine Stream Deck + remains outside this beta's tested scope.
 
 N4 Pro does not report dial release events, so holds, release-triggered actions, press-duration detection, momentary actions, hold-to-repeat, press-and-turn and overlapping held dial presses cannot be reproduced accurately. This limit concerns dial buttons, not LCD keys or touch-strip holds.
 
 Brightness, idle timeout, full LCD images, full-screen and individual-key color fills are forwarded to hardware. Configure screensavers in Stream Deck as usual: Hellgato reads the selected original from Stream Deck's settings and plays cached full-screen frames through the N4 SDK. Animated WebP/GIF frame timing is preserved without sending separate images for every key. The SDK streams from the PC; this does not store the animation in device firmware.
 
-Sleep without a screensaver uses N4 Pro's native screen-off command. With a screensaver, the image appears first and dims over 0.3 seconds to the LCD's minimum brightness, while knob lighting turns off immediately. Wake restores action images while dim/off, then fades back to the Stream Deck brightness; knob brightness follows it. Display animations do not reset the idle timer. Sleep timing is stored per virtual device and returned to Stream Deck after reconnection. Manual Sleep is recognized early when a recent key release is followed by timeout-disable and brightness-fade commands; when Stream Deck sends only brightness changes, screen-off waits for its zero-brightness command.
+Sleep without a screensaver uses N4 Pro's native screen-off command. With a screensaver, the image appears first and dims over 0.3 seconds to the LCD's minimum brightness, while knob lighting turns off immediately. Wake restores action images while dim/off, then fades back to the Stream Deck brightness and restores the selected knob brightness. Display animations do not reset the idle timer. Sleep timing is stored per virtual device and returned to Stream Deck after reconnection. Manual Sleep is recognized early when a recent key release is followed by timeout-disable and brightness-fade commands; when Stream Deck sends only brightness changes, screen-off waits for its zero-brightness command.
 
 Five-minute idle activation, screensaver dimming and wake behavior have been confirmed on the test device. Touch alignment across profiles and plugins, extended animation playback and Windows reboot recovery need broader hardware testing. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
 
@@ -39,7 +41,9 @@ Screensavers and boot/standby logos are separate features:
 
 Mirabox StreamDock accepts 800×480 JPG/PNG images for the stored logo. Hellgato does not yet implement the persistent upload/reset protocol, and the on-device image encoding still needs verification. The SDK's ordinary background-image and animation APIs update the active display; their format does not establish the stored logo's format. The boot video is a separate existing device animation.
 
-Stream Deck's **Advanced → Standby image** upload/reset remains unsupported and may disconnect the virtual device. A last displayed frame can remain visible while the connection shuts down before the device returns to its stored logo; shutdown timing still needs measurement on the device.
+Elgato firmware updates do not apply to N4 Pro. Update controls and firmware-label actions are disabled for the selected virtual N4 Pro; genuine Elgato controls keep their normal behavior. The CORA bridge also rejects unsupported write operations before a success acknowledgement, logs the unsupported operation and closes that connection without a success reply. Firmware-version and discovery reads continue to work. The virtual device's reported compatibility version is separate from the N4 Pro's actual firmware.
+
+Closing Stream Deck, disconnecting N4 Pro or exiting Hellgato stops the USB and CORA workers while leaving the user's Stream Deck process alone. Pending hardware controls are cancelled, the heartbeat wait is interrupted, and the device is notified after display writers stop and before reader teardown. Native disconnect and transport errors are logged. The last LCD image can remain until the device processes that notification and returns to its stored logo; hardware transition timing still needs measurement.
 
 ## How it works
 
@@ -53,6 +57,8 @@ Hellgato presents N4 Pro as a network-connected Stream Deck. The official app ru
 
 Blue carries input toward Stream Deck; orange carries display updates toward N4 Pro. The virtual device is the identity exposed by CORA. The Python worker sends input over `stdin` and reads display events and images from local files. CORA uses `127.0.0.1:5343` for pairing and `127.0.0.1:5344` for device traffic. Screensavers use the original asset saved by Stream Deck, bypassing its per-frame display transport.
 
+The device preferences extension uses Stream Deck's loaded public Qt APIs and matches the selected virtual device's exact serial. It sends authenticated requests to a local control endpoint; the USB worker applies them on its own thread. Each connection refreshes the endpoint token without adding duplicate preference rows. If the expected Qt layout or serial cannot be verified, the extension leaves the host UI unchanged. See [the native extension](../native/hellgato-ui) for its build and integration checks.
+
 DisplayMirror combines repeated updates to each key or touch region within a batch. The default frame mode sends only the changed touch-strip region after its initial frame.
 
 ## Local data
@@ -63,23 +69,26 @@ DisplayMirror combines repeated updates to each key or touch region within a bat
 | `%LOCALAPPDATA%\Hellgato\settings.json` | Persistent device identity |
 | `%LOCALAPPDATA%\Hellgato\preferences.json` | Interface language |
 | `%LOCALAPPDATA%\Hellgato\display-HGMOCK*.json` | Per-device idle timeout |
+| `%LOCALAPPDATA%\Hellgato\device-controls-HGMOCK*.json` | Per-device knob brightness and follow-display preference |
+| `%LOCALAPPDATA%\Hellgato\native-ui.json` | Current local control endpoint, exact device serial and session authentication token |
 | `%APPDATA%\Elgato\StreamDeck\Assets` | Screen saver originals saved by Stream Deck; the selection is in its per-device Windows registry settings |
 | `%LOCALAPPDATA%\Hellgato\bridge.log` | Connection and error logs |
 | `%LOCALAPPDATA%\Hellgato\traces` and `images` | Local device events and received display images |
-| `%LOCALAPPDATA%\Hellgato\profile-backups` | Profiles saved before Stream Deck restarts |
 | `%LOCALAPPDATA%\Hellgato\profile-import-backups` | Profiles replaced during import |
 
 Use **Help → Open logs** to access the data folder, or **Help → About Hellgato** for version and license information. Uninstalling keeps settings and backups. Existing device identities and profile formats remain compatible.
 
 ## Build and test
 
-Use Python 3.13 x64, Git and Inno Setup 6.7.3. In PowerShell, from the repository root:
+Use Python 3.13 x64, Git, Visual Studio C++ Build Tools with the x64 MSVC tools and Windows SDK, and Inno Setup 6.7.3. The native extension uses a pinned Qt 6.5.3 MSVC x64 development kit during compilation. It uses the Qt and C++ runtimes already loaded by Stream Deck; another Qt runtime is not bundled. In PowerShell, from the repository root:
 
 ```powershell
 python -m venv work/build-venv
 ./work/build-venv/Scripts/python.exe -m pip install -r installer/requirements-build.txt
 ./work/build-venv/Scripts/python.exe scripts/prepare-windows.py
 ./work/build-runtime/node.exe scripts/prepare-cora.mjs
+./work/build-venv/Scripts/python.exe native/hellgato-ui/prepare.py
+./work/build-venv/Scripts/python.exe native/hellgato-ui/build.py --output work/build-native-ui-package
 
 ./work/build-venv/Scripts/python.exe -m unittest discover -s test -p 'test_*.py'
 ./work/build-runtime/node.exe --test test/*.test.mjs
@@ -87,6 +96,8 @@ python -m venv work/build-venv
 $env:HELLGATO_NODE = (Resolve-Path ./work/build-runtime/node.exe).Path
 ./work/build-venv/Scripts/python.exe app/hellgato.py
 ```
+
+Open Stream Deck yourself before testing the connection. `scripts/start-streamdeck.py --pid <pid>` prepares that existing process; `--inspect-only` reads its layout and verified hooks without process writes. `--require-closed` checks the profile-import prerequisite. Preparation returns exit code 11 for transient readiness, cancellation or process-exit races, and 20 for incompatible structure. No preparation command launches or terminates Stream Deck.
 
 Build the installer:
 
@@ -102,6 +113,7 @@ Build inputs are pinned and verified against upstream source metadata and checks
 | `app/n4/` | Hardware input, display, profiles and compatibility |
 | `app/cora/` | Stream Deck network transport |
 | `app/locales/` | Interface translations |
+| `native/hellgato-ui/` | Public Qt device preference extension and isolated test host |
 | `scripts/` | Dependency preparation, geometry adjustment and builds |
 | `installer/` | Packaging and third-party notices |
 | `test/` | Compatibility, profiles, UI state and CORA checks |

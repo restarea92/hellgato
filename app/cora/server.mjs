@@ -25,7 +25,7 @@ function record(event, detail) {
   appendFileSync(trace, line + '\n');
   if (!event.endsWith('.comm') && !event.endsWith('.log')) console.log(line);
 }
-for (const event of ['clientConnected', 'clientDisconnected', 'log', 'comm']) {
+for (const event of ['clientConnected', 'clientDisconnected', 'log', 'comm', 'operationRejected']) {
   bridge.on(event, ({ role, detail }) => record(`${role}.${event}`, detail));
 }
 const images = new URL(`images/${config.childSerialNumber}-${runId}/`, stateRoot);

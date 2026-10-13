@@ -51,7 +51,7 @@
   "transfer.failed": "プロファイル転送に失敗しました。{reason}",
   "error.runtime": "接続と実行権限を確認して再試行してください。詳細はログで確認できます。",
   "error.incompatible": "このStream Deckのバージョンには対応していません。",
-  "error.startup": "Stream Deckを起動できませんでした。インストール状態と権限を確認してください。",
+  "error.startup": "実行中の Stream Deck の接続を準備できませんでした。インストール状態と権限を確認してください。",
   "error.device": "デバイスを起動できませんでした。N4 Proが1台のみ接続されているか確認してください。",
   "error.settings": "設定を読み込めませんでした。ログフォルダーのsettings.jsonを確認してください。",
   "error.language": "言語設定を保存できませんでした。フォルダーの権限を確認してください。",
@@ -77,5 +77,7 @@
   "profile.duplicate_profile": "同じプロファイルが重複して選択されています。",
   "profile.empty": "選択したファイルにプロファイルがありません。",
   "profile.format": "未対応のプロファイル形式です。",
-  "profile.destination": "プロファイルの保存先が無効です。"
+  "profile.destination": "プロファイルの保存先が無効です。",
+  "detail.host_waiting": "準備ができたら Stream Deck を起動してください。Hellgato はアプリを起動せずに待機します。",
+  "error.app_running": "プロファイルをインポートする前に Stream Deck を手動で終了してください。"
 }

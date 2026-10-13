@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { profile } from './profiles.mjs';
 import { withDisplayCommands } from './display-server.mjs';
+import { withFirmwarePolicy } from './firmware-policy.mjs';
 
 const runtimeRoot = new URL('../../work/cora-runtime/', import.meta.url);
 
@@ -46,7 +47,8 @@ export async function createBridge(options = {}) {
     import(new URL('cora/primary-server.js', runtimeRoot)),
     import(new URL('cora/child-server.js', runtimeRoot)),
   ]);
-  const primary = new ElgatoServer(geometry, port, true, { childPort });
+  const PrimaryServer = withFirmwarePolicy(ElgatoServer, 'primary');
+  const primary = new PrimaryServer(geometry, port, true, { childPort });
   primary.setDeviceConfig(config);
   const DisplayServer = withDisplayCommands(ElgatoChildServer);
   const child = new DisplayServer(geometry, childPort, config, false);
@@ -60,6 +62,7 @@ class Bridge extends EventEmitter {
   #geometry;
   #started = false;
   #operation = Promise.resolve();
+  #sockets = new Set();
 
   constructor(primary, child, geometry) {
     super();
@@ -67,7 +70,11 @@ class Bridge extends EventEmitter {
     this.#child = child;
     this.#geometry = geometry;
     for (const [role, server] of [['primary', primary], ['child', child]]) {
-      for (const event of ['log', 'comm', 'clientConnected', 'clientDisconnected']) {
+      server.server.on('connection', socket => {
+        this.#sockets.add(socket);
+        socket.once('close', () => this.#sockets.delete(socket));
+      });
+      for (const event of ['log', 'comm', 'clientConnected', 'clientDisconnected', 'operationRejected']) {
         server.on(event, (...detail) => this.emit(event, { role, detail }));
       }
     }
@@ -109,6 +116,7 @@ class Bridge extends EventEmitter {
   stop() {
     return this.#enqueue(async () => {
       if (!this.#started) return;
+      for (const socket of this.#sockets) socket.destroy();
       await Promise.all([this.#primary.stop(), this.#child.stop()]);
       this.#started = false;
     });

@@ -51,7 +51,7 @@
   "transfer.failed": "設定檔傳輸失敗。{reason}",
   "error.runtime": "請檢查裝置連線與執行權限後重試。詳情請見記錄。",
   "error.incompatible": "此版本的 Stream Deck 與 Hellgato 不相容。",
-  "error.startup": "無法啟動 Stream Deck。請檢查安裝狀態與執行權限。",
+  "error.startup": "無法為執行中的 Stream Deck 準備連線。請檢查安裝情況與權限。",
   "error.device": "無法啟動裝置。請僅連接一台 N4 Pro 並檢查記錄。",
   "error.settings": "無法載入裝置設定。請檢查記錄資料夾中的 settings.json。",
   "error.language": "無法儲存語言設定。請檢查資料夾權限。",
@@ -77,5 +77,7 @@
   "profile.duplicate_profile": "重複選取了同一設定檔。",
   "profile.empty": "所選檔案中沒有設定檔。",
   "profile.format": "不支援此設定檔格式。",
-  "profile.destination": "設定檔儲存路徑無效。"
+  "profile.destination": "設定檔儲存路徑無效。",
+  "detail.host_waiting": "準備好後請啟動 Stream Deck。Hellgato 會等待，不會自行啟動應用程式。",
+  "error.app_running": "匯入設定檔前，請手動結束 Stream Deck。"
 }

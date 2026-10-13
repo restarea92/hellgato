@@ -18,7 +18,7 @@ DISPLAY_EVENTS = {'brightness', 'sleepDuration', 'displayCommand', 'keyImage', '
 
 class DisplayMirror:
     def __init__(self, device, images_dir: Path, strip_mode='panels', columns=5, clock=time.monotonic,
-                 screensaver_source=None, on_native_source=None):
+                 screensaver_source=None, on_native_source=None, led_writer=None):
         self.device = device
         self.images_dir = images_dir
         self.strip = Image.new('RGB', (800, 100), 'black')
@@ -37,6 +37,7 @@ class DisplayMirror:
         self.last_activity = clock()
         self.source = screensaver_source
         self.on_native_source = on_native_source
+        self.led_writer = led_writer
         self.animation = NativeAnimation()
         self.native_ready = False
         self.native_active = False
@@ -186,7 +187,9 @@ class DisplayMirror:
             self.screen_level = level
 
     def _set_led_level(self, level):
-        if level != self.led_level:
+        if self.led_writer is not None:
+            self.led_level = self.led_writer(level, self.brightness, self.idle or self.sleeping)
+        elif level != self.led_level:
             self.device.set_led_brightness(level)
             self.led_level = level
 

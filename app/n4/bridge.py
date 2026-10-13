@@ -18,6 +18,9 @@ from display import DisplayMirror, DISPLAY_EVENTS
 from touch import TouchGesture
 from settings import load_settings
 from screensaver import ScreensaverSource
+from shutdown import close_device, install_interruptible_heartbeat
+from device_controls import DeviceControls
+from device_control_server import DeviceControlServer
 
 
 root = Path(__file__).resolve().parents[2]
@@ -68,6 +71,8 @@ def main():
         raise SystemExit(10 if not devices else 11)
 
     device = devices[0]
+    shutdown_report = lambda event: print(json.dumps(event), flush=True)
+    install_interruptible_heartbeat(device, report=shutdown_report)
     sdk_decode = device.decode_input_event
 
     def decode_input(hardware_code, state):
@@ -79,6 +84,9 @@ def main():
 
     device.decode_input_event = decode_input
     process = None
+    controls = None
+    control_server = None
+    host_connected = threading.Event()
     removed = False
     write_lock = threading.Lock()
     run_id = str(time.time_ns())
@@ -159,6 +167,12 @@ def main():
             raise SystemExit(12)
         if args.init:
             device.init()
+        controls = DeviceControls(device, state_root, f'HGMOCK{args.identity:06d}',
+                                  firmware=device.firmware_version or None)
+        display.led_writer = lambda level, normal, sleeping: controls.apply_led_level(
+            level, normal, sleeping=sleeping)
+        control_server = DeviceControlServer(state_root, controls.serial,
+            lambda: {**controls.state(), 'hostConnected': host_connected.is_set()}, controls.apply_control)
         ready_file = os.environ.get('HELLGATO_READY_FILE')
         if ready_file:
             print(json.dumps({'event': 'deviceReady'}), flush=True)
@@ -181,8 +195,10 @@ def main():
         while process.poll() is None:
             if os.environ.get('HELLGATO_STOP_FILE') and Path(os.environ['HELLGATO_STOP_FILE']).exists():
                 break
+            control_server.drain()
             if time.monotonic() >= next_usb_check:
-                present = device.transport.enumerate_devices(vendor_id=0x5548, product_id=0x1021)
+                present = device.transport.enumerate_devices(vendor_id=device.vendor_id,
+                                                            product_id=device.product_id)
                 if not any(item['path'] == device.path for item in present):
                     removed = True
                     print('N4 Pro disconnected', flush=True)
@@ -202,6 +218,10 @@ def main():
                     line, pending = pending.split('\n', 1)
                     if line:
                         event = json.loads(line)
+                        if event.get('event') == 'child.clientConnected':
+                            host_connected.set()
+                        elif event.get('event') == 'child.clientDisconnected':
+                            host_connected.clear()
                         if event.get('event') in DISPLAY_EVENTS:
                             updates.append(event)
                 if updates:
@@ -219,9 +239,14 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        host_connected.clear()
+        if control_server is not None:
+            control_server.close()
+        if controls is not None:
+            controls.device = None
         if 'trace' in locals() and trace is not None:
             trace.close()
-        device.close(notify=not removed)
+        close_device(device, notify=not removed, report=shutdown_report)
         display.device = None
         del display
         if process is not None and process.poll() is None:
@@ -229,6 +254,7 @@ def main():
                 try:
                     process.stdin.write('quit\n')
                     process.stdin.flush()
+                    process.stdin.close()
                 except (BrokenPipeError, OSError):
                     pass
             try:

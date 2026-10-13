@@ -51,7 +51,7 @@
   "transfer.failed": "Profile transfer failed. {reason}",
   "error.runtime": "Check the device connection and permissions, then retry. Details are in the logs.",
   "error.incompatible": "This Stream Deck build is not compatible with Hellgato.",
-  "error.startup": "Stream Deck could not start. Check its installation and permissions.",
+  "error.startup": "The running Stream Deck could not be prepared. Check its installation and permissions.",
   "error.device": "The device could not start. Connect only one N4 Pro and check the logs.",
   "error.settings": "Device settings could not be loaded. Check settings.json in the log folder.",
   "error.language": "The language could not be saved. Check folder permissions.",
@@ -77,5 +77,7 @@
   "profile.duplicate_profile": "The same profile was selected more than once.",
   "profile.empty": "No profiles found in the selected files.",
   "profile.format": "This profile format is not supported.",
-  "profile.destination": "The profile destination path is invalid."
+  "profile.destination": "The profile destination path is invalid.",
+  "detail.host_waiting": "Open Stream Deck when you are ready. Hellgato waits without starting it.",
+  "error.app_running": "Close Stream Deck manually before importing profiles."
 }

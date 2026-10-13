@@ -147,6 +147,18 @@ class ProfileExportConfirmationTest(unittest.TestCase):
         self.namespace['read_profiles'].assert_called_once_with(('import.streamDeckProfile',))
         self.namespace['install_profiles'].assert_called_once()
 
+    def test_import_refuses_running_stream_deck_without_stopping_it_or_writing_profiles(self):
+        self.dialogs.askopenfilenames.return_value = ('import.streamDeckProfile',)
+        self.namespace['subprocess'].run.return_value.returncode = 20
+        self.transfer(True)
+        self.namespace['command'].assert_called_once_with('scripts/start-streamdeck.py', '--require-closed')
+        self.namespace['install_profiles'].assert_not_called()
+        for path, content in self.original.items():
+            self.assertEqual(path.read_bytes(), content)
+        self.callbacks.get_nowait()()
+        self.namespace['finish_transfer'].assert_called_once_with(
+            Message('transfer.failed', {'reason': Message('error.app_running')}), True, False)
+
     def test_warning_uses_selected_language_parent_and_cancel_default(self):
         for language in LANGUAGES:
             with self.subTest(language=language):

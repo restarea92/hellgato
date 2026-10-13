@@ -16,9 +16,10 @@ include_tree('app/cora', {'.mjs', '.json'})
 include_tree('app/locales', {'.json'})
 include_tree('work/cora-runtime', {'.js', '.json'})
 include_tree('work/references/mirabox/Python-SDK/src/StreamDock', {'.py', '.dll'})
-for script in ('start-streamdeck.py', 'patch-device-geometry.py', 'patch-background-grid.py'):
+for script in ('start-streamdeck.py', 'patch-device-geometry.py', 'patch-background-grid.py', 'load-native-ui.py'):
     datas.append((str(root / 'scripts' / script), 'scripts'))
 datas += [
+    (str(root / 'work/build-native-ui-package/HellgatoNativeUiV2.dll'), 'native'),
     (str(root / 'LICENSE'), '.'),
     (str(icon), 'app/assets/icons'),
     (str(root / 'app/assets/icons/hellgato-64.png'), 'app/assets/icons'),
@@ -43,7 +44,8 @@ a = Analysis([str(root / 'app/hellgato.py')], pathex=[str(root / 'app/n4')],
              hiddenimports=['PIL.Image', 'PIL.ImageSequence', 'PIL.ImageOps', 'bisect', 'urllib.parse', 'winreg',
                             'ctypes.util', 'ctypes.wintypes', 'csv', 'hashlib', 'struct',
                             'argparse', 'dataclasses', 'enum', 'gc', 'typing', 'platform', 'tempfile',
-                            'copy', 'io', 'random', 'datetime', 'shutil', 'pefile', 'pystray._win32'],
+                            'copy', 'io', 'random', 'datetime', 'shutil', 'pefile', 'pystray._win32',
+                            'http.server', 'secrets', 'hmac'],
              excludes=['numpy', 'matplotlib', 'scipy', 'pytest', 'IPython', 'wmi', 'pythoncom'])
 pyz = PYZ(a.pure)
 gui = EXE(pyz, a.scripts, [], exclude_binaries=True, name='Hellgato', console=False, upx=False, icon=str(icon))

@@ -51,7 +51,7 @@
   "transfer.failed": "프로필 전송 실패. {reason}",
   "error.runtime": "장치 연결과 실행 권한을 확인한 후 다시 시도하세요. 자세한 내용은 로그에서 확인할 수 있습니다.",
   "error.incompatible": "이 Stream Deck 빌드는 Hellgato와 호환되지 않습니다.",
-  "error.startup": "Stream Deck을 시작하지 못했습니다. 설치 상태와 실행 권한을 확인하세요.",
+  "error.startup": "실행 중인 Stream Deck의 연결을 준비하지 못했습니다. 설치 상태와 실행 권한을 확인하세요.",
   "error.device": "장치를 시작하지 못했습니다. N4 Pro 한 대만 연결되어 있는지 확인하세요.",
   "error.settings": "장치 설정을 읽지 못했습니다. 로그 폴더의 settings.json을 확인하세요.",
   "error.language": "언어 설정을 저장하지 못했습니다. 폴더 쓰기 권한을 확인하세요.",
@@ -77,5 +77,7 @@
   "profile.duplicate_profile": "같은 프로필이 중복 선택되었습니다.",
   "profile.empty": "선택한 파일에 가져올 프로필이 없습니다.",
   "profile.format": "지원하지 않는 프로필 형식입니다.",
-  "profile.destination": "프로필 저장 경로가 올바르지 않습니다."
+  "profile.destination": "프로필 저장 경로가 올바르지 않습니다.",
+  "detail.host_waiting": "원할 때 Stream Deck을 실행하세요. Hellgato는 앱을 실행하지 않고 기다립니다.",
+  "error.app_running": "프로필을 가져오기 전에 Stream Deck을 직접 종료하세요."
 }

@@ -19,6 +19,7 @@ if (!source.includes("'../../work/cora-runtime/'")) throw new Error('Runtime imp
 writeFileSync(resolve(output, 'bridge.mjs'), source.replace("'../../work/cora-runtime/'", "'./vendor/'"));
 cpSync(resolve(root, 'app/cora/profiles.mjs'), resolve(output, 'profiles.mjs'));
 cpSync(resolve(root, 'app/cora/display-server.mjs'), resolve(output, 'display-server.mjs'));
+cpSync(resolve(root, 'app/cora/firmware-policy.mjs'), resolve(output, 'firmware-policy.mjs'));
 cpSync(resolve(root, 'work/cora-runtime'), resolve(output, 'vendor'), { recursive: true });
 for (const directory of [core, facade]) cpSync(resolve(root, 'LICENSE'), resolve(directory, 'LICENSE'));
 writeFileSync(resolve(core, 'THIRD-PARTY-NOTICES.txt'),

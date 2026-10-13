@@ -60,21 +60,27 @@ Supports one connected N4 Pro at a time. The tested device and stock firmware ar
 
 1. Install the official [Stream Deck app](https://www.elgato.com/downloads).
 2. Download and run the [Hellgato Windows installer](https://github.com/restarea92/hellgato/releases/download/v0.0.7-beta/Hellgato-0.0.7-beta-Setup.exe).
-3. Connect your N4 Pro over USB and open Hellgato.
+3. Connect your N4 Pro over USB, open Hellgato, and open Stream Deck.
 4. In Stream Deck, open **Network** and connect to `127.0.0.1:5343` on first use.
 
+Complete any pairing confirmation in Stream Deck when prompted.
+
 The installer bundles the runtimes and USB SDK; no source code, build tools or StreamDock app are required. Install any extra Stream Deck plugins separately.
+
+Hellgato prepares the virtual device when both USB and Stream Deck are present, regardless of which arrives first. You control Stream Deck's lifetime: Hellgato never starts, restarts, or quits it. Closing Stream Deck releases the N4 Pro and leaves Hellgato waiting for the next connection.
 
 ## Features
 
 - Configure actions, profiles, brightness and sleep timing in Stream Deck.
+- Adjust knob brightness below the display brightness control in Stream Deck's device settings. Drag to change it immediately; the independent value is saved when the adjustment finishes. Sleep turns knob lighting off and wake restores it.
 - Set screensavers in Stream Deck; Hellgato plays the saved originals through the N4 SDK. Sleep turns the screen off when no screensaver is set, or dims the screensaver and turns off knob lighting. Wake restores the display and brightness.
-- Export profiles as a `.hellgatoProfiles` bundle (`Ctrl+E`); import bundles or `.streamDeckProfile` files (`Ctrl+I`). Replaced profiles are backed up.
+- Export profiles as a `.hellgatoProfiles` bundle (`Ctrl+E`); import bundles or `.streamDeckProfile` files (`Ctrl+I`) after closing Stream Deck. Replaced profiles are backed up.
+- Elgato firmware updates are hidden for the virtual N4 Pro, and unsupported firmware writes are rejected by the bridge.
 - Tray operation, optional Windows sign-in startup and eleven interface languages.
 
 ### Planned N4 Pro controls
 
-- Knob RGB colors: all four together or individually, independent brightness and default-effect reset.
+- Knob RGB colors: all four together or individually, and default-effect reset.
 - Vibration on/off.
 - Existing boot video on/off.
 - Upload and reset the device-stored boot/standby logo.

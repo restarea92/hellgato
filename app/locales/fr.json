@@ -40,7 +40,7 @@
   "transfer.failed": "Échec du transfert des profils. {reason}",
   "error.runtime": "Vérifiez la connexion de l’appareil et les autorisations, puis réessayez. Consultez les journaux pour plus de détails.",
   "error.incompatible": "Cette version de Stream Deck n’est pas compatible avec Hellgato.",
-  "error.startup": "Impossible de démarrer Stream Deck. Vérifiez son installation et les autorisations.",
+  "error.startup": "Impossible de préparer Stream Deck en cours d’exécution. Vérifiez son installation et les autorisations.",
   "error.device": "Impossible de démarrer l’appareil. Connectez un seul N4 Pro et consultez les journaux.",
   "error.settings": "Impossible de charger les réglages de l’appareil. Vérifiez settings.json dans le dossier des journaux.",
   "error.language": "Impossible d’enregistrer la langue. Vérifiez les autorisations du dossier.",
@@ -77,5 +77,7 @@
   "preferences.title": "Préférences",
   "preferences.language_hint": "Les changements de langue sont appliqués immédiatement.",
   "about.description": "Connectez votre N4 Pro à l’application Stream Deck.",
-  "about.license": "Logiciel libre · Licence MIT"
+  "about.license": "Logiciel libre · Licence MIT",
+  "detail.host_waiting": "Ouvrez Stream Deck quand vous le souhaitez. Hellgato attend sans le lancer.",
+  "error.app_running": "Fermez vous-même Stream Deck avant d’importer des profils."
 }

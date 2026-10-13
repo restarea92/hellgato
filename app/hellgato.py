@@ -20,6 +20,7 @@ os.environ['HELLGATO_STATE_DIR'] = str(STATE)
 sys.path.insert(0, str(ROOT / 'app/n4'))
 from compatibility import INCOMPATIBLE
 from i18n import Message, Translator
+from presence import SystemPresence
 
 
 def command(script, *arguments):
@@ -29,30 +30,14 @@ def command(script, *arguments):
 
 
 def worker():
-    allowed = {'bridge.py', 'start-streamdeck.py', 'patch-device-geometry.py', 'patch-background-grid.py'}
+    allowed = {'bridge.py', 'start-streamdeck.py', 'patch-device-geometry.py', 'patch-background-grid.py',
+               'load-native-ui.py'}
     script = Path(sys.argv[2]).resolve()
     if not script.is_relative_to(ROOT.resolve()) or script.name not in allowed:
         raise SystemExit('Unsupported worker')
     sys.argv = [str(script), *sys.argv[3:]]
     sys.path.insert(0, str(script.parent))
     runpy.run_path(str(script), run_name='__main__')
-
-
-def process_running(pid):
-    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-    kernel.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
-    kernel.OpenProcess.restype = ctypes.c_void_p
-    kernel.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
-    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-    handle = kernel.OpenProcess(0x100000, False, pid)
-    if not handle:
-        if ctypes.get_last_error() == 87:
-            return False
-        raise ctypes.WinError(ctypes.get_last_error())
-    try:
-        return kernel.WaitForSingleObject(handle, 0) == 258
-    finally:
-        kernel.CloseHandle(handle)
 
 
 class WindowLifecycle:
@@ -80,6 +65,7 @@ class WindowLifecycle:
         if self.closing:
             return
         self.closing = True
+        self.session.request_stop()
         self.session.stop.set()
         self.finish()
 
@@ -92,12 +78,19 @@ class WindowLifecycle:
 
 
 class Session:
-    def __init__(self, events):
+    def __init__(self, events, *, presence=None, poll_interval=.2):
         self.events = events
         self.stop = threading.Event()
         self.thread = None
         self.bridge = None
         self.boot = None
+        self.presence = presence
+        self.poll_interval = poll_interval
+        self.prepared_host = None
+        self.native_ui_host = None
+        self.native_ui_attempts = 0
+        self.next_native_ui_attempt = 0
+        self.active_device = None
         self.connected = threading.Event()
         self.listening = threading.Event()
         self.device_ready = threading.Event()
@@ -108,6 +101,8 @@ class Session:
 
     def status(self, key, phase=None, **values):
         message = Message(key, values)
+        if self.detail == message and (phase is None or self.phase == phase):
+            return
         if phase is not None:
             self.phase = phase
         self.detail = message
@@ -120,6 +115,7 @@ class Session:
     def request_stop(self):
         if self.running:
             self.stop.set()
+            self.stop_file.touch()
             self.status('detail.stopping', 'stopping')
 
     def start(self):
@@ -154,88 +150,138 @@ class Session:
 
     def run(self):
         from settings import load_settings
+        reader = None
+        log = None
         try:
-            settings = load_settings()
-            self.status('detail.device', 'starting')
+            load_settings()
+            STATE.mkdir(parents=True, exist_ok=True)
+            observer = self.presence or SystemPresence(ROOT)
             node = ROOT / 'runtime/node.exe'
             environment = {**os.environ, 'HELLGATO_STOP_FILE': str(self.stop_file),
                            'HELLGATO_READY_FILE': str(self.ready_file), 'PYTHONUNBUFFERED': '1'}
             if node.exists():
                 environment['HELLGATO_NODE'] = str(node)
+            self.stop_file.unlink(missing_ok=True)
             while not self.stop.is_set():
-                self.status('detail.checking', 'checking')
-                with (STATE / 'bridge.log').open('a', encoding='utf-8') as log:
-                    checked = subprocess.run(command('scripts/start-streamdeck.py', '--check-only'),
-                                             cwd=ROOT, env=environment, stdout=log, stderr=log,
-                                             timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
-                if checked.returncode:
-                    self.startup_failed(checked.returncode)
-                    return
-                if self.stop.is_set():
-                    break
-                self.status('detail.device', 'starting')
-                self.stop_file.unlink(missing_ok=True)
-                self.ready_file.unlink(missing_ok=True)
-                self.listening.clear()
-                self.connected.clear()
-                self.device_ready.clear()
-                with (STATE / 'bridge.log').open('a', encoding='utf-8') as log:
+                devices = observer.devices()
+                host = observer.host()
+                identity = (host.pid, host.created) if host is not None else None
+                bridge_running = self.bridge is not None and self.bridge.poll() is None
+                device_path = devices[0]['path'] if len(devices) == 1 else None
+                if bridge_running and (device_path != self.active_device or identity != self.prepared_host):
+                    self.shutdown_bridge()
+                    if reader:
+                        reader.join(timeout=3)
+                        reader = None
+                    if log:
+                        log.close()
+                        log = None
+                    self.connected.clear()
+                    self.device_ready.clear()
+                    self.listening.clear()
+                    self.native_ui_host = None
+                    self.native_ui_attempts = 0
+                    self.active_device = None
+                    bridge_running = False
+                if len(devices) != 1:
+                    self.status('detail.waiting' if not devices else 'error.device',
+                                'waiting' if not devices else 'error')
+                    self.stop.wait(self.poll_interval)
+                    continue
+                if host is None:
+                    self.prepared_host = None
+                    self.status('detail.host_waiting', 'pairing')
+                    self.stop.wait(self.poll_interval)
+                    continue
+                if not bridge_running:
+                    if reader:
+                        reader.join(timeout=3)
+                        reader = None
+                    if log:
+                        log.close()
+                    log = (STATE / 'bridge.log').open('a', encoding='utf-8')
+                    if self.prepared_host != identity:
+                        if self.stop.is_set():
+                            break
+                        self.stop_file.unlink(missing_ok=True)
+                        if self.stop.is_set():
+                            break
+                        self.status('detail.starting', 'starting')
+                        self.boot = subprocess.Popen(
+                            command('scripts/start-streamdeck.py', '--pid', str(host.pid),
+                                    '--exe', str(host.executable)), cwd=ROOT, env=environment,
+                            stdout=log, stderr=log, creationflags=subprocess.CREATE_NO_WINDOW)
+                        while self.boot.poll() is None:
+                            if self.stop.wait(.05):
+                                self.stop_file.touch()
+                                try:
+                                    self.boot.wait(timeout=.2)
+                                except subprocess.TimeoutExpired:
+                                    pass
+                        if self.stop.is_set():
+                            break
+                        if self.boot.returncode:
+                            if self.boot.returncode == 11 or observer.host() != host:
+                                self.stop.wait(self.poll_interval)
+                                continue
+                            self.startup_failed(self.boot.returncode)
+                            return
+                        self.prepared_host = identity
+                    if self.stop.is_set() or observer.host() != host:
+                        continue
+                    self.stop_file.unlink(missing_ok=True)
+                    if self.stop.is_set():
+                        break
+                    self.ready_file.touch()
+                    self.native_ui_host = None
+                    self.native_ui_attempts = 0
+                    self.next_native_ui_attempt = 0
+                    self.device_ready.clear()
+                    self.listening.clear()
+                    self.connected.clear()
+                    self.status('detail.pairing', 'pairing')
                     self.bridge = subprocess.Popen(command('app/n4/bridge.py', '--init'),
                                                    cwd=ROOT, env=environment, stdout=subprocess.PIPE,
                                                    stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace',
                                                    creationflags=subprocess.CREATE_NO_WINDOW)
+                    self.active_device = device_path
                     reader = threading.Thread(target=self.log_bridge, args=(self.bridge.stdout, log), daemon=True)
                     reader.start()
-                    while not self.device_ready.wait(.2):
-                        if self.stop.is_set() or self.bridge.poll() is not None:
-                            break
-                    if self.stop.is_set():
-                        self.shutdown_bridge()
-                        reader.join(timeout=3)
-                        break
-                    if self.bridge.poll() is not None:
-                        reader.join(timeout=3)
-                        if self.bridge.returncode not in (10, 12):
-                            self.status('error.device', 'error')
-                            return
-                        self.status('detail.waiting', 'waiting')
-                        self.stop.wait(3)
-                        continue
-                    self.status('detail.starting', 'starting')
-                    self.boot = subprocess.Popen(command('scripts/start-streamdeck.py', '--restart'), cwd=ROOT,
-                                                 env=environment, stdout=log, stderr=log,
-                                                 creationflags=subprocess.CREATE_NO_WINDOW)
-                    while self.boot.poll() is None:
-                        # Let startup finish its short breakpoint cleanup before stopping.
-                        time.sleep(.2)
-                    if self.boot.returncode:
-                        self.shutdown_bridge()
-                        reader.join(timeout=3)
-                        self.startup_failed(self.boot.returncode)
-                        return
-                    app_pid = json.loads((STATE / 'results/startup-ready.json').read_text())['pid']
-                    self.status('detail.pairing', 'pairing')
-                    self.ready_file.touch()
-                    started = time.monotonic()
-                    notified = False
-                    while self.bridge.poll() is None and not self.stop.wait(.5):
-                        if not process_running(app_pid):
-                            self.status('detail.reconnecting', 'starting')
-                            break
-                        if not notified and not self.connected.is_set() and time.monotonic() - started > 15:
-                            self.status('detail.first_pairing', 'pairing')
-                            notified = True
-                    self.shutdown_bridge()
-                    reader.join(timeout=3)
-                if not self.stop.is_set():
-                    self.connected.clear()
-                    self.status('detail.disconnected', 'waiting')
-                    self.stop.wait(3)
+                if (self.device_ready.is_set() and self.native_ui_host != identity
+                        and time.monotonic() >= self.next_native_ui_attempt
+                        and (STATE / 'native-ui.json').exists()):
+                    self.native_ui_attempts += 1
+                    ui_ready = False
+                    try:
+                        result = subprocess.run(command('scripts/load-native-ui.py', '--pid', str(host.pid),
+                                                        '--exe', str(host.executable),
+                                                        '--config', str(STATE / 'native-ui.json')),
+                                                cwd=ROOT, env=environment, stdout=log, stderr=log,
+                                                timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
+                        if result.returncode:
+                            logging.warning('Native device controls were not prepared (code %s)', result.returncode)
+                        else:
+                            ui_ready = True
+                    except (OSError, subprocess.TimeoutExpired):
+                        logging.exception('Native device controls are unavailable')
+                    if ui_ready or self.native_ui_attempts >= 3:
+                        self.native_ui_host = identity
+                    else:
+                        self.next_native_ui_attempt = time.monotonic() + .5
+                if self.bridge.poll() not in (None, 0, 10, 12):
+                    self.status('error.device', 'error')
+                    return
+                self.stop.wait(self.poll_interval)
         except Exception as error:
             self.shutdown_bridge()
             logging.exception('Connection failed')
             self.status('error.runtime', 'error')
         finally:
+            self.shutdown_bridge()
+            if reader:
+                reader.join(timeout=3)
+            if log:
+                log.close()
             self.connected.clear()
             self.listening.clear()
             self.device_ready.clear()
@@ -381,11 +427,11 @@ def main():
                         session.thread.join(timeout=120)
                         if session.thread.is_alive():
                             raise ProfileError('error.stop_timeout')
-                    result = subprocess.run(command('scripts/start-streamdeck.py', '--restart', '--stop-only'),
+                    result = subprocess.run(command('scripts/start-streamdeck.py', '--require-closed'),
                                             cwd=ROOT, capture_output=True, text=True, timeout=45,
                                             creationflags=subprocess.CREATE_NO_WINDOW)
                     if result.returncode:
-                        raise ProfileError('error.stop_app')
+                        raise ProfileError('error.app_running')
                     count, _ = install_profiles(profiles, profiles_root, identity, STATE)
                     message = Message('transfer.imported', {'count': count})
                 else:

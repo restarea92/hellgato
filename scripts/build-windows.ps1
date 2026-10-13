@@ -10,6 +10,10 @@ try {
     if ($LASTEXITCODE) { throw 'Runtime preparation failed' }
     & './work/build-runtime/node.exe' scripts/prepare-cora.mjs
     if ($LASTEXITCODE) { throw 'CORA preparation failed' }
+    & $Python native/hellgato-ui/prepare.py
+    if ($LASTEXITCODE) { throw 'Native UI build dependencies failed' }
+    & $Python native/hellgato-ui/build.py --output work/build-native-ui-package
+    if ($LASTEXITCODE) { throw 'Native UI build failed' }
     & $Python -m PyInstaller --noconfirm --distpath dist --workpath work/pyinstaller installer/hellgato.spec
     if ($LASTEXITCODE) { throw 'Executable build failed' }
     & $Iscc /Q installer/hellgato.iss

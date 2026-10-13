@@ -1,5 +1,7 @@
+import { withFirmwarePolicy } from './firmware-policy.mjs';
+
 export function withDisplayCommands(ChildServer) {
-  return class DisplayServer extends ChildServer {
+  return class DisplayServer extends withFirmwarePolicy(ChildServer) {
     sleepSeconds = 0;
     lcdAssembly = null;
 
