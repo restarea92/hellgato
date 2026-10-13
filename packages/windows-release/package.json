@@ -1,0 +1,7 @@
+{
+  "name": "@hellgato/windows-release",
+  "version": "0.1.2",
+  "private": true,
+  "description": "Version metadata for the Hellgato Windows application",
+  "license": "MIT"
+}

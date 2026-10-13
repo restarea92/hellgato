@@ -1,0 +1,423 @@
+name: Release approved components
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact merged release PR SHA (never a moving branch)
+        required: true
+        type: string
+      confirm:
+        description: Rebuild or resume this previously approved release
+        required: true
+        type: boolean
+        default: false
+      source_run_id:
+        description: Original build run ID for publish-only recovery (otherwise rebuild)
+        required: false
+        type: string
+      source_run_attempt:
+        description: Original build attempt for recovery
+        required: false
+        type: string
+      windows_artifact_id:
+        description: Original Windows artifact ID, if Windows is selected
+        required: false
+        type: string
+      npm_artifact_id:
+        description: Original npm artifact ID, if npm is selected
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: hellgato-publication
+  cancel-in-progress: false
+env:
+  RELEASE_ENABLED: ${{ vars.RELEASE_ENABLED }}
+  RELEASE_CONFIRM: ${{ inputs.confirm }}
+  RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
+  RELEASE_APPROVAL_FILE: .release/approval.json
+jobs:
+  approval:
+    if: github.repository == 'restarea92/hellgato' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.confirm)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      selected: ${{ steps.approval.outputs.selected }}
+      windows: ${{ steps.approval.outputs.windows }}
+      npm: ${{ steps.approval.outputs.npm }}
+      sha: ${{ steps.approval.outputs.release_sha }}
+      recovery: ${{ steps.recovery.outputs.recovery }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.release_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - run: pnpm install --frozen-lockfile
+      - name: Verify owner-approved release PR and deterministic plan
+        id: approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release.mjs approve
+      - name: Validate recovery inputs and original artifacts
+        id: recovery
+        if: steps.approval.outputs.selected == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.source_run_id }}
+          SOURCE_ATTEMPT: ${{ inputs.source_run_attempt }}
+          WINDOWS_ID: ${{ inputs.windows_artifact_id }}
+          NPM_ID: ${{ inputs.npm_artifact_id }}
+          WINDOWS_SELECTED: ${{ steps.approval.outputs.windows }}
+          NPM_SELECTED: ${{ steps.approval.outputs.npm }}
+        run: |
+          set -euo pipefail
+          if [ -n "$SOURCE_RUN$SOURCE_ATTEMPT$WINDOWS_ID$NPM_ID" ]; then
+            test -n "$SOURCE_RUN" && test -n "$SOURCE_ATTEMPT"
+            if [ "$WINDOWS_SELECTED" = true ]; then
+              node scripts/release.mjs verify-artifact --component windows --artifact-id "$WINDOWS_ID" --run-id "$SOURCE_RUN" --run-attempt "$SOURCE_ATTEMPT"
+            else
+              test -z "$WINDOWS_ID"
+            fi
+            if [ "$NPM_SELECTED" = true ]; then
+              node scripts/release.mjs verify-artifact --component npm --artifact-id "$NPM_ID" --run-id "$SOURCE_RUN" --run-attempt "$SOURCE_ATTEMPT"
+            else
+              test -z "$NPM_ID"
+            fi
+            echo recovery=true >> "$GITHUB_OUTPUT"
+          else
+            echo recovery=false >> "$GITHUB_OUTPUT"
+          fi
+  windows-build:
+    needs: approval
+    if: needs.approval.outputs.windows == 'true' && needs.approval.outputs.recovery != 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows-build.yml
+    with:
+      release_sha: ${{ needs.approval.outputs.sha }}
+  npm-build:
+    needs: approval
+    if: needs.approval.outputs.npm == 'true' && needs.approval.outputs.recovery != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      run_id: ${{ steps.identity.outputs.run_id }}
+      run_attempt: ${{ steps.identity.outputs.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.approval.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - run: |
+          pnpm install --frozen-lockfile
+          npm install --global npm@11.9.0 --ignore-scripts
+          pnpm run release:metadata:check
+          pnpm run prepare:cora
+          pnpm test
+          pnpm run build:npm
+          node scripts/pack-npm.mjs --destination dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          node scripts/verify-npm.mjs --artifacts dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - id: identity
+        run: |
+          echo "run_id=$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "run_attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload
+        with:
+          name: npm-packages-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/npm/*
+          if-no-files-found: error
+          retention-days: 90
+  verified:
+    needs: [approval, windows-build, npm-build]
+    if: always() && needs.approval.outputs.selected == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      WINDOWS_ARTIFACT_ID: ${{ inputs.windows_artifact_id || needs.windows-build.outputs.artifact_id }}
+      WINDOWS_BUILD_RUN_ID: ${{ inputs.source_run_id || needs.windows-build.outputs.run_id }}
+      WINDOWS_BUILD_RUN_ATTEMPT: ${{ inputs.source_run_attempt || needs.windows-build.outputs.run_attempt }}
+      NPM_ARTIFACT_ID: ${{ inputs.npm_artifact_id || needs.npm-build.outputs.artifact_id }}
+      NPM_BUILD_RUN_ID: ${{ inputs.source_run_id || needs.npm-build.outputs.run_id }}
+      NPM_BUILD_RUN_ATTEMPT: ${{ inputs.source_run_attempt || needs.npm-build.outputs.run_attempt }}
+    steps:
+      - name: All selected builds must succeed before any public write
+        env:
+          APPROVAL: ${{ needs.approval.result }}
+          RECOVERY: ${{ needs.approval.outputs.recovery }}
+          WINDOWS_SELECTED: ${{ needs.approval.outputs.windows }}
+          NPM_SELECTED: ${{ needs.approval.outputs.npm }}
+          WINDOWS_RESULT: ${{ needs.windows-build.result }}
+          NPM_RESULT: ${{ needs.npm-build.result }}
+        run: |
+          set -euo pipefail
+          test "$APPROVAL" = success
+          if [ "$RECOVERY" != true ]; then
+            if [ "$WINDOWS_SELECTED" = true ]; then test "$WINDOWS_RESULT" = success; fi
+            if [ "$NPM_SELECTED" = true ]; then test "$NPM_RESULT" = success; fi
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.approval.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.7'
+      - run: node scripts/release.mjs approve --structural-only true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: needs.approval.outputs.windows == 'true'
+        with:
+          artifact-ids: ${{ env.WINDOWS_ARTIFACT_ID }}
+          run-id: ${{ env.WINDOWS_BUILD_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: needs.approval.outputs.npm == 'true'
+        with:
+          artifact-ids: ${{ env.NPM_ARTIFACT_ID }}
+          run-id: ${{ env.NPM_BUILD_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: dist/npm
+          merge-multiple: true
+      - name: Verify Windows bytes before either component can publish
+        if: needs.approval.outputs.windows == 'true'
+        run: python scripts/windows_release.py verify
+      - name: Verify npm archive and tarballs before either component can publish
+        if: needs.approval.outputs.npm == 'true'
+        run: |
+          node scripts/release.mjs verify-artifact --component npm --artifact-id "$NPM_ARTIFACT_ID" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT" --directory dist/npm
+          node scripts/npm-release.mjs verify --artifacts dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT"
+  npm-publish:
+    needs: [approval, verified, npm-build]
+    if: always() && needs.verified.result == 'success' && needs.approval.outputs.npm == 'true' && vars.RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      id-token: write
+    env:
+      NPM_ARTIFACT_ID: ${{ inputs.npm_artifact_id || needs.npm-build.outputs.artifact_id }}
+      NPM_BUILD_RUN_ID: ${{ inputs.source_run_id || needs.npm-build.outputs.run_id }}
+      NPM_BUILD_RUN_ATTEMPT: ${{ inputs.source_run_attempt || needs.npm-build.outputs.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.approval.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.7'
+      - name: Install only the pinned OIDC transport
+        run: npm install --global npm@11.9.0 --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ env.NPM_ARTIFACT_ID }}
+          run-id: ${{ env.NPM_BUILD_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: dist/npm
+          merge-multiple: true
+      - name: Revalidate source approval and original artifact identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/release.mjs approve --structural-only true
+          node scripts/release.mjs verify-artifact --component npm --artifact-id "$NPM_ARTIFACT_ID" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT" --directory dist/npm
+      - name: Publish the exact verified tarballs core then facade
+        run: node scripts/npm-release.mjs publish --artifacts dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT"
+  windows-publish:
+    needs: [approval, verified, windows-build]
+    if: always() && needs.verified.result == 'success' && needs.approval.outputs.windows == 'true' && vars.RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    env:
+      WINDOWS_ARTIFACT_ID: ${{ inputs.windows_artifact_id || needs.windows-build.outputs.artifact_id }}
+      WINDOWS_BUILD_RUN_ID: ${{ inputs.source_run_id || needs.windows-build.outputs.run_id }}
+      WINDOWS_BUILD_RUN_ATTEMPT: ${{ inputs.source_run_attempt || needs.windows-build.outputs.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.approval.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.7'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ env.WINDOWS_ARTIFACT_ID }}
+          run-id: ${{ env.WINDOWS_BUILD_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: dist
+          merge-multiple: true
+      - name: Revalidate approval and publish the exact tested installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/release.mjs approve --structural-only true
+          node scripts/release.mjs verify-artifact --component windows --artifact-id "$WINDOWS_ARTIFACT_ID" --run-id "$WINDOWS_BUILD_RUN_ID" --run-attempt "$WINDOWS_BUILD_RUN_ATTEMPT"
+          python scripts/windows_release.py publish
+  npm-finalize:
+    needs: [approval, npm-publish, npm-build]
+    if: always() && needs.npm-publish.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    env:
+      NPM_ARTIFACT_ID: ${{ inputs.npm_artifact_id || needs.npm-build.outputs.artifact_id }}
+      NPM_BUILD_RUN_ID: ${{ inputs.source_run_id || needs.npm-build.outputs.run_id }}
+      NPM_BUILD_RUN_ATTEMPT: ${{ inputs.source_run_attempt || needs.npm-build.outputs.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.approval.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.7'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ env.NPM_ARTIFACT_ID }}
+          run-id: ${{ env.NPM_BUILD_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: dist/npm
+          merge-multiple: true
+      - name: Confirm registry bytes and finalize npm tags and non-Latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/release.mjs approve --structural-only true
+          node scripts/release.mjs verify-artifact --component npm --artifact-id "$NPM_ARTIFACT_ID" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT" --directory dist/npm
+          node scripts/npm-release.mjs confirm --artifacts dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT"
+          node scripts/release.mjs finalize-npm --artifacts dist/npm --structural-only true
+  download-docs:
+    needs: [approval, windows-publish]
+    if: always() && needs.windows-publish.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      pr_url: ${{ steps.docs.outputs.pr_url }}
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.approval.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.7'
+      - name: Propose download links only after verifying published Windows bytes
+        id: docs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url=$(node scripts/update-downloads.mjs)
+          echo "Confirmed Windows download documentation PR: $url" >> "$GITHUB_STEP_SUMMARY"
+          echo "pr_url=$url" >> "$GITHUB_OUTPUT"
+  download-docs-checks:
+    needs: download-docs
+    if: needs.download-docs.outputs.pr_url != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
+    steps:
+      - name: Dispatch exact-head checks for the bot-created documentation PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_URL: ${{ needs.download-docs.outputs.pr_url }}
+        run: |
+          set -euo pipefail
+          number=${PR_URL##*/}
+          [[ "$number" =~ ^[0-9]+$ ]]
+          pr=$(gh api "repos/$GH_REPO/pulls/$number")
+          if [ "$(jq -r '.state' <<< "$pr")" != open ]; then exit 0; fi
+          head=$(jq -er '.head.sha' <<< "$pr")
+          branch=$(jq -er '.head.ref' <<< "$pr")
+          base=$(jq -er '.base.sha' <<< "$pr")
+          [[ "$branch" == docs/windows-download-* ]]
+          gh workflow run checks.yml --repo "$GH_REPO" --ref "$branch" -f expected_sha="$head" -f base_sha="$base"
+          gh workflow run windows-build.yml --repo "$GH_REPO" --ref "$branch" -f expected_sha="$head"
+  summary:
+    needs: [approval, verified, npm-publish, windows-publish, npm-finalize]
+    if: always() && needs.approval.outputs.selected == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Record precise component outcome
+        env:
+          BUILD_RESULT: ${{ needs.verified.result }}
+          WINDOWS_SELECTED: ${{ needs.approval.outputs.windows }}
+          NPM_SELECTED: ${{ needs.approval.outputs.npm }}
+          WINDOWS_RESULT: ${{ needs.windows-publish.result }}
+          NPM_RESULT: ${{ needs.npm-finalize.result }}
+        run: |
+          {
+            echo '## Release outcome'
+            echo "Source: $RELEASE_SHA"
+            echo "All selected builds: $BUILD_RESULT"
+            echo "Windows selected=$WINDOWS_SELECTED, confirmed=$WINDOWS_RESULT"
+            echo "npm selected=$NPM_SELECTED, confirmed=$NPM_RESULT"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$RELEASE_ENABLED" != true ]; then
+            echo 'Publication is disabled. Verified builds do not prove OIDC or publication setup. Obtain setup/bootstrap approval before enabling RELEASE_ENABLED.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          test "$BUILD_RESULT" = success
+          if [ "$WINDOWS_SELECTED" = true ]; then test "$WINDOWS_RESULT" = success; fi
+          if [ "$NPM_SELECTED" = true ]; then test "$NPM_RESULT" = success; fi

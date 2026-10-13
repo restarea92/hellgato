@@ -1,14 +1,28 @@
 {
-  "name": "hellgato",
+  "name": "hellgato-workspace",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=24 <25" },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "prepare:cora": "node scripts/prepare-cora.mjs",
     "build:npm": "node scripts/build-npm.mjs",
     "test:npm": "node scripts/verify-npm.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "changeset": "changeset",
+    "release:impact": "node scripts/check-release-impact.mjs",
+    "release:version": "node scripts/release-version.mjs",
+    "release:metadata": "node scripts/sync-release-metadata.mjs",
+    "release:metadata:check": "node scripts/sync-release-metadata.mjs --check",
+    "release:plan:check": "node scripts/release-version.mjs --check-plan",
+    "test:release": "node --test test/release-*.test.mjs",
+    "pack:npm": "node scripts/pack-npm.mjs"
+  },
+  "packageManager": "pnpm@11.10.0",
+  "devDependencies": {
+    "@changesets/cli": "3.0.3"
   }
 }

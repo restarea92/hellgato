@@ -1,0 +1,7 @@
+packages:
+  - packages/core
+  - packages/hellgato
+  - packages/windows-release
+
+# Release installation never runs dependency lifecycle scripts.
+allowBuilds: {}

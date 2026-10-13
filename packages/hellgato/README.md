@@ -23,7 +23,7 @@ See the [core API and input examples](https://github.com/restarea92/hellgato/tre
 Your hardware adapter handles USB and renders received images.
 
 This is a developer library, not the Windows installer. For the ready-to-use N4 Pro
-application, [download Hellgato Stream Dog for Windows](https://github.com/restarea92/hellgato/releases).
+application, [download Hellgato Stream Dog for Windows](https://github.com/restarea92/hellgato#get-started).
 The library does not include the desktop application's Stream Deck compatibility
 or ten-key geometry adjustments. Other devices and operating systems are unvalidated.
 
