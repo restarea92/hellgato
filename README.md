@@ -17,6 +17,10 @@
 Hellgato is an open-source project that brings third-party hardware into the official Elgato Stream Deck app. Its Windows client, **Hellgato Stream Dog**, connects your hardware while you configure actions, profiles and plugins in Stream Deck.
 
 <p align="center">
+  <img src="app/assets/icons/stream-dog-preview.png" alt="Hellgato Stream Dog pixel-art mascot holding a controller" width="128">
+</p>
+
+<p align="center">
   <img src="docs/images/app-window.png" alt="Hellgato connected to a Mirabox N4 Pro, alongside Stream Deck and the Photoshop plugin" width="960">
   <br><sub>Example setup captured with an earlier beta.</sub>
 </p>
