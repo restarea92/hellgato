@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import tempfile
+import secrets
 
 from startup_plan import build_plan
 
@@ -75,8 +75,11 @@ def replace_files(folder, contents):
         for name, data in contents.items():
             if data == originals[name]:
                 continue
-            with tempfile.NamedTemporaryFile(prefix='.hellgato-', dir=folder, delete=False) as stream:
-                staged[name] = Path(stream.name)
+            # tempfile retries PermissionError on Windows directories; Program
+            # Files must instead fail immediately so setup can request elevation.
+            temporary = folder / ('.hellgato-' + secrets.token_hex(16))
+            with temporary.open('xb') as stream:
+                staged[name] = temporary
                 stream.write(data)
         for name, temporary in staged.items():
             os.replace(temporary, folder / name)

@@ -74,6 +74,19 @@ class StartupInstallTest(unittest.TestCase):
             setup.remove(self.exe)
         self.assertTrue(setup.installed(self.exe, self.source))
 
+    def test_protected_directory_fails_once_without_retrying_temporary_names(self):
+        actual_open = Path.open
+        attempts = []
+        def open_file(path, *args, **kwargs):
+            if args and args[0] == 'xb':
+                attempts.append(path)
+                raise PermissionError('Program Files requires elevation')
+            return actual_open(path, *args, **kwargs)
+        with patch.object(Path, 'open', open_file), self.assertRaises(PermissionError):
+            setup.replace_files(self.root, {setup.DLL: b'new dll'})
+        self.assertEqual(len(attempts), 1)
+        self.assertFalse((self.root / setup.DLL).exists())
+
 
 if __name__ == '__main__':
     unittest.main()
