@@ -60,14 +60,14 @@ Supports one connected N4 Pro at a time. The tested device and stock firmware ar
 
 1. Install the official [Stream Deck app](https://www.elgato.com/downloads).
 2. Download and run the [Hellgato Windows installer](https://github.com/restarea92/hellgato/releases/download/v0.0.7-beta/Hellgato-0.0.7-beta-Setup.exe).
-3. Connect your N4 Pro over USB, open Hellgato, and open Stream Deck.
+3. Connect your N4 Pro over USB and open Hellgato. Hellgato prepares and starts Stream Deck.
 4. In Stream Deck, open **Network** and connect to `127.0.0.1:5343` on first use.
 
 Complete any pairing confirmation in Stream Deck when prompted.
 
 The installer bundles the runtimes and USB SDK; no source code, build tools or StreamDock app are required. Install any extra Stream Deck plugins separately.
 
-Hellgato prepares the virtual device when both USB and Stream Deck are present, regardless of which arrives first. You control Stream Deck's lifetime: Hellgato never starts, restarts, or quits it. Closing Stream Deck releases the N4 Pro and leaves Hellgato waiting for the next connection.
+Hellgato prepares the ten-key layout before Stream Deck initializes its devices. Connecting restarts an already running Stream Deck after backing up profiles. While Hellgato remains connected, USB reconnection or closing Stream Deck starts a new connection cycle. Disconnect Hellgato first to stop this automatic recovery.
 
 ## Features
 

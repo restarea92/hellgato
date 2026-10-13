@@ -4,8 +4,8 @@
 
 ## Everyday use
 
-- **Connection:** open Stream Deck normally. Hellgato watches for the running app and one N4 Pro, then prepares the connection when both are available. It does not start, restart or stop Stream Deck. USB reconnects and a later manual Stream Deck launch are detected automatically. Complete Stream Deck's pairing confirmation when prompted. The control changes between Connect, Cancel and Disconnect to match the current state.
-- **File menu:** export this device's profiles into one `.hellgatoProfiles` bundle (`Ctrl+E`), or import a bundle or several `.streamDeckProfile` files (`Ctrl+I`). Close Stream Deck yourself before importing. Imports back up replaced profiles; Hellgato resumes watching afterward. Open Stream Deck again when the import has finished.
+- **Connection:** connect one N4 Pro over USB and open Hellgato. Hellgato prepares the ten-key layout before device initialization and starts Stream Deck. An already running Stream Deck is restarted after profiles are backed up. USB reconnection or closing Stream Deck starts another connection cycle while Hellgato remains connected; disconnect Hellgato first to stop automatic recovery. Complete Stream Deck's pairing confirmation when prompted. The control changes between Connect, Cancel and Disconnect to match the current state.
+- **File menu:** export this device's profiles into one `.hellgatoProfiles` bundle (`Ctrl+E`), or import a bundle or several `.streamDeckProfile` files (`Ctrl+I`). Close Stream Deck yourself before importing. Imports back up replaced profiles; a previously active Hellgato connection resumes afterward and starts Stream Deck again.
 - **Tray:** closing the window keeps Hellgato running. Choose Open or Exit from its tray menu.
 - **Startup:** the installer offers Hellgato startup at Windows sign-in, enabled by default. Stream Deck keeps its own startup setting.
 - **Settings → Preferences:** choose the interface language. Changes apply immediately and persist across restarts. First launch uses the Windows display language, with English as fallback.
@@ -22,7 +22,7 @@ Hellgato targets **Stream Deck 7.5.1 and later** on Windows x64, tested through 
 
 The tested device is a **Mirabox N4 Pro E** running stock firmware **`V4.N4 Pro E.02.010`**. One connected N4 Pro is supported at a time; see the [device and firmware table](../README.md#supported-devices) for the tested hardware scope.
 
-Ten-key support and touch strip feedback scheduling require temporary changes to the running Stream Deck process's memory. Hellgato attaches to that process, verifies its code and live model, stages geometry allocations while its threads can run, then briefly pauses them for a coherent commit. Existing verified hooks and ten-key coordinates are reused on reconnection. Screen update requests enable 16 ms feedback checks for that composer; after two seconds without requests, it returns to Stream Deck's original idle wait. Unsupported code changes are rejected, and threads are resumed if preparation fails. Its executable on disk is unchanged. The constructor and live object changes target CORA Plus; USB Plus objects are excluded. Simultaneous use with a genuine Stream Deck + remains outside this beta's tested scope.
+Ten-key support and touch strip feedback scheduling require temporary changes to Stream Deck process memory. Hellgato starts Stream Deck with its initialization paused, checks the loaded code against the inspected executable, and prepares the ten-key model and background grid before the first device lookup. Initialization resumes only after the final layout passes validation. Screen update requests enable 16 ms feedback checks for that composer; after two seconds without requests, it returns to Stream Deck's original idle wait. Unsupported code changes are rejected. Its executable on disk is unchanged. Simultaneous use with a genuine Stream Deck + remains outside this beta's tested scope.
 
 N4 Pro does not report dial release events, so holds, release-triggered actions, press-duration detection, momentary actions, hold-to-repeat, press-and-turn and overlapping held dial presses cannot be reproduced accurately. This limit concerns dial buttons, not LCD keys or touch-strip holds.
 
@@ -97,7 +97,7 @@ $env:HELLGATO_NODE = (Resolve-Path ./work/build-runtime/node.exe).Path
 ./work/build-venv/Scripts/python.exe app/hellgato.py
 ```
 
-Open Stream Deck yourself before testing the connection. `scripts/start-streamdeck.py --pid <pid>` prepares that existing process; `--inspect-only` reads its layout and verified hooks without process writes. `--require-closed` checks the profile-import prerequisite. Preparation returns exit code 11 for transient readiness, cancellation or process-exit races, and 20 for incompatible structure. No preparation command launches or terminates Stream Deck.
+`scripts/start-streamdeck.py --check-only` inspects compatibility without starting or stopping Stream Deck. `--restart` backs up profiles, restarts Stream Deck and prepares geometry before device initialization. `--require-closed` checks the profile-import prerequisite without stopping the app. Incompatible structure returns exit code 20.
 
 Build the installer:
 
