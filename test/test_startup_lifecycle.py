@@ -80,6 +80,8 @@ class StartupLifecycleTest(unittest.TestCase):
             self.assertTrue(self.session.run_bridge(self.host, presence, {}))
         self.assertEqual(popen.call_count, 1)
         self.assertIn('bridge.py', str(popen.call_args.args[0]))
+        # The SDK writes rotated image files relative to the worker directory.
+        self.assertEqual(Path(popen.call_args.kwargs['cwd']), self.state)
         child.wait.assert_called_once_with(timeout=12)
         run.assert_not_called()
         self.assertTrue(self.session.stop_file.exists())

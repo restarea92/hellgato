@@ -41,7 +41,7 @@ Sleep without a screensaver uses N4 Pro's native screen-off command. With a scre
 
 Hardware checks confirmed the 5×2 layout when Stream Deck starts without USB hardware, operation of both rightmost keys after connection, USB reconnection while the virtual network device stays connected, and reconnection after manually quitting and reopening Stream Deck. Hellgato leaves a manually closed Stream Deck closed. Native knob brightness controls were also verified. Earlier beta checks covered five-minute idle activation, screensaver dimming and wake behavior.
 
-These hardware checks predate the device list and saved device registry. Automated registry tests cover persistence across restarts, physical-serial matching after USB port changes, USB-path fallback and protection against reusing an assigned identity for another device. The new list and identity binding still need hardware verification.
+Automated registry tests cover persistence across restarts, physical-serial matching after USB port changes, USB-path fallback and protection against reusing an assigned identity for another device. Physical identity recording and LCD button images were also verified after the Program Files migration. The image worker uses the writable user-data directory for SDK temporary images.
 
 Touch alignment across profiles and plugins, extended animation playback and Windows reboot recovery need broader hardware testing. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
 

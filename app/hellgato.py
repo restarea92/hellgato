@@ -231,7 +231,7 @@ class Session:
         with (STATE / 'bridge.log').open('a', encoding='utf-8') as log:
             logging.info('Starting bridge for prepared host pid=%s created=%s', host.pid, host.created)
             self.bridge = subprocess.Popen(command('app/n4/bridge.py', '--init'),
-                                           cwd=ROOT, env=environment, stdout=subprocess.PIPE,
+                                           cwd=STATE, env=environment, stdout=subprocess.PIPE,
                                            stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace',
                                            creationflags=subprocess.CREATE_NO_WINDOW)
             reader = threading.Thread(target=self.log_bridge, args=(self.bridge.stdout, log), daemon=True)
