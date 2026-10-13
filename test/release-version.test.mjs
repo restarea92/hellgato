@@ -89,7 +89,7 @@ test('no pending changesets creates no release intent', async t => {
 });
 
 test('impact shared source and upstream require Windows and npm', async t => {
-  for (const path of ['app/cora/bridge.mjs', 'scripts/prepare-cora.mjs']) {
+  for (const path of ['app/cora/bridge.mjs', 'scripts/prepare-cora.mjs', 'scripts/cora-paths.mjs']) {
     const root = await fixture(t);
     const base = git(root, 'rev-parse', 'HEAD').trim();
     await put(root, path, '// changed shared implementation\n');

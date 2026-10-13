@@ -33,7 +33,8 @@
     {
       "paths": [
         "app/cora/**",
-        "scripts/prepare-cora.mjs"
+        "scripts/prepare-cora.mjs",
+        "scripts/cora-paths.mjs"
       ],
       "components": [
         "windows",

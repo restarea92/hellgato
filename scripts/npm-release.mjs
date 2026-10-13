@@ -214,13 +214,20 @@ export function compareStable(left, right) {
   for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1;
   return 0;
 }
-function assertBootstrapBaseline(plan, existing, pkg) {
-  if (plan.bootstrap !== true || !isMissing(existing)) return;
+function assertPublicationBaseline(plan, existing, pkg) {
+  // Identical target bytes may already have been published by this approved plan.
+  // A missing target must instead advance exactly the reviewed public baseline.
+  if (!isMissing(existing)) return;
   const component = selectedNpm(plan);
   const entry = component.packages.find(entry => entry.name === pkg.name);
-  invariant(typeof component.oldVersion === 'string' && entry.oldVersion === component.oldVersion, 'Bootstrap must record the same reviewed baseline for both npm packages');
-  if (existing === null) invariant(component.oldVersion === '0.0.0', `Bootstrap baseline changed: ${pkg.name} is absent but plan expects ${component.oldVersion}`);
-  else invariant(existing.registryLatest === component.oldVersion, `Bootstrap baseline changed: ${pkg.name} latest is ${existing.registryLatest}, expected ${component.oldVersion}; review a new plan`);
+  invariant(typeof component.oldVersion === 'string' && entry.oldVersion === component.oldVersion, 'Release must record the same reviewed baseline for both npm packages');
+  if (plan.bootstrap === true) {
+    if (existing === null) invariant(component.oldVersion === '0.0.0', `Bootstrap baseline changed: ${pkg.name} is absent but plan expects ${component.oldVersion}`);
+    else invariant(existing.registryLatest === component.oldVersion, `Bootstrap baseline changed: ${pkg.name} latest is ${existing.registryLatest}, expected ${component.oldVersion}; review a new plan`);
+  } else {
+    invariant(STABLE.test(component.oldVersion) && existing !== null && existing.registryLatest === component.oldVersion,
+      `Normal release requires the published stable baseline ${pkg.name}@${component.oldVersion}; registry latest is ${existing?.registryLatest ?? 'absent'}. Review bootstrap or a new release plan`);
+  }
 }
 function assertLatestCanAdvance(existing, pkg) {
   const latest = existing?.registryLatest;
@@ -258,7 +265,7 @@ export async function publishArtifacts(options = {}, { environment = process.env
   // Validate both registry states before the first write, avoiding known partial failure.
   for (const pkg of manifest.packages) {
     const existing = await lookup(pkg.name, pkg.version);
-    assertBootstrapBaseline(plan, existing, pkg);
+    assertPublicationBaseline(plan, existing, pkg);
     if (!isMissing(existing)) registryMatches(existing, pkg);
     else assertLatestCanAdvance(existing, pkg);
     previous.push(existing);
@@ -269,7 +276,7 @@ export async function publishArtifacts(options = {}, { environment = process.env
     if (!isMissing(previous[index])) { result.push({ name: pkg.name, version: pkg.version, status: 'already-published' }); continue; }
     // A manual release may have raced preflight; check again before moving latest.
     const current = await lookup(pkg.name, pkg.version);
-    assertBootstrapBaseline(plan, current, pkg);
+    assertPublicationBaseline(plan, current, pkg);
     if (!isMissing(current)) { registryMatches(current, pkg); result.push({ name: pkg.name, version: pkg.version, status: 'already-published' }); continue; }
     assertLatestCanAdvance(current, pkg);
     // Rehash immediately before passing the exact tarball path to the pinned CLI.

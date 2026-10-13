@@ -2,7 +2,8 @@ import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, resolve } from 'node:path';
+import { basename, resolve, posix, win32 } from 'node:path';
+import { coraModulePath } from '../scripts/cora-paths.mjs';
 import { gzipSync } from 'node:zlib';
 import { MANIFEST, REPOSITORY, REGISTRY, NPM_VERSION, PACKAGES, UPSTREAM, digest, archiveName, assertSources, selectedNpm, readTarball, inspectArchive, verifyArtifacts, readRegistryVersion, compareStable, publishArtifacts, confirmPublished, resolveWindowsTool } from '../scripts/npm-release.mjs';
 
@@ -64,6 +65,8 @@ function fixture({ mutate, smoke = true } = {}) {
 }
 const environment = { RELEASE_ENABLED: 'true', GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: REPOSITORY, GITHUB_REF: 'refs/heads/main', ACTIONS_ID_TOKEN_REQUEST_URL: 'https://example.invalid', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'test-identity-context' };
 const recorded = pkg => ({ name: pkg.name, version: pkg.version, dist: { integrity: pkg.integrity }, registryLatest: VERSION });
+// The normal fixture is a reviewed 0.0.1→0.1.0 release with 0.0.1 already public.
+const predecessor = () => ({ missing: true, registryLatest: '0.0.1' });
 
  test('source fixed group requires equal versions and workspace:*', () => {
   const root = temporaryDirectory();
@@ -146,14 +149,14 @@ test('identical registry bytes are a no-op for both packages', async () => {
 test('facade conflict is detected before publishing missing core', async () => {
   const { options, manifest } = fixture();
   let writes = 0;
-  await assert.rejects(publishArtifacts(options, { environment, lookup: async name => name === '@hellgato/core' ? null : { ...recorded(manifest.packages[1]), dist: { integrity: 'wrong' } }, run: (_tool, args) => { if (args[0] === 'publish') writes++; return NPM_VERSION; } }), /integrity conflict/);
+  await assert.rejects(publishArtifacts(options, { environment, lookup: async name => name === '@hellgato/core' ? predecessor() : { ...recorded(manifest.packages[1]), dist: { integrity: 'wrong' } }, run: (_tool, args) => { if (args[0] === 'publish') writes++; return NPM_VERSION; } }), /integrity conflict/);
   assert.equal(writes, 0);
 });
 test('publishes immutable core first and only then the facade, with scripts disabled', async () => {
   const { options, manifest } = fixture();
   const published = new Map();
   const order = [];
-  await publishArtifacts(options, { environment, lookup: async name => published.get(name) || null, run: (_tool, args, runOptions) => {
+  await publishArtifacts(options, { environment, lookup: async name => published.get(name) || predecessor(), run: (_tool, args, runOptions) => {
     if (args[0] === '--version') return NPM_VERSION;
     assert.equal(args[0], 'publish');
     assert.equal(runOptions.env.GITHUB_SHA, SHA);
@@ -169,7 +172,7 @@ test('partially published core is skipped; only facade is resumed', async () => 
   const { options, manifest } = fixture();
   const published = new Map([['@hellgato/core', recorded(manifest.packages[0])]]);
   const order = [];
-  const result = await publishArtifacts(options, { environment, lookup: async name => published.get(name) || null, run: (_tool, args) => { if (args[0] === '--version') return NPM_VERSION; order.push(args[1]); published.set('hellgato', recorded(manifest.packages[1])); return ''; } });
+  const result = await publishArtifacts(options, { environment, lookup: async name => published.get(name) || predecessor(), run: (_tool, args) => { if (args[0] === '--version') return NPM_VERSION; order.push(args[1]); published.set('hellgato', recorded(manifest.packages[1])); return ''; } });
   assert.equal(order.length, 1);
   assert.equal(basename(order[0]), 'hellgato-0.1.0.tgz');
   assert.deepEqual(result.map(pkg => pkg.status), ['already-published', 'published']);
@@ -177,15 +180,18 @@ test('partially published core is skipped; only facade is resumed', async () => 
 test('unconfirmed core stops before facade and failed publish never retries automatically', async () => {
   const { options } = fixture();
   let writes = 0;
-  await assert.rejects(publishArtifacts(options, { environment, lookup: async () => null, run: (_tool, args) => { if (args[0] === '--version') return NPM_VERSION; writes++; return ''; }, delay: async () => {} }), /did not confirm/);
+  await assert.rejects(publishArtifacts(options, { environment, lookup: async () => predecessor(), run: (_tool, args) => { if (args[0] === '--version') return NPM_VERSION; writes++; return ''; }, delay: async () => {} }), /did not confirm/);
   assert.equal(writes, 1);
   writes = 0;
-  await assert.rejects(publishArtifacts(options, { environment, lookup: async () => null, run: (_tool, args) => { if (args[0] === '--version') return NPM_VERSION; writes++; throw new Error('network failed'); } }), /network failed/);
+  await assert.rejects(publishArtifacts(options, { environment, lookup: async () => predecessor(), run: (_tool, args) => { if (args[0] === '--version') return NPM_VERSION; writes++; throw new Error('network failed'); } }), /network failed/);
   assert.equal(writes, 1);
 });
 test('stable latest rollback and wrong tool version are rejected before publication', async () => {
   const { options } = fixture();
-  for (const latest of ['0.2.0', '0.2.0-beta']) await assert.rejects(publishArtifacts(options, { environment, lookup: async () => ({ missing: true, registryLatest: latest }), run: () => NPM_VERSION }), /backwards/);
+  for (const latest of ['0.2.0', '0.2.0-beta']) {
+    const bootstrap = bootstrapFixture(latest);
+    await assert.rejects(publishArtifacts(bootstrap.options, { environment, lookup: async () => ({ missing: true, registryLatest: latest }), run: () => NPM_VERSION }), /backwards/);
+  }
   await assert.rejects(publishArtifacts(options, { environment, run: () => '11.8.0' }), /Expected npm/);
   assert.equal(compareStable('0.1.10', '0.1.9'), 1);
 });
@@ -256,4 +262,38 @@ test('Windows npm .bin and supported global package-manager shims resolve withou
 test('Windows selected standalone executable is honored and broken shim never selects global pnpm', () => {
   assert.deepEqual(resolveWindowsTool('pnpm', { locate: () => 'C:\\pinned\\pnpm.exe\r\nC:\\global\\pnpm.cmd' }), { command: 'C:\\pinned\\pnpm.exe', prefix: [] });
   assert.throws(() => resolveWindowsTool('pnpm', { locate: () => 'C:\\pinned\\node_modules\\.bin\\pnpm.cmd\r\nC:\\global\\pnpm.exe\r\nC:\\global\\pnpm.cmd', exists: path => path.startsWith('C:\\global') }), /Cannot locate the selected pnpm JavaScript CLI/);
+});
+
+test('normal release rejects absent packages and missing or changed stable predecessors before any write', async () => {
+  const { options } = fixture();
+  let writes = 0;
+  for (const baseline of [null, { missing: true, registryLatest: '0.0.1-beta' }, { missing: true, registryLatest: '0.0.0' }, { missing: true, registryLatest: '0.0.2' }, { missing: true, registryLatest: null }]) {
+    await assert.rejects(publishArtifacts(options, { environment, lookup: async name => name === '@hellgato/core' ? predecessor() : baseline, run: (_tool, args) => { if (args[0] === 'publish') writes++; return NPM_VERSION; } }), /published stable baseline/);
+  }
+  assert.equal(writes, 0);
+});
+test('normal partial recovery refuses a facade whose reviewed predecessor was never public', async () => {
+  const { options, manifest } = fixture();
+  let writes = 0;
+  await assert.rejects(publishArtifacts(options, { environment, lookup: async name => name === '@hellgato/core' ? recorded(manifest.packages[0]) : { missing: true, registryLatest: '0.0.1-beta' }, run: (_tool, args) => { if (args[0] === 'publish') writes++; return NPM_VERSION; } }), /published stable baseline/);
+  assert.equal(writes, 0);
+});
+test('normal baseline is checked again immediately before publishing', async () => {
+  const { options } = fixture();
+  let reads = 0;
+  let writes = 0;
+  await assert.rejects(publishArtifacts(options, { environment, lookup: async () => ++reads <= 2 ? predecessor() : { missing: true, registryLatest: '0.0.2' }, run: (_tool, args) => { if (args[0] === 'publish') writes++; return NPM_VERSION; } }), /published stable baseline/);
+  assert.equal(writes, 0);
+});
+
+test('CORA provenance emits canonical module paths from both Windows and POSIX builds', () => {
+  const expected = 'cora/primary-server.ts';
+  assert.equal(coraModulePath('C:\\build\\deckbridge\\ts\\src', 'C:\\build\\deckbridge\\ts\\src\\cora\\primary-server.ts', win32.relative), expected);
+  assert.equal(coraModulePath('/build/deckbridge/ts/src', '/build/deckbridge/ts/src/cora/primary-server.ts', posix.relative), expected);
+  const path = resolve(temporaryDirectory(), 'core.tgz');
+  writeFileSync(path, tar(packageFiles('@hellgato/core', (_manifest, files) => {
+    const module = coraModulePath('D:\\src', 'D:\\src\\cora\\test.ts', win32.relative);
+    files['dist/vendor/provenance.json'] = JSON.stringify({ ...UPSTREAM, modules: [module] });
+  })));
+  assert.equal(inspectArchive(path, '@hellgato/core', VERSION).name, '@hellgato/core');
 });

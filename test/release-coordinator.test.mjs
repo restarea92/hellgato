@@ -97,6 +97,15 @@ test('Windows CI promotes the installed global npm prefix before checking its pi
   assert.ok(yaml.indexOf('npm prefix --global') < yaml.indexOf('assertNpmVersion();'));
 });
 
+test('npm build does not inherit another job\'s nonexistent approval file', async () => {
+  const yaml = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const build = yaml.slice(yaml.indexOf('  npm-build:\n'), yaml.indexOf('  verified:\n'));
+  assert.match(build, /RELEASE_APPROVAL_FILE: ''/);
+  assert.match(build, /verify-npm\.mjs.*--plan \.release\/plan\.json.*--release-sha "\$RELEASE_SHA"/);
+  const barrier = yaml.slice(yaml.indexOf('  verified:\n'), yaml.indexOf('  npm-publish:\n'));
+  assert.match(barrier, /node scripts\/release\.mjs approve/);
+});
+
 test('npm GitHub finalizer resumes its own draft and completed retry is immutable', async t => {
   const root = await mkdtemp(join(tmpdir(), 'hellgato-finalize-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));

@@ -112,6 +112,10 @@ jobs:
     if: needs.approval.outputs.npm == 'true' && needs.approval.outputs.recovery != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # Approval files are local to each job. Builders bind the explicit plan;
+      # the read-only verification barrier creates and rechecks its own approval.
+      RELEASE_APPROVAL_FILE: ''
     outputs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
       run_id: ${{ steps.identity.outputs.run_id }}
