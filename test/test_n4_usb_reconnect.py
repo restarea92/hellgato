@@ -154,6 +154,7 @@ class UsbReconnectTests(unittest.TestCase):
             with patch.dict(sys.modules, modules), patch.object(sys, 'argv', ['bridge.py', '--init']), \
                     patch.object(sys, 'platform', 'linux'), patch.dict(bridge.os.environ, {}, clear=True), \
                     patch.object(bridge, 'state_root', Path(directory)), \
+                    patch.object(bridge, 'sdk_source', Path(directory)), \
                     patch.object(bridge, 'settings_path', return_value=Path(directory) / 'settings.json'), \
                     patch.object(bridge, 'load_settings', return_value={'identity': 3, 'dockIdentity': 1, 'stripMode': 'frame'}), \
                     patch.object(bridge, 'ScreensaverSource', return_value=None), \
