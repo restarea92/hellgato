@@ -3,7 +3,7 @@ name: Windows release
 on:
   push:
     branches: [main]
-    paths: ['docs/releases/0.1.0.md', '.github/workflows/windows-release.yml', 'native/hellgato-ui/prepare.py']
+    paths: ['docs/releases/0.1.0.md', '.github/workflows/windows-release.yml', 'native/**']
   workflow_dispatch:
 
 permissions:

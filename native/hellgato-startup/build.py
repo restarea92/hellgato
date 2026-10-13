@@ -19,11 +19,7 @@ def environment():
     spec = importlib.util.spec_from_file_location('native_ui_build', ROOT / 'native/hellgato-ui/build.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    result = module.msvc_environment()
-    compiler_path = result.get('PATH', result.get('Path', ''))
-    result.pop('PATH', None)
-    result['Path'] = compiler_path
-    return result
+    return module.msvc_environment()
 
 
 def compile_proxy(output, env, *, fixture=False):

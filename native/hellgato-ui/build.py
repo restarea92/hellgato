@@ -21,8 +21,12 @@ def msvc_environment():
     activation = Path(installation) / 'VC/Auxiliary/Build/vcvars64.bat'
     result = subprocess.run(f'cmd.exe /d /u /s /c ""{activation}" >nul && set"',
                             encoding='utf-16-le', capture_output=True, check=True)
-    environment = dict(os.environ)
-    environment.update(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+    environment = {key.upper(): value for key, value in os.environ.items()}
+    for line in result.stdout.splitlines():
+        if '=' in line:
+            key, value = line.split('=', 1)
+            environment[key.upper()] = value
+    environment['Path'] = environment.pop('PATH', '')
     return environment
 
 
