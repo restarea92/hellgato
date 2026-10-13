@@ -77,6 +77,7 @@ class Bridge extends EventEmitter {
       for (const event of ['log', 'comm', 'clientConnected', 'clientDisconnected', 'operationRejected']) {
         server.on(event, (...detail) => this.emit(event, { role, detail }));
       }
+      server.on('serverLog', (...detail) => this.emit('log', { role, detail }));
     }
     for (const event of ['image', 'touchImage', 'lcdFrameStarted', 'lcdImage', 'displayCommand', 'sleepDuration', 'brightness']) {
       child.on(event, detail => this.emit(event, detail));

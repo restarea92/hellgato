@@ -1,0 +1,20 @@
+LIBRARY VERSION
+EXPORTS
+    GetFileVersionInfoA=KERNELBASE.GetFileVersionInfoA @1 PRIVATE
+    GetFileVersionInfoByHandle=KERNELBASE.GetFileVersionInfoByHandle @2 PRIVATE
+    GetFileVersionInfoExA=KERNELBASE.GetFileVersionInfoExA @3 PRIVATE
+    GetFileVersionInfoExW=KERNELBASE.GetFileVersionInfoExW @4 PRIVATE
+    GetFileVersionInfoSizeA=KERNELBASE.GetFileVersionInfoSizeA @5 PRIVATE
+    GetFileVersionInfoSizeExA=KERNELBASE.GetFileVersionInfoSizeExA @6 PRIVATE
+    GetFileVersionInfoSizeExW=KERNELBASE.GetFileVersionInfoSizeExW @7 PRIVATE
+    GetFileVersionInfoSizeW=KERNELBASE.GetFileVersionInfoSizeW @8 PRIVATE
+    GetFileVersionInfoW=KERNELBASE.GetFileVersionInfoW @9 PRIVATE
+    VerFindFileA=KERNELBASE.VerFindFileA @10 PRIVATE
+    VerFindFileW=KERNELBASE.VerFindFileW @11 PRIVATE
+    VerInstallFileA=ForwardVerInstallFileA @12
+    VerInstallFileW=ForwardVerInstallFileW @13
+    VerLanguageNameA=KERNEL32.VerLanguageNameA @14 PRIVATE
+    VerLanguageNameW=KERNEL32.VerLanguageNameW @15 PRIVATE
+    VerQueryValueA=KERNELBASE.VerQueryValueA @16 PRIVATE
+    VerQueryValueW=KERNELBASE.VerQueryValueW @17 PRIVATE
+    HellgatoStartupIdentity @18

@@ -79,5 +79,9 @@
   "profile.format": "不支持此配置文件格式。",
   "profile.destination": "配置文件保存路径无效。",
   "detail.host_waiting": "准备好后请启动 Stream Deck。Hellgato 会等待，不会自行启动应用。",
-  "error.app_running": "导入配置前，请手动退出 Stream Deck。"
+  "error.app_running": "导入配置前，请手动退出 Stream Deck。",
+  "connection.setup": "准备 Stream Deck",
+  "detail.startup_setup": "只需准备一次，即可在每次启动 Stream Deck 时启用十个按键。Windows 可能会请求管理员权限。",
+  "detail.startup_reopen": "请从系统托盘菜单退出 Stream Deck，再手动重新打开，以启用十键支持。",
+  "error.startup_setup": "准备失败。请手动退出 Stream Deck 后重试。详情请查看日志。"
 }

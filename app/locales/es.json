@@ -79,5 +79,9 @@
   "about.description": "Conecta tu N4 Pro con la aplicación Stream Deck.",
   "about.license": "Software de código abierto · Licencia MIT",
   "detail.host_waiting": "Abre Stream Deck cuando quieras. Hellgato espera sin iniciarlo.",
-  "error.app_running": "Cierra Stream Deck manualmente antes de importar perfiles."
+  "error.app_running": "Cierra Stream Deck manualmente antes de importar perfiles.",
+  "connection.setup": "Preparar Stream Deck",
+  "detail.startup_setup": "Prepare Stream Deck una vez para habilitar diez teclas en cada inicio. Windows puede solicitar permisos de administrador.",
+  "detail.startup_reopen": "Cierre Stream Deck desde el menú de la bandeja del sistema y vuelva a abrirlo manualmente para activar las diez teclas.",
+  "error.startup_setup": "La preparación ha fallado. Cierre Stream Deck manualmente y vuelva a intentarlo. Consulte el registro para obtener más detalles."
 }

@@ -79,5 +79,9 @@
   "profile.format": "지원하지 않는 프로필 형식입니다.",
   "profile.destination": "프로필 저장 경로가 올바르지 않습니다.",
   "detail.host_waiting": "원할 때 Stream Deck을 실행하세요. Hellgato는 앱을 실행하지 않고 기다립니다.",
-  "error.app_running": "프로필을 가져오기 전에 Stream Deck을 직접 종료하세요."
+  "error.app_running": "프로필을 가져오기 전에 Stream Deck을 직접 종료하세요.",
+  "connection.setup": "Stream Deck 준비",
+  "detail.startup_setup": "최초 한 번 준비하면 실행할 때마다 10버튼을 인식합니다. Windows 관리자 권한 승인이 필요할 수 있습니다.",
+  "detail.startup_reopen": "Stream Deck 트레이 메뉴에서 종료한 뒤 직접 다시 실행하면 10버튼 지원이 적용됩니다.",
+  "error.startup_setup": "준비하지 못했습니다. Stream Deck을 직접 종료한 뒤 다시 시도하세요. 자세한 내용은 로그를 확인하세요."
 }

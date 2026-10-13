@@ -16,9 +16,10 @@ include_tree('app/cora', {'.mjs', '.json'})
 include_tree('app/locales', {'.json'})
 include_tree('work/cora-runtime', {'.js', '.json'})
 include_tree('work/references/mirabox/Python-SDK/src/StreamDock', {'.py', '.dll'})
-for script in ('start-streamdeck.py', 'patch-device-geometry.py', 'patch-background-grid.py', 'load-native-ui.py'):
+for script in ('setup-startup.py', 'start-streamdeck.py', 'patch-device-geometry.py', 'patch-background-grid.py', 'load-native-ui.py'):
     datas.append((str(root / 'scripts' / script), 'scripts'))
 datas += [
+    (str(root / 'work/build-native-startup/version.dll'), 'native'),
     (str(root / 'work/build-native-ui-package/HellgatoNativeUiV2.dll'), 'native'),
     (str(root / 'LICENSE'), '.'),
     (str(icon), 'app/assets/icons'),

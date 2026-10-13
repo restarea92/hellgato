@@ -39,35 +39,37 @@ These are installation estimates for the shown versions. Hellgato and additional
 
 ## Stream Deck compatibility
 
-Targets **Stream Deck 7.5.1 and later** on Windows x64, tested through **7.6.0.23012**. Compatibility is checked before connecting.
+Targets **Stream Deck 7.5.1 and later** on Windows x64. Earlier beta testing covered **7.6.0.23012**; the startup DLL flow still needs a complete hardware session. Compatibility is checked before preparing startup support and before connecting.
 
 | Stream Deck version | Release date | Test status |
 | --- | --- | --- |
-| 7.5.1 | [2026-07-28](https://help.elgato.com/hc/en-us/articles/49238316077713-Elgato-Stream-Deck-7-5-1-Release-Notes) | Tested |
-| 7.6.0.23012 | [2026-09-22](https://help.elgato.com/hc/en-us/articles/51156609278737-Elgato-Stream-Deck-7-6-Release-Notes) | Tested (latest) |
+| 7.5.1 | [2026-07-28](https://help.elgato.com/hc/en-us/articles/49238316077713-Elgato-Stream-Deck-7-5-1-Release-Notes) | Earlier beta tested |
+| 7.6.0.23012 | [2026-09-22](https://help.elgato.com/hc/en-us/articles/51156609278737-Elgato-Stream-Deck-7-6-Release-Notes) | Earlier beta tested |
 
 ## Supported devices
 
-Supports one connected N4 Pro at a time. The tested device and stock firmware are listed below.
+Targets one connected N4 Pro at a time. Earlier beta testing used the device and stock firmware below.
 
 | Device | Tested firmware | Controls | Platform | Status |
 | --- | --- | --- | --- | --- |
-| Mirabox N4 Pro E | `V4.N4 Pro E.02.010` | 10 LCD keys, 4 dials, touch strip | Windows x64 | Supported beta device |
+| Mirabox N4 Pro E | `V4.N4 Pro E.02.010` | 10 LCD keys, 4 dials, touch strip | Windows x64 | Beta target; startup DLL validation pending |
 
 **Version:** `0.0.7-beta`. Other devices and firmware versions have not been validated.
 
 ## Get started
 
 1. Install the official [Stream Deck app](https://www.elgato.com/downloads).
-2. Download and run the [Hellgato Windows installer](https://github.com/restarea92/hellgato/releases/download/v0.0.7-beta/Hellgato-0.0.7-beta-Setup.exe).
-3. Connect your N4 Pro over USB and open Hellgato. Hellgato prepares and starts Stream Deck.
+2. Close Stream Deck and run the [Hellgato Windows installer](https://github.com/restarea92/hellgato/releases/download/v0.0.7-beta/Hellgato-0.0.7-beta-Setup.exe). Startup support may request administrator permission to write beside Stream Deck.
+3. Open Stream Deck yourself, connect your N4 Pro over USB and open Hellgato.
 4. In Stream Deck, open **Network** and connect to `127.0.0.1:5343` on first use.
 
 Complete any pairing confirmation in Stream Deck when prompted.
 
 The installer bundles the runtimes and USB SDK; no source code, build tools or StreamDock app are required. Install any extra Stream Deck plugins separately.
 
-Hellgato prepares the ten-key layout before Stream Deck initializes its devices. Connecting restarts an already running Stream Deck after backing up profiles. While Hellgato remains connected, USB reconnection or closing Stream Deck starts a new connection cycle. Disconnect Hellgato first to stop this automatic recovery.
+The installer adds a startup DLL beside Stream Deck once. Each Stream Deck launch prepares the ten-key model before it becomes available to devices, even when N4 Pro is unplugged. Hellgato waits for Stream Deck to be opened by you; closing Stream Deck stops the bridge until your next launch. Reconnecting USB restores the hardware connection while keeping the virtual device connection intact.
+
+If preparation is needed after installation or a Stream Deck app update, close Stream Deck yourself and choose **Prepare Stream Deck** in Hellgato. A changed executable hash requires a new plan; unsupported internal structures are rejected. See the [guide](docs/guide.md#build-and-test) for source setup and diagnostics.
 
 ## Features
 
@@ -89,11 +91,11 @@ Hellgato prepares the ten-key layout before Stream Deck initializes its devices.
 
 The installer is unsigned.
 
-Ten-key and touch-strip support temporarily adjust the running Stream Deck process's memory; the executable on disk stays unchanged. Simultaneous use with a genuine Stream Deck + is outside this beta's scope.
+Ten-key and touch-strip support adjust Stream Deck process memory at startup. The full `StreamDeck.exe` stays unchanged on disk; installation adds `version.dll`, `HellgatoStartup.plan` and the `HellgatoStartup.json` ownership manifest beside it. Uninstallation removes only files whose ownership and contents match that manifest. The ten-key model changes Stream Deck's shared Plus model, so simultaneous use with a genuine Stream Deck + remains unverified.
 
 N4 Pro does not report dial release events. Dial holds, actions triggered on release, press-duration detection, momentary actions, hold-to-repeat, press-and-turn, and overlapping held dial presses cannot be reproduced accurately with stock firmware.
 
-N4 Pro stores a single static boot/standby logo on the device, separate from PC-stored screensavers. It appears after the boot video and when no app is connected. Hellgato does not yet support uploading or resetting it through Stream Deck's **Advanced → Standby image** setting; using that setting may disconnect the virtual device.
+N4 Pro stores a single static boot/standby logo on the device, separate from PC-stored screensavers. It appears after the boot video and when no app is connected. Hellgato does not write, upload or reset this logo. Stream Deck's **Advanced → Standby image** setting remains unsupported and may disconnect the virtual device.
 
 Touch alignment across plugins, extended use and reboot recovery need broader hardware testing. [Report issues](https://github.com/restarea92/hellgato/issues) with your device, Stream Deck version and reproduction steps. Review logs and exported profiles for personal information before sharing.
 

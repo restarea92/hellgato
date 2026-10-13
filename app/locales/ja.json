@@ -79,5 +79,9 @@
   "profile.format": "未対応のプロファイル形式です。",
   "profile.destination": "プロファイルの保存先が無効です。",
   "detail.host_waiting": "準備ができたら Stream Deck を起動してください。Hellgato はアプリを起動せずに待機します。",
-  "error.app_running": "プロファイルをインポートする前に Stream Deck を手動で終了してください。"
+  "error.app_running": "プロファイルをインポートする前に Stream Deck を手動で終了してください。",
+  "connection.setup": "Stream Deckを準備",
+  "detail.startup_setup": "初回にStream Deckを準備すると、起動するたびに10キーが有効になります。Windowsで管理者権限の承認を求められる場合があります。",
+  "detail.startup_reopen": "Stream Deckをトレイメニューから終了し、手動で起動し直すと10キー対応が適用されます。",
+  "error.startup_setup": "準備に失敗しました。Stream Deckを手動で終了してから、もう一度お試しください。詳細はログを確認してください。"
 }

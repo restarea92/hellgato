@@ -88,6 +88,32 @@ test('public bridge delivers key, dial, touch, and received image bytes over TCP
   }
 });
 
+test('runtime transport logs reach the public log event with their role and detail', { timeout: 2000 }, async () => {
+  const bridge = await createBridge({ port: 0, childPort: 0 });
+  const logs = [];
+  bridge.on('log', event => logs.push(event));
+  await bridge.start();
+  let socket;
+  try {
+    for (const role of ['primary', 'child']) {
+      const connected = once(bridge, 'clientConnected');
+      socket = connect(bridge.ports[role], '127.0.0.1');
+      socket.resume();
+      await connected;
+      const disconnected = once(bridge, 'clientDisconnected');
+      socket.end();
+      await disconnected;
+      assert.ok(logs.some(event => event.role === role && event.detail.length === 1 &&
+        event.detail[0].level === 'info' &&
+        event.detail[0].component === (role === 'primary' ? 'elgato' : 'elgato-child') &&
+        event.detail[0].message === 'connection closed gracefully (FIN)'));
+    }
+  } finally {
+    socket?.destroy();
+    await bridge.stop();
+  }
+});
+
 test('display controls are decoded, acknowledged, and sleep timing is readable', { timeout: 5000 }, async () => {
   const bridge = await createBridge({ port: 0, childPort: 0 });
   await bridge.start();

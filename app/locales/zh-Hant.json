@@ -79,5 +79,9 @@
   "profile.format": "不支援此設定檔格式。",
   "profile.destination": "設定檔儲存路徑無效。",
   "detail.host_waiting": "準備好後請啟動 Stream Deck。Hellgato 會等待，不會自行啟動應用程式。",
-  "error.app_running": "匯入設定檔前，請手動結束 Stream Deck。"
+  "error.app_running": "匯入設定檔前，請手動結束 Stream Deck。",
+  "connection.setup": "準備 Stream Deck",
+  "detail.startup_setup": "只需準備一次，即可在每次啟動 Stream Deck 時啟用十個按鍵。Windows 可能會要求系統管理員權限。",
+  "detail.startup_reopen": "請從系統匣選單結束 Stream Deck，再手動重新開啟，以啟用十鍵支援。",
+  "error.startup_setup": "準備失敗。請手動結束 Stream Deck 後重試。詳細資訊請查看記錄。"
 }

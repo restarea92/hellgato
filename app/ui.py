@@ -49,6 +49,8 @@ def connection_presentation(phase, running, stopping=False, busy=False, closing=
     if closing or (running and stopping):
         return ConnectionPresentation('connection.stopping', 'connection.stopping_action', MUTED, False)
     if not running:
+        if phase == 'setup':
+            return ConnectionPresentation('connection.error', 'connection.setup', WARNING, not busy)
         if phase == 'error':
             return ConnectionPresentation('connection.error', 'connection.retry', ERROR, not busy)
         return ConnectionPresentation('connection.idle', 'connection.start', MUTED, not busy)

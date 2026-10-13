@@ -79,5 +79,9 @@
   "profile.format": "This profile format is not supported.",
   "profile.destination": "The profile destination path is invalid.",
   "detail.host_waiting": "Open Stream Deck when you are ready. Hellgato waits without starting it.",
-  "error.app_running": "Close Stream Deck manually before importing profiles."
+  "error.app_running": "Close Stream Deck manually before importing profiles.",
+  "connection.setup": "Prepare Stream Deck",
+  "detail.startup_setup": "Prepare Stream Deck once to enable ten keys on each launch. Windows may ask for administrator permission.",
+  "detail.startup_reopen": "Close Stream Deck from its tray menu, then open it yourself to load the ten-key support.",
+  "error.startup_setup": "Preparation failed. Close Stream Deck yourself and retry. Check the log for details."
 }

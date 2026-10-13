@@ -79,5 +79,9 @@
   "about.description": "Verbinde dein N4 Pro mit der Stream Deck-Anwendung.",
   "about.license": "Open-Source-Software · MIT-Lizenz",
   "detail.host_waiting": "Öffnen Sie Stream Deck, wenn Sie bereit sind. Hellgato wartet, ohne es zu starten.",
-  "error.app_running": "Schließen Sie Stream Deck selbst, bevor Sie Profile importieren."
+  "error.app_running": "Schließen Sie Stream Deck selbst, bevor Sie Profile importieren.",
+  "connection.setup": "Stream Deck vorbereiten",
+  "detail.startup_setup": "Bereiten Sie Stream Deck einmalig vor, um bei jedem Start zehn Tasten zu aktivieren. Windows fragt möglicherweise nach Administratorrechten.",
+  "detail.startup_reopen": "Beenden Sie Stream Deck über das Menü im Infobereich und öffnen Sie es anschließend selbst wieder, um die Unterstützung für zehn Tasten zu laden.",
+  "error.startup_setup": "Die Vorbereitung ist fehlgeschlagen. Beenden Sie Stream Deck selbst und versuchen Sie es erneut. Details finden Sie im Protokoll."
 }
