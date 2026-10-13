@@ -46,6 +46,39 @@ try {
     Assert-True ((Get-Content -LiteralPath $settings -Raw) -eq '{"keep":true}') 'User settings must be preserved.'
     Assert-True (Test-Path -LiteralPath (Join-Path $profiles 'profile')) 'Stream Deck profiles must be preserved.'
 
+    $originalUninstallKey = $script:UninstallKey
+    $fixtureUninstallKey = 'Software\HellgatoInstallerTests\' + [Guid]::NewGuid()
+    $script:UninstallKey = $fixtureUninstallKey
+    try {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($fixtureUninstallKey)
+        try {
+            $key.SetValue('InstallLocation', $registration.InstallLocation)
+            $key.SetValue('UninstallString', $registration.UninstallString)
+        } finally { $key.Dispose() }
+        Remove-LegacyInstallation (Read-LegacyRegistration) $localData $destination
+        Assert-True ($null -eq (Read-LegacyRegistration)) 'An absent old directory must allow stale registration cleanup.'
+        Remove-LegacyInstallation (Read-LegacyRegistration) $localData $destination
+        Assert-True (-not (Test-Path -LiteralPath $legacy)) 'Repeated setup must not recreate the previous installation.'
+        Assert-True ((Get-Content -LiteralPath $settings -Raw) -eq '{"keep":true}') 'Stale registration cleanup must preserve settings.'
+
+        [IO.Directory]::CreateDirectory($legacy) | Out-Null
+        $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($fixtureUninstallKey)
+        try {
+            $key.SetValue('InstallLocation', $registration.InstallLocation)
+            $key.SetValue('UninstallString', $registration.UninstallString)
+        } finally { $key.Dispose() }
+        Assert-Throws { Remove-LegacyInstallation (Read-LegacyRegistration) $localData $destination } 'An existing directory with a missing uninstaller must remain protected.'
+        Assert-True ($null -ne (Read-LegacyRegistration)) 'A damaged but existing installation must retain its registration.'
+
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($fixtureUninstallKey, $true)
+        try { $key.SetValue('InstallLocation', (Join-Path $fixture 'Foreign')) } finally { $key.Dispose() }
+        Assert-Throws { Remove-LegacyInstallation (Read-LegacyRegistration) $localData $destination } 'A foreign registration must never be removed, even when its directory is missing.'
+        Assert-True ($null -ne (Read-LegacyRegistration)) 'Foreign registration must be preserved.'
+    } finally {
+        [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey($fixtureUninstallKey, $false)
+        $script:UninstallKey = $originalUninstallKey
+    }
+
     [IO.Directory]::CreateDirectory($legacy) | Out-Null
     New-Item -ItemType Junction -Path (Join-Path $legacy 'redirect') -Target $profiles | Out-Null
     Assert-Throws { Remove-LegacyDirectory $legacy $localData $destination } 'Cleanup must reject junctions.'
@@ -102,7 +135,7 @@ try {
     try {
         Assert-True (@(Get-InstalledProcesses $legacy $destination).Count -eq 0) 'A process exiting during inspection must not fail setup.'
     } finally { Remove-Item -LiteralPath Function:\Get-Process }
-    Write-Output 'Installer migration checks passed: paths, commands, data preservation, junctions, startup ownership, context ACLs, interop, process SID and exit race.'
+    Write-Output 'Installer migration checks passed: paths, commands, stale registration, data preservation, junctions, startup ownership, context ACLs, interop, process SID and exit race.'
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixture)
     $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'

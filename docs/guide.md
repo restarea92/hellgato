@@ -139,7 +139,7 @@ Build the installer:
 ./scripts/build-windows.ps1 -Python ./work/build-venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
 ```
 
-Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.1.0-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. The Windows release workflow runs manually or when `docs/releases/0.1.0.md` is added or changed on `main`. Update the version, installer filenames, release-note trigger and workflow release command together before publishing release notes. Other pushes run checks without publishing.
+Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.1.1-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. The Windows release workflow runs manually or when `docs/releases/0.1.1.md`, `.github/workflows/windows-release.yml` or files under `native/` change on `main`. Update the version, installer filenames, release-note trigger and workflow release command together before publishing release notes. Other pushes run checks without publishing.
 
 | Directory | Purpose |
 | --- | --- |

@@ -1,4 +1,4 @@
-#define AppVersion "0.1.0"
+#define AppVersion "0.1.1"
 #define NativeUiSource AddBackslash(SourcePath) + "..\dist\Hellgato\_internal\native\HellgatoNativeUiV2.dll"
 #define NativeUiSha256 GetSHA256OfFile(NativeUiSource)
 [Setup]

@@ -3,7 +3,7 @@ name: Windows release
 on:
   push:
     branches: [main]
-    paths: ['docs/releases/0.1.0.md', '.github/workflows/windows-release.yml', 'native/**']
+    paths: ['docs/releases/0.1.1.md', '.github/workflows/windows-release.yml', 'native/**']
   workflow_dispatch:
 
 permissions:
@@ -52,5 +52,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.1.0 dist/Hellgato-0.1.0-Setup.exe dist/Hellgato-0.1.0-Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --latest --title 'Hellgato Stream Dog 0.1.0' --notes-file docs/releases/0.1.0.md
+          gh release create v0.1.1 dist/Hellgato-0.1.1-Setup.exe dist/Hellgato-0.1.1-Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --latest --title 'Hellgato Stream Dog 0.1.1' --notes-file docs/releases/0.1.1.md
           if ($LASTEXITCODE) { throw 'Release publishing failed; an existing release is never overwritten automatically' }

@@ -79,6 +79,32 @@ function Remove-LegacyDirectory([string]$Directory, [string]$LocalAppData, [stri
     }
 }
 
+function Remove-LegacyInstallation($Registration, [string]$LocalAppData, [string]$Destination) {
+    $legacy = Get-LegacyUninstaller $Registration $LocalAppData
+    if ($null -eq $legacy) { return }
+    Write-SetupLog ('Checking previous directory: ' + $legacy.Directory)
+    if (-not (Test-Path -LiteralPath $legacy.Directory)) {
+        $current = Get-LegacyUninstaller (Read-LegacyRegistration) $LocalAppData
+        if ($null -eq $current) { return }
+        if ($current.Directory -ine $legacy.Directory -or $current.Uninstaller -ine $legacy.Uninstaller -or
+            (Test-Path -LiteralPath $current.Directory)) {
+            throw 'The previous installation changed during setup.'
+        }
+        [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey($script:UninstallKey, $false)
+        Write-SetupLog 'Removed stale registration for an absent previous installation.'
+        return
+    }
+    Assert-PlainDirectory $legacy.Directory
+    if (-not (Test-Path -LiteralPath $legacy.Uninstaller -PathType Leaf)) {
+        throw 'The previous registered uninstaller is missing.'
+    }
+    $process = Start-Process -FilePath $legacy.Uninstaller -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -WindowStyle Hidden -Wait -PassThru
+    Write-SetupLog "Previous uninstaller result: $($process.ExitCode)"
+    if ($process.ExitCode -ne 0) { throw "Previous uninstaller failed: $($process.ExitCode)" }
+    if ($null -ne (Read-LegacyRegistration)) { throw 'The previous uninstall registration is still present.' }
+    Remove-LegacyDirectory $legacy.Directory $LocalAppData $Destination
+}
+
 function Initialize-RestartManager {
     if ('HellgatoSetup.RestartManager' -as [type]) { return }
     Add-Type -TypeDefinition @'
@@ -277,18 +303,7 @@ function Invoke-UserSetup {
         # Write before making changes: an inaccessible original-user context must stop setup.
         [IO.File]::WriteAllText($ContextFile, "[User]`r`nStartupShortcut=$shortcut`r`nAutostart=$startupDefault`r`n", [Text.Encoding]::Unicode)
         Close-InstalledApps $legacyDirectory $destination $localData
-        if ($null -ne $legacy) {
-            Write-SetupLog ('Checking previous directory: ' + $legacy.Directory)
-            Assert-PlainDirectory $legacy.Directory
-            if (-not (Test-Path -LiteralPath $legacy.Uninstaller -PathType Leaf)) {
-                throw 'The previous registered uninstaller is missing.'
-            }
-            $process = Start-Process -FilePath $legacy.Uninstaller -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -WindowStyle Hidden -Wait -PassThru
-            Write-SetupLog "Previous uninstaller result: $($process.ExitCode)"
-            if ($process.ExitCode -ne 0) { throw "Previous uninstaller failed: $($process.ExitCode)" }
-            if ($null -ne (Read-LegacyRegistration)) { throw 'The previous uninstall registration is still present.' }
-            Remove-LegacyDirectory $legacy.Directory $localData $destination
-        }
+        Remove-LegacyInstallation $registration $localData $destination
     } elseif ($Mode -eq 'Configure') {
         Set-StartupShortcut $destination $shortcut $oldShortcut $targets $shell ($Autostart -eq '1')
     } else { throw 'A setup mode is required.' }
@@ -302,6 +317,9 @@ if ($MyInvocation.InvocationName -ne '.') {
             $script:PersistentLog = Join-Path $state 'setup.log'
         }
         Write-SetupLog ('Started as ' + [Security.Principal.WindowsIdentity]::GetCurrent().Name)
+        Write-SetupLog ('Context: SID={0}; 64-bit={1}; LocalAppData={2}' -f
+            [Security.Principal.WindowsIdentity]::GetCurrent().User.Value, [Environment]::Is64BitProcess,
+            [Environment]::GetFolderPath('LocalApplicationData'))
         Invoke-UserSetup
         Write-SetupLog 'Completed successfully.'
         exit 0
