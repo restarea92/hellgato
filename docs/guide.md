@@ -30,7 +30,16 @@ Sleep without a screensaver uses N4 Pro's native screen-off command. With a scre
 
 Five-minute idle activation, screensaver dimming and wake behavior have been confirmed on the test device. Touch alignment across profiles and plugins, extended animation playback and Windows reboot recovery need broader hardware testing. Report issues with the device, Stream Deck version, reproduction steps and relevant logs. Check logs for personal paths or profile information before sharing them.
 
-Advanced standby-image set/reset is not supported: its unhandled image-upload command can disconnect the virtual device. An equivalent N4 Pro API for persistent standby-image storage has not been confirmed.
+Screensavers and boot/standby logos are separate features:
+
+| Feature | Storage | Display behavior |
+| --- | --- | --- |
+| Idle screensaver | PC, in Stream Deck's saved assets | Hellgato streams the selected static image or animation while connected |
+| Boot/standby logo | N4 Pro device | One static image appears after the boot video and when no app is connected |
+
+Mirabox StreamDock accepts 800×480 JPG/PNG images for the stored logo. Hellgato does not yet implement the persistent upload/reset protocol, and the on-device image encoding still needs verification. The SDK's ordinary background-image and animation APIs update the active display; their format does not establish the stored logo's format. The boot video is a separate existing device animation.
+
+Stream Deck's **Advanced → Standby image** upload/reset remains unsupported and may disconnect the virtual device. A last displayed frame can remain visible while the connection shuts down before the device returns to its stored logo; shutdown timing still needs measurement on the device.
 
 ## How it works
 

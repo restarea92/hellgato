@@ -21,6 +21,22 @@ Hellgato is an open-source Windows bridge that brings third-party hardware into 
   <br><sub>Example setup captured with an earlier beta.</sub>
 </p>
 
+## Why Hellgato?
+
+Use the official Stream Deck app with your Mirabox hardware without keeping StreamDock installed. In the Windows setup shown below, StreamDock's reported installation size was 1.38 GB, compared with 711 MB for Stream Deck.
+
+| Application | Version | Windows-reported installed size |
+| --- | --- | --- |
+| StreamDock | 3.10.202.0512 | 1.38 GB |
+| Elgato Stream Deck | 7.6.0.23012 | 711 MB |
+
+<p>
+  <img src="docs/images/streamdock-installed-size.png" alt="Windows installed-app entry for StreamDock 3.10.202.0512 showing 1.38 GB" width="430">
+  <img src="docs/images/stream-deck-installed-size.png" alt="Windows installed-app entry for Elgato Stream Deck 7.6.0.23012 showing 711 MB" width="430">
+</p>
+
+These are installation estimates for the shown versions. Hellgato and additional plugins require extra disk space; runtime CPU and RAM usage have not been benchmarked.
+
 ## Stream Deck compatibility
 
 Targets **Stream Deck 7.5.1 and later** on Windows x64, tested through **7.6.0.23012**. Compatibility is checked before connecting.
@@ -56,11 +72,12 @@ The installer bundles the runtimes and USB SDK; no source code, build tools or S
 - Export profiles as a `.hellgatoProfiles` bundle (`Ctrl+E`); import bundles or `.streamDeckProfile` files (`Ctrl+I`). Replaced profiles are backed up.
 - Tray operation, optional Windows sign-in startup and eleven interface languages.
 
-### N4 Pro plugin — coming soon
+### Planned N4 Pro controls
 
 - Knob RGB colors: all four together or individually, independent brightness and default-effect reset.
 - Vibration on/off.
 - Existing boot video on/off.
+- Upload and reset the device-stored boot/standby logo.
 
 ## Beta notes
 
@@ -70,7 +87,7 @@ Ten-key and touch-strip support temporarily adjust the running Stream Deck proce
 
 N4 Pro does not report dial release events. Dial holds, actions triggered on release, press-duration detection, momentary actions, hold-to-repeat, press-and-turn, and overlapping held dial presses cannot be reproduced accurately with stock firmware.
 
-Stream Deck's **Advanced → Standby image** setting is unsupported and may disconnect the virtual device. An equivalent N4 API for persistent standby-image storage has not been confirmed.
+N4 Pro stores a single static boot/standby logo on the device, separate from PC-stored screensavers. It appears after the boot video and when no app is connected. Hellgato does not yet support uploading or resetting it through Stream Deck's **Advanced → Standby image** setting; using that setting may disconnect the virtual device.
 
 Touch alignment across plugins, extended use and reboot recovery need broader hardware testing. [Report issues](https://github.com/restarea92/hellgato/issues) with your device, Stream Deck version and reproduction steps. Review logs and exported profiles for personal information before sharing.
 
