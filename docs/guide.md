@@ -16,7 +16,9 @@ Stream Deck account files are not included, and the automatic app-switching fiel
 
 ## Compatibility and beta limits
 
-Hellgato checks Stream Deck's internal structure and live device geometry before connecting. The current resolver has been validated on **Stream Deck 7.6.0.23012**; compatibility with every later release is not guaranteed.
+Hellgato targets **Stream Deck 7.5.1 and later** on Windows x64, tested through **7.6.0.23012**. See the [Stream Deck version table](../README.md#stream-deck-compatibility) for tested releases and their release dates. Compatibility checks inspect Stream Deck's internal structure and live device geometry before connecting.
+
+The tested device is a **Mirabox N4 Pro E** running stock firmware **`V4.N4 Pro E.02.010`**. One connected N4 Pro is supported at a time; see the [device and firmware table](../README.md#supported-devices) for the tested hardware scope.
 
 Ten-key support and touch strip feedback scheduling require temporary changes to the running Stream Deck process's memory. Screen update requests enable 16 ms feedback checks for that composer; after two seconds without requests, it returns to Stream Deck's original idle wait. This improves animation delivery without polling continuously while idle. Internal code signatures and loaded bytes are checked before patching; unsupported layouts are rejected. Its executable on disk is unchanged. Simultaneous use with a genuine Stream Deck + is outside this beta's scope.
 

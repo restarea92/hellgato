@@ -21,13 +21,24 @@ Hellgato is an open-source Windows bridge that brings third-party hardware into 
   <br><sub>Example setup captured with an earlier beta.</sub>
 </p>
 
+## Stream Deck compatibility
+
+Targets **Stream Deck 7.5.1 and later** on Windows x64, tested through **7.6.0.23012**. Compatibility is checked before connecting.
+
+| Stream Deck version | Release date | Test status |
+| --- | --- | --- |
+| 7.5.1 | [2026-07-28](https://help.elgato.com/hc/en-us/articles/49238316077713-Elgato-Stream-Deck-7-5-1-Release-Notes) | Tested |
+| 7.6.0.23012 | [2026-09-22](https://help.elgato.com/hc/en-us/articles/51156609278737-Elgato-Stream-Deck-7-6-Release-Notes) | Tested (latest) |
+
 ## Supported devices
 
-| Device | Controls | Platform | Status |
-| --- | --- | --- | --- |
-| Mirabox N4 Pro (stock firmware) | 10 LCD keys, 4 dials, touch strip | Windows x64 | Supported beta device |
+Supports one connected N4 Pro at a time. The tested device and stock firmware are listed below.
 
-**Version:** `0.0.7-beta`. Supports one connected N4 Pro. Other devices have not been validated.
+| Device | Tested firmware | Controls | Platform | Status |
+| --- | --- | --- | --- | --- |
+| Mirabox N4 Pro E | `V4.N4 Pro E.02.010` | 10 LCD keys, 4 dials, touch strip | Windows x64 | Supported beta device |
+
+**Version:** `0.0.7-beta`. Other devices and firmware versions have not been validated.
 
 ## Get started
 
@@ -53,7 +64,7 @@ The installer bundles the runtimes and USB SDK; no source code, build tools or S
 
 ## Beta notes
 
-The installer is unsigned. Compatibility has been validated with **Stream Deck 7.6.0.23012**; later releases may need updates.
+The installer is unsigned.
 
 Ten-key and touch-strip support temporarily adjust the running Stream Deck process's memory; the executable on disk stays unchanged. Simultaneous use with a genuine Stream Deck + is outside this beta's scope.
 

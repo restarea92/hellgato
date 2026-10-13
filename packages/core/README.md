@@ -70,10 +70,13 @@ This package provides local network transport. It does not include a USB driver,
 the desktop GUI, or Stream Deck process-memory adjustments. Servers bind only to
 `127.0.0.1`; pairing is manual and mDNS is disabled. It has no installation scripts.
 
-The complete Windows application has been validated with one Mirabox N4 Pro and
-Stream Deck 7.6.0.23012. N4 Pro ten-key support also needs the desktop application's
+The complete Windows application targets Stream Deck 7.5.1 and later, tested
+through 7.6.0.23012 with one Mirabox N4 Pro E running stock firmware
+`V4.N4 Pro E.02.010`. See the [tested software versions](../../README.md#stream-deck-compatibility)
+and [device firmware](../../README.md#supported-devices) for the validated scope.
+N4 Pro ten-key support also needs the desktop application's
 compatibility and geometry adjustments; this package alone does not provide them.
-Other hardware and operating systems are not validated by this release.
+Other hardware, firmware versions and operating systems are not validated by this release.
 
 ## License
 
