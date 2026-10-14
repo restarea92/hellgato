@@ -90,10 +90,8 @@ The requested normal-app checks are complete for installed `bb51866`, with the
 two Hellgato-only limitations recorded above. The user's final scope is the program
 icon set. Commit `5d56a31` applies the supplied artwork to the executable, window/taskbar,
 tray and shortcuts while preserving app and installer UI artwork. All ten embedded
-ICO sizes and packaged assets were checked. The latest local installer is
-`dist/Hellgato-0.1.2-Setup.exe`; its app build is `5d56a31` and keeps the verified
-`bb51866` device behavior. The installer executable also uses `hellgato-app.ico`;
-installer wizard artwork remains unchanged.
+ICO sizes and packaged assets were checked. The final local installer is
+`dist/Hellgato-0.1.2-Setup-5d56a31.exe`; it keeps the verified `bb51866` device behavior.
 Setup already closes Hellgato and Stream Deck; routine upgrades need no separate
 manual-close request. No full functional retest is needed for this icon-only change.
 Do not resume lifecycle fixes or automated release work under this scope. No complete
