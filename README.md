@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/restarea92/hellgato/releases/download/v0.1.1/Hellgato-0.1.1-Setup.exe"><strong>Download for Windows (.exe)</strong></a> ·
+  <a href="https://github.com/restarea92/hellgato/releases/download/v0.1.2/Hellgato-0.1.2-Setup.exe"><strong>Download for Windows (.exe)</strong></a> ·
   <a href="docs/guide.md">Guide &amp; development</a> ·
   <a href="https://github.com/restarea92/hellgato/issues">Report an issue</a>
 </p>
@@ -58,12 +58,12 @@ Targets one registered N4 Pro at a time. Simultaneous use of multiple devices is
 | --- | --- | --- | --- | --- |
 | Mirabox N4 Pro E | `V4.N4 Pro E.02.010` | 10 LCD keys, 4 dials, touch strip | Windows x64 | Startup, reconnection and native knob brightness verified |
 
-**Version:** `0.1.1`. Other devices and firmware versions have not been validated.
+**Version:** `0.1.2`. Other devices and firmware versions have not been validated.
 
 ## Get started
 
 1. Install the official [Stream Deck app](https://www.elgato.com/downloads).
-2. Run the [Hellgato Stream Dog installer](https://github.com/restarea92/hellgato/releases/download/v0.1.1/Hellgato-0.1.1-Setup.exe) and approve administrator permission. Setup announces that it will close Stream Deck and Hellgato, closes them, removes the verified previous installation and installs into `%ProgramFiles%\Hellgato`.
+2. Run the [Hellgato Stream Dog installer](https://github.com/restarea92/hellgato/releases/download/v0.1.2/Hellgato-0.1.2-Setup.exe) and approve administrator permission. Setup announces that it will close Stream Deck and Hellgato, closes them, removes the verified previous installation and installs into `%ProgramFiles%\Hellgato`.
 3. On the finish page, choose whether to launch Hellgato Stream Dog now and whether to launch it at Windows sign-in.
 4. Open Stream Deck yourself, connect your N4 Pro over USB and open Hellgato Stream Dog if it is not already running.
 5. In Stream Deck, open **Network** and connect to `127.0.0.1:5343` on first use.
