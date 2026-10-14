@@ -1,0 +1,13 @@
+﻿Supported setup / 지원 환경
+
+Use one Mirabox N4 Pro at a time. Do not use a genuine Stream Deck + together with this installation.
+
+The startup integration changes Stream Deck's shared Plus model before the device session starts. The change can still affect a genuine Plus when the N4 is unplugged. This installer does not automatically detect or prevent that conflict. Remove Hellgato startup support before using a genuine Plus.
+
+The new sidecar SDK is an experimental development path. This installer retains the existing N4 compatibility engine. No additional device, firmware, or host version is claimed as verified by the architecture change.
+
+Mirabox N4 Pro 한 대만 사용하세요. 정품 Stream Deck +를 함께 사용하는 환경은 지원하지 않습니다.
+
+시작 지원 기능은 장치 세션이 시작되기 전에 Stream Deck의 공용 Plus 모델을 변경합니다. N4를 뽑아도 정품 Plus에 영향이 남을 수 있습니다. 설치 프로그램이 이 충돌을 자동으로 감지하거나 차단하지는 않습니다. 정품 Plus를 사용하기 전에 Hellgato 시작 지원 기능을 제거하세요.
+
+새 sidecar SDK는 실험적인 개발 경로입니다. 이 설치 파일은 기존 N4 호환 엔진을 유지하며, 구조 변경만으로 새로운 장치·펌웨어·Stream Deck 버전의 실물 검증을 완료했다고 표시하지 않습니다.

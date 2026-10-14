@@ -55,9 +55,12 @@
         "packages/hellgato/**",
         "scripts/build-npm.mjs",
         "scripts/verify-npm.mjs",
-        "scripts/pack-npm.mjs"
+        "scripts/pack-npm.mjs",
+        "schemas/**",
+        "vendor/deckbridge/**"
       ],
       "components": [
+        "windows",
         "npm"
       ]
     },
@@ -75,7 +78,14 @@
         "scripts/patch-device-geometry.py",
         "scripts/setup-startup.py",
         "scripts/start-streamdeck.py",
-        "packages/windows-release/package.json"
+        "packages/windows-release/package.json",
+        "adapters/mirabox-python/**",
+        "apps/stream-dog/**",
+        "host-integrations/**",
+        "vendor/mirabox-sdk/**",
+        "scripts/stage-windows-sdk.mjs",
+        "pyproject.toml",
+        "uv.lock"
       ],
       "components": [
         "windows"
@@ -109,7 +119,8 @@
         "scripts/npm-release.mjs",
         "scripts/windows_release.py",
         "scripts/update-downloads.mjs",
-        "scripts/verify-artifact.py"
+        "scripts/verify-artifact.py",
+        "scripts/check-architecture.mjs"
       ],
       "components": [],
       "reviewRequired": true
@@ -119,7 +130,8 @@
         "README.md",
         "docs/**",
         "test/**",
-        ".github/ISSUE_TEMPLATE/**"
+        ".github/ISSUE_TEMPLATE/**",
+        "tests/**"
       ],
       "components": []
     }

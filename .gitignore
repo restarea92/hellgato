@@ -19,3 +19,5 @@ packages/core/dist/
 packages/*/LICENSE
 packages/core/THIRD-PARTY-NOTICES.txt
 *.tgz
+
+packages/core/src/vendor/

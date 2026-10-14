@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "repository": "MiraboxSpace/StreamDock-Device-SDK",
+  "revision": "87ff56674cb3772dc2a13376d174c33c37964607",
+  "source": "https://api.github.com/repos/MiraboxSpace/StreamDock-Device-SDK/git/trees/87ff56674cb3772dc2a13376d174c33c37964607?recursive=1",
+  "files": [
+    {
+      "path": "LICENSE",
+      "size": 1069,
+      "gitBlobSha1": "10ec242c069825ac1c44c9a92892ceac5ee1248e"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/DeviceConfig.py",
+      "size": 1197,
+      "gitBlobSha1": "da3720881e23461467290323a3fe39f4bef9490d"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/DeviceManager.py",
+      "size": 11217,
+      "gitBlobSha1": "8eaa6ea8e921f38f703a5cee02a03ac8ea8da61d"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/GifController.py",
+      "size": 17343,
+      "gitBlobSha1": "21242a768d2861ca8e0d16f4045583e2115340fd"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/K1Pro.py",
+      "size": 7075,
+      "gitBlobSha1": "cefe605a3d930a55a232e9c5fe52656498e5630e"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDock.py",
+      "size": 28202,
+      "gitBlobSha1": "9d5086b5e4c156ab385cb2166f0a59228630a000"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDock293.py",
+      "size": 5126,
+      "gitBlobSha1": "6febcdb3e87c0f3aaa349bdab0cb7e0820afb082"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDock293V3.py",
+      "size": 5299,
+      "gitBlobSha1": "e05fbb321e0c9626f3992e9b17f405fdb852abac"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDock293s.py",
+      "size": 5346,
+      "gitBlobSha1": "6966839d5b6c7dd02bb34e91f92e8d7ba7715baa"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDock293sV3.py",
+      "size": 5661,
+      "gitBlobSha1": "7dcbb084702836a2a60f2342078c27f304a44b62"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDockH1Pro.py",
+      "size": 6515,
+      "gitBlobSha1": "ed47e6db4fd90e15e0ebe81917d540c7cba0c73e"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDockM18.py",
+      "size": 5552,
+      "gitBlobSha1": "e419558c7b8353da66256e19221ea3e435e44524"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDockM3.py",
+      "size": 7551,
+      "gitBlobSha1": "bf17ad6058587b50b97623dfb4c66b238f1d06c2"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDockMini.py",
+      "size": 7451,
+      "gitBlobSha1": "223bc78a271e7f3c545eec5f1e1adcb03d3b8fd0"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDockN1.py",
+      "size": 10311,
+      "gitBlobSha1": "44f50e0f7825e4b51d2435cb725cf3252c9513e6"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDockN3.py",
+      "size": 6721,
+      "gitBlobSha1": "844c1af5fcc39dd84d9e6a120376b7f08dc6a1f0"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDockN4.py",
+      "size": 6786,
+      "gitBlobSha1": "bda4f458b88ec8ca41000e0507df6b3729e3523a"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDockN4Pro.py",
+      "size": 12582,
+      "gitBlobSha1": "d4f4ee1e429dcfaf316c40cd560eac554fa792f1"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/StreamDockXL.py",
+      "size": 8308,
+      "gitBlobSha1": "ff9bc24ca53cf1bfdbd42f9e936355179d180bac"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Devices/__init__.py",
+      "size": 0,
+      "gitBlobSha1": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/FeatrueOption.py",
+      "size": 733,
+      "gitBlobSha1": "fa59df9129989099ed7a211ddf0c967e9afa8ea8"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/ImageHelpers/PILHelper.py",
+      "size": 3551,
+      "gitBlobSha1": "0cf2daa893c3e37d5271f2bd6108f0fde98797e4"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/ImageHelpers/__init__.py",
+      "size": 0,
+      "gitBlobSha1": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/InputTypes.py",
+      "size": 3895,
+      "gitBlobSha1": "5fab01bedb5a33e801538f35905a8f4f4f363c48"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/ProductIDs.py",
+      "size": 6775,
+      "gitBlobSha1": "95f4bd4aab1034128dac26cb9f1576a65541f426"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/LibUSBHIDAPI.py",
+      "size": 48304,
+      "gitBlobSha1": "f9ab6184d2003f308460fa5a315241119b9e54a3"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/TransportDLL/MSVCP140.dll",
+      "size": 553552,
+      "gitBlobSha1": "554d2ffc5f5aa84a0598b2f167258187f1fa5842"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/TransportDLL/VCRUNTIME140.dll",
+      "size": 123472,
+      "gitBlobSha1": "950b5876276ab599400576250d1704b443cf58a0"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/TransportDLL/VCRUNTIME140_1.dll",
+      "size": 47264,
+      "gitBlobSha1": "a4819708ff2f61287801a09b445608ea26368014"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/TransportDLL/api-ms-win-crt-convert-l1-1-0.dll",
+      "size": 23448,
+      "gitBlobSha1": "80986fc3b04de657e391849d12015b480d49a10a"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/TransportDLL/api-ms-win-crt-heap-l1-1-0.dll",
+      "size": 20360,
+      "gitBlobSha1": "237ee32206774d79623d212c57073b9067401e2f"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/TransportDLL/api-ms-win-crt-runtime-l1-1-0.dll",
+      "size": 23960,
+      "gitBlobSha1": "d06fbddba60564f3212a573247ff035b70bfcf18"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/TransportDLL/api-ms-win-crt-stdio-l1-1-0.dll",
+      "size": 25480,
+      "gitBlobSha1": "5665a01dab246e79a7278cd6a0b465263e0c4a05"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/TransportDLL/api-ms-win-crt-string-l1-1-0.dll",
+      "size": 25496,
+      "gitBlobSha1": "e9d2743f6d250ccba25688ed4a66d67683dc1a79"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/TransportDLL/transport.dll",
+      "size": 185344,
+      "gitBlobSha1": "eb13a5ea07f260e05283dcb5fd28a6996381524b"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/__init__.py",
+      "size": 0,
+      "gitBlobSha1": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/Transport/test.py",
+      "size": 495,
+      "gitBlobSha1": "4db1acb93acbfbd76820f83eec49adb2954554ce"
+    },
+    {
+      "path": "Python-SDK/src/StreamDock/__init__.py",
+      "size": 0,
+      "gitBlobSha1": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    }
+  ]
+}

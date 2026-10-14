@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hellgato-mirabox"
+dynamic = ["version"]
+description = "Physical-only Mirabox IPC worker; candidate pending hardware parity"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = []
+
+[project.optional-dependencies]
+physical = ["Pillow==12.0.0"]
+
+[project.scripts]
+hellgato-mirabox-worker = "hellgato_mirabox.worker:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+hellgato_mirabox = ["schemas/*.json"]
+
+[tool.setuptools.dynamic]
+version = {attr = "hellgato_mirabox.__version__"}

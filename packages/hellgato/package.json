@@ -3,10 +3,26 @@
   "version": "0.1.0",
   "description": "Stream Deck network bridge for third-party hardware",
   "type": "module",
-  "exports": "./index.mjs",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs"
+    },
+    "./adapters/mirabox-n4-pro": {
+      "types": "./src/adapters/mirabox-n4-pro/index.d.ts",
+      "import": "./src/adapters/mirabox-n4-pro/index.mjs"
+    },
+    "./testing": {
+      "types": "./src/testing/index.d.ts",
+      "import": "./src/testing/index.mjs"
+    }
+  },
   "files": [
     "index.mjs",
-    "LICENSE"
+    "index.d.ts",
+    "src",
+    "LICENSE",
+    "README.md"
   ],
   "license": "MIT",
   "engines": {
@@ -26,5 +42,6 @@
     "access": "public",
     "tag": "latest",
     "registry": "https://registry.npmjs.org/"
-  }
+  },
+  "types": "./index.d.ts"
 }

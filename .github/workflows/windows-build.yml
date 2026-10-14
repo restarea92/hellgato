@@ -3,10 +3,10 @@ name: Windows build
 on:
   push:
     branches: [main]
-    paths: ['app/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.release/**', 'docs/releases/**', '.github/workflows/**']
+    paths: ['app/**', 'apps/**', 'adapters/**', 'host-integrations/**', 'vendor/**', 'schemas/**', 'tests/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'pyproject.toml', 'uv.lock', '.release/**', 'docs/releases/**', '.github/workflows/**']
   pull_request:
     branches: [main]
-    paths: ['app/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.release/**', 'docs/releases/**', '.github/workflows/**']
+    paths: ['app/**', 'apps/**', 'adapters/**', 'host-integrations/**', 'vendor/**', 'schemas/**', 'tests/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'pyproject.toml', 'uv.lock', '.release/**', 'docs/releases/**', '.github/workflows/**']
   workflow_dispatch:
     inputs:
       expected_sha:
@@ -60,6 +60,9 @@ jobs:
           EXPECTED_SHA: ${{ inputs.expected_sha || inputs.release_sha }}
         run: |
           if ($env:EXPECTED_SHA -and (git rev-parse HEAD) -ne $env:EXPECTED_SHA) { throw 'Unexpected checkout SHA' }
+          npm install --global npm@11.9.0 --ignore-scripts
+          if ($LASTEXITCODE) { throw 'Pinned npm installation failed' }
+          npm prefix --global >> $env:GITHUB_PATH
           pnpm install --frozen-lockfile
           if ($LASTEXITCODE) { throw 'Frozen workspace installation failed' }
           pnpm run release:metadata:check
@@ -97,6 +100,18 @@ jobs:
           if ($LASTEXITCODE) { throw 'CORA checks failed' }
           python scripts/windows_release.py artifacts
           if ($LASTEXITCODE) { throw 'Installer artifact validation failed' }
+      - name: Save isolated native fixture results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (Node 24)
+        with:
+          archive: true
+          overwrite: false
+          name: native-fixtures-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            work/build-native-startup/fixture/fixture-results.json
+            work/build-native-ui-test/fixture-results.txt
+          if-no-files-found: warn
+          retention-days: 30
       - name: Bind artifacts to their exact build
         env:
           RELEASE_SHA: ${{ inputs.release_sha || github.sha }}

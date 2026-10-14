@@ -13,6 +13,100 @@ export const NPM_VERSION = '11.9.0'; // OIDC requires >=11.5.1. Do not use @late
 export const UPSTREAM = { repository: 'https://github.com/lukasMega/DeckBridge', revision: '7c00693d01ac6c47c071907835ed0724d28d8183' };
 export const PACKAGES = [{ name: '@hellgato/core', directory: 'core' }, { name: 'hellgato', directory: 'hellgato' }];
 export const MANIFEST = 'npm-artifact-manifest.json';
+// Temporary source-level stop. No environment variable or CLI flag can enable it.
+export function assertNpmPublicationEnabled() {
+  throw new Error('npm publication is hard-disabled during the architecture migration; a separately approved code change is required to restore it');
+}
+// Reviewed public entry points and exact payload inventory. New paths require a policy change.
+export const PACKAGE_LAYOUT = {
+  "@hellgato/core": {
+    "types": "./dist/bridge.d.mts",
+    "exports": {
+      ".": {
+        "types": "./dist/bridge.d.mts",
+        "import": "./dist/bridge.mjs"
+      },
+      "./contracts": {
+        "types": "./dist/contracts/index.d.mts",
+        "import": "./dist/contracts/index.mjs"
+      },
+      "./schemas/contracts.schema.json": "./schemas/contracts.schema.json"
+    },
+    "files": [
+      "package.json",
+      "README.md",
+      "LICENSE",
+      "THIRD-PARTY-NOTICES.txt",
+      "dist/bridge.mjs",
+      "dist/bridge.d.mts",
+      "dist/bridge/device-bridge.mjs",
+      "dist/contracts/index.mjs",
+      "dist/contracts/index.d.mts",
+      "dist/hosts/streamdeck/target.mjs",
+      "dist/hosts/streamdeck/display-server.mjs",
+      "dist/hosts/streamdeck/firmware-policy.mjs",
+      "dist/legacy/bridge.mjs",
+      "dist/legacy/profiles.mjs",
+      "dist/profiles.mjs",
+      "dist/display-server.mjs",
+      "dist/firmware-policy.mjs",
+      "schemas/contracts.schema.json",
+      "dist/vendor/LICENSE",
+      "dist/vendor/package.json",
+      "dist/vendor/provenance.json"
+    ]
+  },
+  "hellgato": {
+    "types": "./index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./index.d.ts",
+        "import": "./index.mjs"
+      },
+      "./adapters/mirabox-n4-pro": {
+        "types": "./src/adapters/mirabox-n4-pro/index.d.ts",
+        "import": "./src/adapters/mirabox-n4-pro/index.mjs"
+      },
+      "./testing": {
+        "types": "./src/testing/index.d.ts",
+        "import": "./src/testing/index.mjs"
+      }
+    },
+    "files": [
+      "package.json",
+      "README.md",
+      "LICENSE",
+      "index.mjs",
+      "index.d.ts",
+      "src/session/index.mjs",
+      "src/testing/index.mjs",
+      "src/testing/index.d.ts",
+      "src/adapters/mirabox-n4-pro/index.mjs",
+      "src/adapters/mirabox-n4-pro/index.d.ts",
+      "src/sidecar/index.mjs"
+    ]
+  }
+};
+export const VENDOR_MODULES = [
+  "cora/child-payload.ts",
+  "cora/child-reconnector.ts",
+  "cora/child-server.ts",
+  "cora/describe.ts",
+  "cora/frame.ts",
+  "cora/image-assembler.ts",
+  "cora/plus-reports.ts",
+  "cora/primary-server.ts",
+  "cora/protocol.ts",
+  "cora/responses.ts",
+  "cora/server-base.ts",
+  "cora/touch-strip-assembler.ts",
+  "infra/mdns-advertiser.ts",
+  "platform/tcp.ts",
+  "shared/comm-format.ts",
+  "shared/extra-key-config.ts",
+  "shared/logger.ts",
+  "shared/types.ts"
+];
 const SHA = /^[a-f0-9]{40}$/;
 const HEX256 = /^[a-f0-9]{64}$/;
 const STABLE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -111,20 +205,20 @@ export function readTarball(bytes) {
   return files;
 }
 function packageMetadata(files, expectedName, expectedVersion) {
-  const required = expectedName === '@hellgato/core'
-    ? ['package.json', 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.txt', 'dist/bridge.mjs', 'dist/profiles.mjs', 'dist/display-server.mjs', 'dist/firmware-policy.mjs', 'dist/vendor/LICENSE', 'dist/vendor/package.json', 'dist/vendor/provenance.json']
-    : ['package.json', 'README.md', 'LICENSE', 'index.mjs'];
+  const layout = PACKAGE_LAYOUT[expectedName];
+  invariant(layout, `Unexpected package: ${expectedName}`);
+  const required = [...layout.files, ...(expectedName === '@hellgato/core' ? VENDOR_MODULES.map(source => `dist/vendor/${source.replace(/\.ts$/, '.js')}`) : [])];
   for (const path of required) invariant(files.has(path) && files.get(path).length > 0, `Missing required ${expectedName} file: ${path}`);
   for (const path of files.keys()) {
-    const vendor = expectedName === '@hellgato/core' && /^dist\/vendor\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.js$/.test(path);
-    invariant(required.includes(path) || path === 'CHANGELOG.md' || vendor, `Unexpected published file: ${path}`);
+    invariant(required.includes(path) || path === 'CHANGELOG.md', `Unexpected published file: ${path}`);
   }
   const manifest = JSON.parse(files.get('package.json').toString('utf8'));
   invariant(manifest.name === expectedName && manifest.version === expectedVersion, `Tarball name/version mismatch: ${expectedName}`);
   invariant(manifest.private !== true && manifest.type === 'module' && manifest.license === 'MIT', `Invalid publish metadata: ${expectedName}`);
   invariant(manifest.repository?.url === `git+https://github.com/${REPOSITORY}.git` && manifest.repository?.directory === `packages/${expectedName === '@hellgato/core' ? 'core' : 'hellgato'}`, 'Package repository must match trusted publisher');
   invariant(manifest.engines?.node === '>=24 <25', 'Package requires Node 24');
-  invariant(manifest.exports === (expectedName === '@hellgato/core' ? './dist/bridge.mjs' : './index.mjs'), `Invalid exports: ${expectedName}`);
+  invariant(JSON.stringify(manifest.exports) === JSON.stringify(layout.exports), `Invalid exports: ${expectedName}`);
+  invariant(manifest.types === layout.types, `Invalid type declaration entry: ${expectedName}`);
   invariant(!manifest.scripts || Object.keys(manifest.scripts).length === 0, 'Published packages must not contain lifecycle scripts');
   invariant(!manifest.bin && !manifest.bundleDependencies && !manifest.bundledDependencies, 'Unexpected executable or bundled dependencies');
   invariant(manifest.publishConfig?.access === 'public' && manifest.publishConfig?.registry === REGISTRY && manifest.publishConfig?.tag === 'latest' && manifest.publishConfig?.provenance !== false, 'Unsafe publishConfig');
@@ -139,7 +233,7 @@ function packageMetadata(files, expectedName, expectedVersion) {
   if (expectedName === '@hellgato/core') {
     const provenance = JSON.parse(files.get('dist/vendor/provenance.json').toString('utf8'));
     invariant(provenance.repository === UPSTREAM.repository && provenance.revision === UPSTREAM.revision, 'Unexpected upstream provenance');
-    invariant(Array.isArray(provenance.modules) && provenance.modules.length > 0, 'Missing upstream module provenance');
+    invariant(JSON.stringify(provenance.modules) === JSON.stringify(VENDOR_MODULES), 'Unexpected upstream module inventory');
     for (const source of provenance.modules) {
       invariant(typeof source === 'string' && /^(?:[\w-]+\/)*[\w-]+\.ts$/.test(source), 'Invalid upstream module path');
       invariant(files.has(`dist/vendor/${source.replace(/\.ts$/, '.js')}`), `Missing upstream module: ${source}`);
@@ -250,7 +344,15 @@ export async function confirmPublished(manifest, { lookup = readRegistryVersion 
   }
   return result;
 }
-export async function publishArtifacts(options = {}, { environment = process.env, lookup = readRegistryVersion, run = runTool, delay = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+export async function publishArtifacts() {
+  assertNpmPublicationEnabled();
+}
+
+// Preserve publisher safety regression coverage without a live publication path.
+// All external operations are caller-supplied fakes; there is no CLI entry point,
+// credential environment, real registry client, or package-manager default here.
+const missingSimulation = () => { throw new Error('Publication simulation requires explicit fake I/O'); };
+export async function simulatePublication(options = {}, { environment = {}, lookup = missingSimulation, run = missingSimulation, delay = async () => {} } = {}) {
   options = { artifactDir: resolve(ROOT, 'dist/npm'), ...options };
   invariant(environment.RELEASE_ENABLED === 'true', 'Publication is disabled until setup and first release are approved');
   invariant(environment.GITHUB_ACTIONS === 'true' && environment.GITHUB_REPOSITORY === REPOSITORY && environment.GITHUB_REF === 'refs/heads/main', 'Publish only from the original repository main on GitHub Actions');

@@ -137,6 +137,7 @@ jobs:
           pnpm run prepare:cora
           pnpm test
           pnpm run build:npm
+          pnpm run typecheck
           node scripts/pack-npm.mjs --destination dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
           node scripts/verify-npm.mjs --artifacts dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
       - id: identity
@@ -227,14 +228,14 @@ jobs:
           node scripts/npm-release.mjs verify --artifacts dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT"
   npm-publish:
     needs: [approval, verified, npm-build]
-    if: always() && needs.verified.result == 'success' && needs.approval.outputs.npm == 'true' && vars.RELEASE_ENABLED == 'true'
+    # Hard stop during architecture migration. A repository variable cannot enable npm.
+    if: ${{ false && always() && needs.verified.result == 'success' && needs.approval.outputs.npm == 'true' && vars.RELEASE_ENABLED == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
       actions: read
-      id-token: write
     env:
       NPM_ARTIFACT_ID: ${{ inputs.npm_artifact_id || needs.npm-build.outputs.artifact_id }}
       NPM_BUILD_RUN_ID: ${{ inputs.source_run_id || needs.npm-build.outputs.run_id }}
@@ -313,7 +314,7 @@ jobs:
           python scripts/windows_release.py publish
   npm-finalize:
     needs: [approval, npm-publish, npm-build]
-    if: always() && needs.npm-publish.result == 'success'
+    if: ${{ false && always() && needs.npm-publish.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -436,4 +437,6 @@ jobs:
           fi
           test "$BUILD_RESULT" = success
           if [ "$WINDOWS_SELECTED" = true ]; then test "$WINDOWS_RESULT" = success; fi
-          if [ "$NPM_SELECTED" = true ]; then test "$NPM_RESULT" = success; fi
+          if [ "$NPM_SELECTED" = true ]; then
+            echo 'npm publication is hard-disabled during architecture migration. SDK build, pack, verification and versioning remain enabled; this run did not publish npm.' >> "$GITHUB_STEP_SUMMARY"
+          fi

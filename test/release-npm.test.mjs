@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { basename, resolve, posix, win32 } from 'node:path';
 import { coraModulePath } from '../scripts/cora-paths.mjs';
 import { gzipSync } from 'node:zlib';
-import { MANIFEST, REPOSITORY, REGISTRY, NPM_VERSION, PACKAGES, UPSTREAM, digest, archiveName, assertSources, selectedNpm, readTarball, inspectArchive, verifyArtifacts, readRegistryVersion, compareStable, publishArtifacts, confirmPublished, resolveWindowsTool } from '../scripts/npm-release.mjs';
+import { spawnSync } from 'node:child_process';
+import { MANIFEST, REPOSITORY, REGISTRY, NPM_VERSION, PACKAGES, UPSTREAM, PACKAGE_LAYOUT, VENDOR_MODULES, digest, archiveName, assertSources, selectedNpm, readTarball, inspectArchive, verifyArtifacts, readRegistryVersion, compareStable, simulatePublication as publishArtifacts, publishArtifacts as blockedPublishArtifacts, confirmPublished, resolveWindowsTool } from '../scripts/npm-release.mjs';
 
 const SHA = 'a'.repeat(40);
 const VERSION = '0.1.0';
@@ -36,8 +37,14 @@ function tar(entries) {
 }
 function packageFiles(name, mutate = () => {}) {
   const core = name === '@hellgato/core';
-  const manifest = { name, version: VERSION, type: 'module', license: 'MIT', engines: { node: '>=24 <25' }, exports: core ? './dist/bridge.mjs' : './index.mjs', repository: { url: `git+https://github.com/${REPOSITORY}.git`, directory: `packages/${core ? 'core' : 'hellgato'}` }, publishConfig: { access: 'public', tag: 'latest', registry: REGISTRY }, ...(core ? {} : { dependencies: { '@hellgato/core': VERSION } }) };
+  const manifest = { name, version: VERSION, type: 'module', license: 'MIT', engines: { node: '>=24 <25' }, exports: structuredClone(PACKAGE_LAYOUT[name].exports), types: PACKAGE_LAYOUT[name].types, repository: { url: `git+https://github.com/${REPOSITORY}.git`, directory: `packages/${core ? 'core' : 'hellgato'}` }, publishConfig: { access: 'public', tag: 'latest', registry: REGISTRY }, ...(core ? {} : { dependencies: { '@hellgato/core': VERSION } }) };
   const files = { 'README.md': 'Read me', LICENSE: 'MIT License\nfixture', ...(core ? { 'THIRD-PARTY-NOTICES.txt': `DeckBridge ${UPSTREAM.revision}`, 'dist/bridge.mjs': 'export const createBridge = 1;', 'dist/profiles.mjs': 'export {};', 'dist/display-server.mjs': 'export {};', 'dist/firmware-policy.mjs': 'export {};', 'dist/vendor/LICENSE': 'MIT License\nupstream', 'dist/vendor/package.json': '{"type":"module"}', 'dist/vendor/provenance.json': JSON.stringify({ ...UPSTREAM, modules: ['cora/test.ts'] }), 'dist/vendor/cora/test.js': 'export {};' } : { 'index.mjs': "export * from '@hellgato/core';" }) };
+  delete files['dist/vendor/cora/test.js'];
+  for (const path of PACKAGE_LAYOUT[name].files) if (!(path in files) && path !== 'package.json') files[path] = path.endsWith('.json') ? '{}' : 'export {};';
+  if (core) {
+    files['dist/vendor/provenance.json'] = JSON.stringify({ ...UPSTREAM, modules: VENDOR_MODULES });
+    for (const source of VENDOR_MODULES) files[`dist/vendor/${source.replace(/\.ts$/, '.js')}`] = 'export {};';
+  }
   mutate(manifest, files);
   files['package.json'] = JSON.stringify(manifest);
   return Object.entries(files).map(([path, text]) => [`package/${path}`, text]);
@@ -292,8 +299,48 @@ test('CORA provenance emits canonical module paths from both Windows and POSIX b
   assert.equal(coraModulePath('/build/deckbridge/ts/src', '/build/deckbridge/ts/src/cora/primary-server.ts', posix.relative), expected);
   const path = resolve(temporaryDirectory(), 'core.tgz');
   writeFileSync(path, tar(packageFiles('@hellgato/core', (_manifest, files) => {
-    const module = coraModulePath('D:\\src', 'D:\\src\\cora\\test.ts', win32.relative);
-    files['dist/vendor/provenance.json'] = JSON.stringify({ ...UPSTREAM, modules: [module] });
+    const modules = VENDOR_MODULES.map(source => coraModulePath('D:\\src', win32.join('D:\\src', source), win32.relative));
+    files['dist/vendor/provenance.json'] = JSON.stringify({ ...UPSTREAM, modules });
   })));
   assert.equal(inspectArchive(path, '@hellgato/core', VERSION).name, '@hellgato/core');
+});
+
+
+test('npm publication API is hard-disabled even with complete approval and fake transports', async () => {
+  const { options } = fixture();
+  let calls = 0;
+  await assert.rejects(blockedPublishArtifacts(options, { environment, lookup: async () => { calls++; }, run: () => { calls++; } }), /hard-disabled/);
+  assert.equal(calls, 0);
+});
+
+test('npm publish and finalize CLIs fail before credentials, plan or network access', () => {
+  for (const [script, command] of [['npm-release.mjs', 'publish'], ['release.mjs', 'finalize-npm']]) {
+    const result = spawnSync(process.execPath, [resolve('scripts', script), command], { encoding: 'utf8', env: { ...process.env, RELEASE_ENABLED: 'true', NPM_PUBLICATION_ENABLED: 'true' } });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /hard-disabled/);
+    assert.doesNotMatch(result.stderr, /GH_TOKEN is required|ENOENT|HTTP/);
+  }
+});
+
+test('new API subpaths and declaration files require the exact reviewed archive inventory', () => {
+  const directory = temporaryDirectory();
+  for (const name of ['@hellgato/core', 'hellgato']) {
+    for (const mutate of [
+      manifest => { manifest.exports['./internal/*'] = './src/*.mjs'; },
+      manifest => { manifest.types = './private.d.ts'; },
+      (_manifest, files) => { delete files[PACKAGE_LAYOUT[name].types.slice(2)]; },
+      (_manifest, files) => { files['src/unreviewed.mjs'] = 'export {};'; },
+      (_manifest, files) => { files['dist/vendor/cora/unreviewed.js'] = 'export {};'; },
+    ]) {
+      const path = resolve(directory, 'package.tgz');
+      writeFileSync(path, tar(packageFiles(name, mutate)));
+      assert.throws(() => inspectArchive(path, name, VERSION), /exports|type declaration|Missing|Unexpected/);
+    }
+  }
+});
+
+
+test('publisher regression simulation never falls back to real npm or registry I/O', async () => {
+  const { options } = fixture();
+  await assert.rejects(publishArtifacts(options, { environment }), /requires explicit fake I\/O/);
 });

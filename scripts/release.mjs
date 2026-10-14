@@ -1,3 +1,4 @@
+import { assertNpmPublicationEnabled } from './npm-release.mjs';
 import { appendFile, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -119,7 +120,13 @@ export async function exactTag(tag, releaseSha, api = github, create = false) {
   invariant(object?.type === 'commit' && object.sha === releaseSha, `Tag ${tag} already points to different source; never force tags`);
 }
 
-export async function finalizeNpm({ approval, manifest, artifactIdentity, api = github, root = ROOT, uploadAsset, verifyAsset }) {
+export async function finalizeNpm() {
+  assertNpmPublicationEnabled();
+}
+
+// Fake-I/O-only regression surface while real npm finalization is disabled.
+export async function simulateNpmFinalization({ approval, manifest, artifactIdentity, api, root = ROOT, uploadAsset, verifyAsset }) {
+  invariant(typeof api === 'function' && typeof uploadAsset === 'function' && typeof verifyAsset === 'function', 'Finalization simulation requires explicit fake I/O');
   const component = approval.components.find(c => c.component === 'npm');
   invariant(component, 'npm is not selected');
   for (const pkg of component.packages) await exactTag(pkg.tag, approval.releaseSha, api, true);
@@ -192,6 +199,7 @@ async function main() {
     if (options.directory) execFileSync('python', ['scripts/verify-artifact.py', '--artifact-id', String(identity.artifactId), '--sha256', identity.archiveDigest.slice('sha256:'.length), '--directory', options.directory], { cwd: ROOT, stdio: 'inherit' });
     console.log(JSON.stringify(identity));
   } else if (command === 'finalize-npm') {
+    assertNpmPublicationEnabled();
     invariant(process.env.RELEASE_ENABLED === 'true', 'Publication remains disabled until setup is approved');
     const approval = await approveRelease({ releaseSha: sha, validatePlan: 'structural' });
     invariant(approval, 'Missing approved plan');

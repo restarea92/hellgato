@@ -74,3 +74,50 @@ These protections strengthen race/maintainer safety. Their exact rules, bypass
 actors and required check names must be confirmed before applying; this PR does
 not silently add them or claim they already exist. A GitHub App is only a fallback
 if actual required-check behavior cannot be satisfied by the existing token.
+
+## Architecture migration publication hold
+
+npm publication is currently hard-disabled in source, independently of
+`RELEASE_ENABLED`. Both the `npm-publish` and `npm-finalize` jobs are disabled;
+the npm publishing API/CLI and release finalization CLI refuse the action before
+network access. No environment variable or recovery dispatch overrides this
+hold. The disabled job no longer requests an OIDC identity token.
+
+SDK tests, tarball packing/verification, Changesets versioning and the fixed npm
+pair continue to run. Independent Windows build/release jobs retain their
+existing approval and artifact checks. `RELEASE_ENABLED` therefore cannot reopen
+npm publication; the historical npm activation checklist above is deferred until
+a separate reviewed code change restores publication and the owner approves the
+specific release. This change creates no credentials or persistent permissions.
+
+The public publisher remains stable-only and fails closed on prerelease metadata.
+Migration candidates are CI artifacts only; beta publication and independent
+worker/CompatibilityTools assets require their own reviewed channel policy. A
+successful artifact build is not a beta/stable release or hardware validation.
+
+### Prepared versus published Windows baseline
+
+Source `@hellgato/windows-release` is currently `0.1.2`; the last confirmed
+public Windows baseline is `0.1.1`. Recheck the public state before any release.
+A new Windows patch changeset generates a normal `0.1.2 -> 0.1.3` plan. If `0.1.2`
+has never been published, the Windows verifier correctly refuses that plan:
+`Approved oldVersion does not match the latest published Windows stable`.
+This is a Windows baseline mismatch, not a dependency on npm publication.
+A mixed plan with a valid Windows baseline can build both components and publish
+Windows while npm publication remains held.
+
+The existing bootstrap only accepts the separately reviewed Windows
+`0.1.1 -> 0.1.2` transition, from a clean prepared source with no pending version
+bumps. Before architecture changesets enter main, an independently approved
+Windows-only bootstrap on that prepared baseline is the existing supported way
+to establish it. Do not publish an unverified architecture candidate merely to
+prime that baseline.
+
+If the prepared `0.1.2` is intentionally skipped or version-bump changesets have
+already entered main, keep candidates as CI artifacts. A separate narrowly
+reviewed release-policy change must distinguish the source version from the
+confirmed public baseline, bind the intended transition to the approved plan,
+and retain deterministic replay, monotonic versions, exact artifacts and owner
+approval. Do not edit `oldVersion`, pretend an unpublished version exists, or
+relax the current baseline check. npm does not need to be enabled for that
+Windows-only follow-on.

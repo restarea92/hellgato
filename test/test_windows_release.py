@@ -27,9 +27,9 @@ class ReleaseChecks(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        for name in ('installer', 'app', 'packages/windows-release', 'docs/releases', 'dist', '.release', 'scripts'):
+        for name in ('installer', 'app', 'packages/windows-release', 'docs/releases', 'dist', '.release', 'scripts', 'vendor/mirabox-sdk'):
             (self.root / name).mkdir(parents=True, exist_ok=True)
-        for name in ('installer/requirements-build.txt', 'scripts/prepare-windows.py', 'scripts/prepare-cora.mjs'):
+        for name in ('installer/requirements-build.txt', 'scripts/prepare-windows.py', 'scripts/prepare-cora.mjs', 'vendor/mirabox-sdk/manifest.json'):
             (self.root / name).write_bytes((ROOT / name).read_bytes())
         self.env = {'GITHUB_EVENT_NAME': 'push', 'GITHUB_REPOSITORY': release.REPOSITORY,
                     'GITHUB_REF': 'refs/heads/main', 'GITHUB_SHA': SHA, 'RELEASE_SHA': SHA,
@@ -341,6 +341,35 @@ class ReleaseChecks(unittest.TestCase):
     def test_old_public_version_must_match_approved_plan(self):
         self.write_plan(old='0.1.0')
         with self.assertRaisesRegex(ValueError, 'oldVersion'): self.check()
+
+    def test_unpublished_prepared_windows_baseline_blocks_normal_release(self):
+        self.set_version('0.1.3')
+        self.write_plan(bootstrap=False, old='0.1.2')
+        # Changesets uses source 0.1.2, but the fixture's latest public release
+        # remains 0.1.1. Both enabled and read-only preflight must stop.
+        with self.assertRaisesRegex(ValueError, 'oldVersion does not match'):
+            self.check()
+        with self.assertRaisesRegex(ValueError, 'oldVersion does not match'):
+            release.check_release(self.root, self.env, require_enabled=False)
+        self.assert_no_publish()
+
+    def test_windows_preflight_does_not_require_selected_npm_publication(self):
+        self.set_version('0.1.3')
+        self.write_plan(bootstrap=False, old='0.1.2')
+        npm = {'component': 'npm', 'oldVersion': '0.1.0', 'version': '0.2.0',
+               'channel': 'stable', 'tag': 'hellgato@0.2.0', 'notes': 'docs/releases/npm-0.2.0.md',
+               'packages': [{'name': name, 'oldVersion': '0.1.0', 'version': '0.2.0', 'tag': name + '@0.2.0'}
+                            for name in ('@hellgato/core', 'hellgato')]}
+        self.plan['components'].append(npm)
+        plan_path = self.root / '.release/plan.json'
+        plan_path.write_bytes(release.json_bytes(self.plan))
+        self.approval['components'] = self.plan['components']
+        self.approval['planSha256'] = release.sha256(plan_path.read_bytes())
+        (self.root / '.release/approval.json').write_bytes(release.json_bytes(self.approval))
+        with patch.object(release, 'resolve_windows_stable', return_value={'latest': {'version': '0.1.2'}, 'diagnostics': []}):
+            self.assertEqual(self.check(), ('v0.1.3', '0.1.3'))
+        self.assertFalse(any('npm' in call.args[0] for call in self.api.call_args_list))
+        self.assert_no_publish()
 
     def test_first_stable_requires_explicit_nonbootstrap_plan(self):
         self.releases.clear(); self.write_plan(bootstrap=False, old=None)

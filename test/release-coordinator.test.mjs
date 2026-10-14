@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { github, pages, validateMergedPullRequest, verifyArtifactSource, exactTag, finalizeNpm, REPOSITORY } from '../scripts/release.mjs';
+import { github, pages, validateMergedPullRequest, verifyArtifactSource, exactTag, simulateNpmFinalization as finalizeNpm, finalizeNpm as blockedFinalizeNpm, REPOSITORY } from '../scripts/release.mjs';
 
 const source = 'a'.repeat(40);
 const base = 'b'.repeat(40);
@@ -104,6 +104,9 @@ test('npm build does not inherit another job\'s nonexistent approval file', asyn
   assert.match(build, /verify-npm\.mjs.*--plan \.release\/plan\.json.*--release-sha "\$RELEASE_SHA"/);
   const barrier = yaml.slice(yaml.indexOf('  verified:\n'), yaml.indexOf('  npm-publish:\n'));
   assert.match(barrier, /node scripts\/release\.mjs approve/);
+  assert.match(barrier, /NPM_RESULT: \$\{\{ needs\.npm-build\.result \}\}/);
+  assert.match(barrier, /if \[ \"\$NPM_SELECTED\" = true \]; then test \"\$NPM_RESULT\" = success; fi/);
+  assert.doesNotMatch(barrier, /npm publication is hard-disabled/);
 });
 
 test('npm GitHub finalizer resumes its own draft and completed retry is immutable', async t => {
@@ -162,4 +165,34 @@ test('Node 24 action pins preserve immutable ZIP upload and strict extracted dow
       }
     }
   }
+});
+
+
+test('npm hold cannot be overridden by release variables and does not disable Windows jobs', async () => {
+  const yaml = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const npm = yaml.slice(yaml.indexOf('  npm-publish:\n'), yaml.indexOf('  windows-publish:\n'));
+  const windows = yaml.slice(yaml.indexOf('  windows-publish:\n'), yaml.indexOf('  npm-finalize:\n'));
+  const finalize = yaml.slice(yaml.indexOf('  npm-finalize:\n'), yaml.indexOf('  download-docs:\n'));
+  assert.match(npm, /if: \$\{\{ false &&/);
+  assert.match(finalize, /if: \$\{\{ false &&/);
+  assert.doesNotMatch(npm, /id-token: write/);
+  assert.doesNotMatch(windows, /false &&|needs\.npm-publish/);
+  assert.match(windows, /vars\.RELEASE_ENABLED == 'true'/);
+  assert.match(yaml, /pnpm run build:npm\n\s+pnpm run typecheck/);
+});
+
+test('Windows build pins npm before packed staging and preserves isolated native fixture evidence', async () => {
+  const yaml = await readFile(new URL('../.github/workflows/windows-build.yml', import.meta.url), 'utf8');
+  assert.match(yaml, /npm install --global npm@11\.9\.0 --ignore-scripts/);
+  assert.match(yaml, /npm prefix --global >> \$env:GITHUB_PATH/);
+  assert.match(yaml, /name: Save isolated native fixture results\n\s+if: always\(\)/);
+  assert.match(yaml, /work\/build-native-startup\/fixture\/fixture-results\.json/);
+  assert.match(yaml, /work\/build-native-ui-test\/fixture-results\.txt/);
+});
+
+
+test('npm finalization API is blocked before creating package tags or GitHub releases', async () => {
+  let calls = 0;
+  await assert.rejects(blockedFinalizeNpm({ api: async () => { calls++; } }), /hard-disabled/);
+  assert.equal(calls, 0);
 });

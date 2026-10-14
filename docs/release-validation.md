@@ -81,3 +81,22 @@ requires Node 24-native action metadata rather than warning-suppression variable
 
 Hosted runners observed during validation use runner 2.337.0, above the Node 24
 minimum 2.327.1. No forced-runtime environment workaround is used.
+
+## Architecture migration regression gates
+
+- A checked-in 38-file Mirabox inventory removes the live Git tree lookup that
+  failed with HTTP 403 in Checks run 38489835820. Cache hits rehash all SDK files
+  without SDK network traffic; misses fetch only pinned immutable files. Wrong
+  digest/size, missing offline files, traversal, duplicate inventory paths,
+  symlinks and extra cached runtime files fail closed.
+- Unit and installer migration checks no longer prepare the Windows SDK. The
+  actual Windows build still calls preparation and requires the verified SDK.
+- Shared core/facade source and schemas require both SDK and Windows impact.
+  Stage-A Python worker/product/host changes require Windows impact. Unknown
+  paths and unclassified workspaces remain errors.
+- npm workflow publication and CLI/API publication are hard-disabled. Existing
+  publisher ordering, baseline, digest, OIDC and partial-resume checks remain
+  executable against fake I/O. No live publication is attempted by those tests.
+- Stable-only release validation is retained. Beta candidates remain explicitly
+  staged CI artifacts until their publication/channel policy is implemented and
+  separately approved.

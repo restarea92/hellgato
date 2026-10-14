@@ -186,3 +186,16 @@ The interface supports English, Korean, Spanish, Japanese, French, German, Russi
 Translation checks validate JSON, duplicate keys, missing/extra messages and placeholders. If you cannot submit a PR, use the [translation feedback form](https://github.com/restarea92/hellgato/issues/new?template=translation.yml).
 
 The catalogs use standard flat JSON, compatible with translation platforms such as Weblate. No paid translation service or API key is required to run or build Hellgato.
+
+
+### Packed SDK staging
+
+After installing the pinned Node/pnpm workspace dependencies, run
+`pnpm run stage:windows-sdk` before launching the source N4 compatibility engine.
+This builds, verifies and offline-installs both SDK tarballs into the generated
+`work/stream-dog-sdk` product runtime. `scripts/build-windows.ps1` performs the same
+step automatically. The old `app/cora/server.mjs` is now only a launcher; do not copy
+core sources or substitute workspace symlinks into a distributed installer.
+
+The candidate sidecar SDK is not yet the product's physical N4 engine. See the
+[staged architecture](architecture/0001-device-neutral-sdk.md) before testing it.

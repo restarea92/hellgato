@@ -1,0 +1,83 @@
+{
+  "valid": [
+    {
+      "jsonrpc": "2.0",
+      "id": "1",
+      "method": "hello",
+      "params": {}
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "input",
+      "params": {
+        "generation": 1
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "1",
+      "result": {}
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": null,
+      "error": {
+        "code": -32700,
+        "message": "Malformed message"
+      }
+    }
+  ],
+  "invalid": [
+    null,
+    [],
+    {},
+    {
+      "jsonrpc": "1.0",
+      "id": "1",
+      "result": {}
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "hello",
+      "params": {}
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "",
+      "method": "hello",
+      "params": {}
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "1",
+      "method": "hello",
+      "params": []
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "1",
+      "method": "hello",
+      "params": {},
+      "result": {}
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "1",
+      "result": {},
+      "error": {}
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "1",
+      "error": {
+        "code": "bad",
+        "message": "bad"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "result": {}
+    }
+  ]
+}

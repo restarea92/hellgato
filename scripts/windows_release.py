@@ -316,6 +316,7 @@ def checkout_sha(root: Path) -> str:
 def source_provenance(root: Path, version: str) -> tuple[dict, dict]:
     paths = ['packages/windows-release/package.json', 'app/release.json', 'installer/version.iss',
              'installer/requirements-build.txt', 'scripts/prepare-windows.py', 'scripts/prepare-cora.mjs',
+             'vendor/mirabox-sdk/manifest.json',
              f'docs/releases/{version}.md']
     sources = {}
     for name in paths:

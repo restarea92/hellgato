@@ -43,7 +43,7 @@ These are installation estimates for the shown versions. Hellgato and additional
 
 ## Stream Deck compatibility
 
-Targets **Stream Deck 7.5.1 and later** on Windows x64. Startup, USB reconnection and manual Stream Deck relaunch were verified with **7.6.0.23012**. Compatibility is checked before preparing startup support and before connecting.
+Targets the specifically checked Stream Deck builds below on Windows x64. A higher version number alone does not establish compatibility. Startup, USB reconnection and manual Stream Deck relaunch were verified with **7.6.0.23012**. Compatibility is checked before preparing startup support and before connecting.
 
 | Stream Deck version | Release date | Test status |
 | --- | --- | --- |
@@ -97,7 +97,7 @@ If preparation is needed after installation or a Stream Deck app update, close S
 
 The installer is unsigned.
 
-Ten-key and touch-strip support adjust Stream Deck process memory at startup. The full `StreamDeck.exe` stays unchanged on disk; installation adds `version.dll`, `HellgatoStartup.plan` and the `HellgatoStartup.json` ownership manifest beside it. Uninstallation removes only files whose ownership and contents match that manifest. The ten-key model changes Stream Deck's shared Plus model, so simultaneous use with a genuine Stream Deck + remains unverified.
+Ten-key and touch-strip support adjust Stream Deck process memory at startup. The full `StreamDeck.exe` stays unchanged on disk; installation adds `version.dll`, `HellgatoStartup.plan` and the `HellgatoStartup.json` ownership manifest beside it. Uninstallation removes only files whose ownership and contents match that manifest. The ten-key model changes Stream Deck's shared Plus model, so simultaneous use with a genuine Stream Deck + is unsupported, including when the N4 is unplugged but the startup shim remains installed.
 
 N4 Pro does not report dial release events. Dial holds, actions triggered on release, press-duration detection, momentary actions, hold-to-repeat, press-and-turn, and overlapping held dial presses cannot be reproduced accurately with stock firmware.
 
@@ -108,6 +108,19 @@ Touch alignment across plugins, extended use and reboot recovery need broader ha
 ## Documentation and contributing
 
 See the [guide](docs/guide.md) for everyday use, local data, builds and contributing, or the [Node bridge API](packages/core) for device integrations. Bug fixes, hardware reports and [translation feedback](https://github.com/restarea92/hellgato/issues/new?template=translation.yml) are welcome.
+
+## SDK architecture candidate
+
+Development now separates the reusable core, explicit adapter/session SDK, and
+Stream Dog product. Windows builds consume verified npm tarballs offline; npm
+publication is temporarily disabled while versioning, changelogs and package
+validation continue. Existing Windows release approval gates remain in force.
+
+The new Python sidecar is experimental. The installed product retains its existing
+N4 compatibility engine until candidate-specific hardware parity is recorded.
+See the [architecture and staged rollout](docs/architecture/0001-device-neutral-sdk.md),
+[adapter guide](docs/adapters/contributing.md), and
+[evidence requirements](docs/compatibility/architecture-candidate.md).
 
 ## License
 

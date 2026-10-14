@@ -22,6 +22,7 @@ SetupIconFile=..\app\assets\icons\stream-dog.ico
 UninstallDisplayIcon={app}\Hellgato.exe
 CloseApplications=no
 RestartApplications=no
+InfoBeforeFile=limitations.txt
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

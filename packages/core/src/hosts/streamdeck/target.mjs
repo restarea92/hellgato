@@ -1,0 +1,29 @@
+import { validateHostTarget, ContractError } from '../../contracts/index.mjs';
+
+// These are capabilities of this Stream Deck protocol implementation, never
+// universal restrictions on physical DeviceCapabilities.
+export function validateStreamDeckTarget(target) {
+  validateHostTarget(target);
+  const geometry = target.geometry;
+  if (geometry.keyCount > geometry.rows * geometry.columns) throw new RangeError('Keys exceed the grid');
+  if (geometry.encoderCount > 4) throw new RangeError('Stream Deck target supports at most four encoders');
+  if (Boolean(geometry.touchWidth) !== Boolean(geometry.touchHeight)) throw new ContractError('touch dimensions must both be zero or nonzero', '$.target.geometry');
+  if (geometry.touchWidth && (geometry.touchWidth !== 800 || geometry.touchHeight !== 100)) throw new RangeError('Stream Deck Plus touch target must be 800x100; physical touch sensors are mapped by the adapter');
+  return target;
+}
+
+export async function createStreamDeckTransport(target, { port, childPort, sleepDuration }) {
+  const [{ ElgatoServer }, { ElgatoChildServer }, { withDisplayCommands }, { withFirmwarePolicy }] = await Promise.all([
+    import('../../vendor/cora/primary-server.js'),
+    import('../../vendor/cora/child-server.js'),
+    import('./display-server.mjs'),
+    import('./firmware-policy.mjs'),
+  ]);
+  const PrimaryServer = withFirmwarePolicy(ElgatoServer, 'primary');
+  const primary = new PrimaryServer(target.geometry, port, true, { childPort });
+  primary.setDeviceConfig(target.config);
+  const DisplayServer = withDisplayCommands(ElgatoChildServer);
+  const child = new DisplayServer(target.geometry, childPort, target.config, false);
+  child.sleepSeconds = sleepDuration;
+  return { primary, child };
+}

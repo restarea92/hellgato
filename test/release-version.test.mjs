@@ -89,7 +89,7 @@ test('no pending changesets creates no release intent', async t => {
 });
 
 test('impact shared source and upstream require Windows and npm', async t => {
-  for (const path of ['app/cora/bridge.mjs', 'scripts/prepare-cora.mjs', 'scripts/cora-paths.mjs']) {
+  for (const path of ['app/cora/bridge.mjs', 'scripts/prepare-cora.mjs', 'scripts/cora-paths.mjs', 'packages/core/src/contracts/index.mjs', 'packages/core/schemas/contracts.schema.json', 'packages/hellgato/src/session/index.mjs', 'packages/hellgato/src/adapters/mirabox-n4-pro/index.mjs', 'schemas/adapter.json', 'vendor/deckbridge/manifest.json']) {
     const root = await fixture(t);
     const base = git(root, 'rev-parse', 'HEAD').trim();
     await put(root, path, '// changed shared implementation\n');
@@ -239,4 +239,35 @@ test('workspace additions with comments, quotes, or inline YAML fail closed', as
     await put(root, 'pnpm-workspace.yaml', unsupported);
     await assert.rejects(checkReleaseImpact({ root, base, workingTree: true }), /Unsupported workspace YAML/);
   }
+});
+
+
+test('stage-A worker, product, host, SDK inventory and staging changes affect Windows only', async t => {
+  const root = await fixture(t);
+  const base = git(root, 'rev-parse', 'HEAD').trim();
+  await change(root, 'windows-stage-a', ['@hellgato/windows-release']);
+  for (const path of ['adapters/mirabox-python/src/hellgato_mirabox/worker.py', 'apps/stream-dog/node/session.mjs', 'host-integrations/streamdeck/windows/python/prepare.py', 'vendor/mirabox-sdk/manifest.json', 'scripts/stage-windows-sdk.mjs', 'pyproject.toml', 'uv.lock']) {
+    await put(root, path, '# product runtime fixture\n');
+    assert.deepEqual((await checkReleaseImpact({ root, base, workingTree: true })).required, ['windows']);
+    await rm(resolve(root, path));
+  }
+});
+
+test('new architecture tests are classified but unknown runtime and script paths still fail', async t => {
+  const root = await fixture(t);
+  const base = git(root, 'rev-parse', 'HEAD').trim();
+  await put(root, '.changeset/contracts-tests.md', '---\n---\n\nAdd adapter contract fixtures without changing runtime behavior.\n');
+  await put(root, 'tests/contracts/fixture.json', '{}\n');
+  assert.deepEqual((await checkReleaseImpact({ root, base, workingTree: true })).required, []);
+  for (const path of ['adapters/unreviewed/driver.py', 'scripts/unreviewed-build.mjs', 'packages/unreviewed/src/index.mjs']) {
+    await put(root, path, '# unknown path\n');
+    await assert.rejects(checkReleaseImpact({ root, base, workingTree: true }), /Unclassified paths/);
+    await rm(resolve(root, path));
+  }
+});
+
+test('beta metadata cannot enter the stable release pipeline', async t => {
+  const root = await fixture(t);
+  await put(root, '.changeset/pre.json', json({ mode: 'pre', tag: 'beta', initialVersions: {}, changesets: [] }));
+  await assert.rejects(generateReleasePlan({ root }), /Prerelease mode is not supported/);
 });
