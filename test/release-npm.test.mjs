@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { basename, resolve, posix, win32 } from 'node:path';
 import { coraModulePath } from '../scripts/cora-paths.mjs';
 import { gzipSync } from 'node:zlib';
-import { MANIFEST, REPOSITORY, REGISTRY, NPM_VERSION, PACKAGES, UPSTREAM, digest, archiveName, assertSources, selectedNpm, readTarball, inspectArchive, verifyArtifacts, readRegistryVersion, compareStable, publishArtifacts, confirmPublished, resolveWindowsTool } from '../scripts/npm-release.mjs';
+import { spawnSync } from 'node:child_process';
+import { MANIFEST, REPOSITORY, REGISTRY, NPM_VERSION, PACKAGES, UPSTREAM, PACKAGE_LAYOUT, VENDOR_MODULES, digest, archiveName, assertSources, selectedNpm, readTarball, inspectArchive, verifyArtifacts, readRegistryVersion, compareStable, simulatePublication as publishArtifacts, publishArtifacts as blockedPublishArtifacts, confirmPublished, resolveWindowsTool } from '../scripts/npm-release.mjs';
 
 const SHA = 'a'.repeat(40);
 const VERSION = '0.1.0';
@@ -36,8 +37,14 @@ function tar(entries) {
 }
 function packageFiles(name, mutate = () => {}) {
   const core = name === '@hellgato/core';
-  const manifest = { name, version: VERSION, type: 'module', license: 'MIT', engines: { node: '>=24 <25' }, exports: core ? './dist/bridge.mjs' : './index.mjs', repository: { url: `git+https://github.com/${REPOSITORY}.git`, directory: `packages/${core ? 'core' : 'hellgato'}` }, publishConfig: { access: 'public', tag: 'latest', registry: REGISTRY }, ...(core ? {} : { dependencies: { '@hellgato/core': VERSION } }) };
+  const manifest = { name, version: VERSION, type: 'module', license: 'MIT', engines: { node: '>=24 <25' }, exports: structuredClone(PACKAGE_LAYOUT[name].exports), types: PACKAGE_LAYOUT[name].types, repository: { url: `git+https://github.com/${REPOSITORY}.git`, directory: `packages/${core ? 'core' : 'hellgato'}` }, publishConfig: { access: 'public', tag: 'latest', registry: REGISTRY }, ...(core ? {} : { dependencies: { '@hellgato/core': VERSION } }) };
   const files = { 'README.md': 'Read me', LICENSE: 'MIT License\nfixture', ...(core ? { 'THIRD-PARTY-NOTICES.txt': `DeckBridge ${UPSTREAM.revision}`, 'dist/bridge.mjs': 'export const createBridge = 1;', 'dist/profiles.mjs': 'export {};', 'dist/display-server.mjs': 'export {};', 'dist/firmware-policy.mjs': 'export {};', 'dist/vendor/LICENSE': 'MIT License\nupstream', 'dist/vendor/package.json': '{"type":"module"}', 'dist/vendor/provenance.json': JSON.stringify({ ...UPSTREAM, modules: ['cora/test.ts'] }), 'dist/vendor/cora/test.js': 'export {};' } : { 'index.mjs': "export * from '@hellgato/core';" }) };
+  delete files['dist/vendor/cora/test.js'];
+  for (const path of PACKAGE_LAYOUT[name].files) if (!(path in files) && path !== 'package.json') files[path] = path.endsWith('.json') ? '{}' : 'export {};';
+  if (core) {
+    files['dist/vendor/provenance.json'] = JSON.stringify({ ...UPSTREAM, modules: VENDOR_MODULES });
+    for (const source of VENDOR_MODULES) files[`dist/vendor/${source.replace(/\.ts$/, '.js')}`] = 'export {};';
+  }
   mutate(manifest, files);
   files['package.json'] = JSON.stringify(manifest);
   return Object.entries(files).map(([path, text]) => [`package/${path}`, text]);
@@ -64,7 +71,7 @@ function fixture({ mutate, smoke = true } = {}) {
   return { root, manifest, plan, options: { artifactDir, planPath, approvalPath, releaseSha: SHA, repository: REPOSITORY, runId: '12', runAttempt: '2', artifactId: '123' } };
 }
 const environment = { RELEASE_ENABLED: 'true', GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: REPOSITORY, GITHUB_REF: 'refs/heads/main', ACTIONS_ID_TOKEN_REQUEST_URL: 'https://example.invalid', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'test-identity-context' };
-const recorded = pkg => ({ name: pkg.name, version: pkg.version, dist: { integrity: pkg.integrity }, registryLatest: VERSION });
+const recorded = pkg => ({ name: pkg.name, version: pkg.version, dist: { integrity: pkg.integrity }, verifiedTarball: { integrity: pkg.integrity, sha256: pkg.sha256, size: pkg.size }, registryLatest: VERSION });
 // The normal fixture is a reviewed 0.0.1→0.1.0 release with 0.0.1 already public.
 const predecessor = () => ({ missing: true, registryLatest: '0.0.1' });
 
@@ -292,8 +299,204 @@ test('CORA provenance emits canonical module paths from both Windows and POSIX b
   assert.equal(coraModulePath('/build/deckbridge/ts/src', '/build/deckbridge/ts/src/cora/primary-server.ts', posix.relative), expected);
   const path = resolve(temporaryDirectory(), 'core.tgz');
   writeFileSync(path, tar(packageFiles('@hellgato/core', (_manifest, files) => {
-    const module = coraModulePath('D:\\src', 'D:\\src\\cora\\test.ts', win32.relative);
-    files['dist/vendor/provenance.json'] = JSON.stringify({ ...UPSTREAM, modules: [module] });
+    const modules = VENDOR_MODULES.map(source => coraModulePath('D:\\src', win32.join('D:\\src', source), win32.relative));
+    files['dist/vendor/provenance.json'] = JSON.stringify({ ...UPSTREAM, modules });
   })));
   assert.equal(inspectArchive(path, '@hellgato/core', VERSION).name, '@hellgato/core');
+});
+
+
+test('npm publication API is hard-disabled even with complete approval and fake transports', async () => {
+  const { options } = fixture();
+  let calls = 0;
+  await assert.rejects(blockedPublishArtifacts(options, { environment, lookup: async () => { calls++; }, run: () => { calls++; } }), /hard-disabled/);
+  assert.equal(calls, 0);
+});
+
+test('npm publish and finalize CLIs fail before credentials, plan or network access', () => {
+  for (const [script, command] of [['npm-release.mjs', 'publish'], ['release.mjs', 'finalize-npm']]) {
+    const result = spawnSync(process.execPath, [resolve('scripts', script), command], { encoding: 'utf8', env: { ...process.env, RELEASE_ENABLED: 'true', NPM_PUBLICATION_ENABLED: 'true' } });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /hard-disabled/);
+    assert.doesNotMatch(result.stderr, /GH_TOKEN is required|ENOENT|HTTP/);
+  }
+});
+
+test('new API subpaths and declaration files require the exact reviewed archive inventory', () => {
+  const directory = temporaryDirectory();
+  for (const name of ['@hellgato/core', 'hellgato']) {
+    for (const mutate of [
+      manifest => { manifest.exports['./internal/*'] = './src/*.mjs'; },
+      manifest => { manifest.types = './private.d.ts'; },
+      (_manifest, files) => { delete files[PACKAGE_LAYOUT[name].types.slice(2)]; },
+      (_manifest, files) => { files['src/unreviewed.mjs'] = 'export {};'; },
+      (_manifest, files) => { files['dist/vendor/cora/unreviewed.js'] = 'export {};'; },
+    ]) {
+      const path = resolve(directory, 'package.tgz');
+      writeFileSync(path, tar(packageFiles(name, mutate)));
+      assert.throws(() => inspectArchive(path, name, VERSION), /exports|type declaration|Missing|Unexpected/);
+    }
+  }
+});
+
+
+test('publisher regression simulation never falls back to real npm or registry I/O', async () => {
+  const { options } = fixture();
+  await assert.rejects(publishArtifacts(options, { environment }), /requires explicit fake I\/O/);
+});
+
+test('beta candidates require their own explicit plan and cannot pass public approval', async () => {
+  const { channelPolicy } = await import('../scripts/release-policy.mjs');
+  const { options, manifest, plan } = fixture();
+  const version = '0.1.1-beta.0';
+  const component = plan.components[0];
+  Object.assign(component, { version, channel: 'beta', tag: `hellgato@${version}` });
+  component.packages = PACKAGES.map(pkg => ({ name: pkg.name, oldVersion: VERSION, version, tag: `${pkg.name}@${version}` }));
+  Object.assign(plan, { schemaVersion: 2, candidateOnly: true, branch: 'next', channel: 'beta', policy: channelPolicy('beta') });
+  writeFileSync(options.planPath, JSON.stringify(plan));
+  for (const pkg of manifest.packages) rmSync(resolve(options.artifactDir, pkg.filename));
+  Object.assign(manifest, { schemaVersion: 2, candidateOnly: true, version, channel: 'beta', planSha256: digest(readFileSync(options.planPath)), packages: [] });
+  for (const pkg of PACKAGES) {
+    const path = resolve(options.artifactDir, archiveName(pkg.name, version));
+    writeFileSync(path, tar(packageFiles(pkg.name, metadata => {
+      metadata.version = version;
+      metadata.publishConfig.tag = 'beta';
+      if (metadata.dependencies) metadata.dependencies['@hellgato/core'] = version;
+    })));
+    assert.throws(() => inspectArchive(path, pkg.name, version), /explicit artifact channel/);
+    manifest.packages.push(inspectArchive(path, pkg.name, version, { channel: 'beta' }));
+  }
+  delete manifest.verification;
+  writeFileSync(resolve(options.artifactDir, MANIFEST), JSON.stringify(manifest));
+  const candidate = { ...options, candidatePlanPath: options.planPath, planPath: undefined, approvalPath: undefined };
+  assert.equal(verifyArtifacts(candidate).channel, 'beta');
+  assert.throws(() => verifyArtifacts(options), /schema/);
+  assert.throws(() => verifyArtifacts({ ...candidate, approvalPath: options.approvalPath }), /cannot accept/);
+  assert.throws(() => selectedNpm(plan), /schema/);
+  assert.throws(() => selectedNpm({ ...plan, policy: channelPolicy('stable') }, { candidate: true }), /schema/);
+  await assert.rejects(blockedPublishArtifacts(candidate, { environment }), /hard-disabled/);
+  manifest.channel = 'stable';
+  writeFileSync(resolve(options.artifactDir, MANIFEST), JSON.stringify(manifest));
+  assert.throws(() => verifyArtifacts(candidate), /version\/channel/);
+});
+
+function betaReleaseFixture() {
+  const result = fixture();
+  const { options, manifest, plan } = result;
+  const version = '0.1.1-beta.0';
+  const baseline = { version: '0.0.1-beta', integrity: `sha512-${'A'.repeat(86)}==` };
+  const component = plan.components[0];
+  Object.assign(component, { oldVersion: VERSION, version, channel: 'beta', tag: `hellgato@${version}`, notes: `docs/releases/npm-${version}.md`, packages: PACKAGES.map(pkg => ({ name: pkg.name, oldVersion: VERSION, version, tag: `${pkg.name}@${version}` })), publicBaseline: { schemaVersion: 1, component: 'npm', sourceVersion: VERSION, packages: PACKAGES.map(pkg => ({ name: pkg.name, latest: baseline, beta: baseline })), reason: 'Start a separately reviewed beta channel while keeping latest unchanged for stable consumers.' } });
+  Object.assign(plan, { schemaVersion: 3, candidateOnly: false, branch: 'next', channel: 'beta', policy: { branch: 'next', releaseBranch: 'changeset-release/next', distTag: 'beta', prerelease: true } });
+  writeFileSync(options.planPath, JSON.stringify(plan));
+  for (const pkg of manifest.packages) rmSync(resolve(options.artifactDir, pkg.filename));
+  Object.assign(manifest, { version, channel: 'beta', planSha256: digest(readFileSync(options.planPath)), packages: [] });
+  for (const pkg of PACKAGES) {
+    const path = resolve(options.artifactDir, archiveName(pkg.name, version));
+    writeFileSync(path, tar(packageFiles(pkg.name, metadata => {
+      metadata.version = version; metadata.publishConfig.tag = 'beta';
+      if (metadata.dependencies) metadata.dependencies['@hellgato/core'] = version;
+    })));
+    manifest.packages.push(inspectArchive(path, pkg.name, version, { channel: 'beta' }));
+  }
+  manifest.verification = { consumerSmoke: 'passed', packagesSha256: digest(JSON.stringify(manifest.packages)) };
+  writeFileSync(resolve(options.artifactDir, MANIFEST), JSON.stringify(manifest));
+  writeFileSync(options.approvalPath, JSON.stringify({ schemaVersion: 1, repository: REPOSITORY, releaseSha: SHA, planSha256: manifest.planSha256, components: plan.components }));
+  const previous = pkg => ({ name: pkg.name, version, missing: true, registryLatest: baseline.version, registryLatestIntegrity: baseline.integrity, registryBeta: baseline.version, registryBetaIntegrity: baseline.integrity });
+  const published = pkg => ({ ...previous(pkg), missing: false, dist: { integrity: pkg.integrity }, verifiedTarball: { integrity: pkg.integrity, sha256: pkg.sha256, size: pkg.size }, registryBeta: version, registryBetaIntegrity: pkg.integrity });
+  return { ...result, previous, published, environment: { ...environment, GITHUB_REF: 'refs/heads/next' } };
+}
+
+test('beta publication engine uses only beta tag, preserves latest and resumes exact bytes', async () => {
+  const { options, manifest, previous, published, environment } = betaReleaseFixture();
+  const state = new Map(manifest.packages.map(pkg => [pkg.name, previous(pkg)]));
+  const writes = [];
+  const run = (_tool, args) => {
+    if (args[0] === '--version') return NPM_VERSION;
+    assert.equal(args[args.indexOf('--tag') + 1], 'beta');
+    const pkg = manifest.packages.find(p => args[1].endsWith(p.filename));
+    writes.push(pkg.name); state.set(pkg.name, published(pkg));
+  };
+  const io = { environment, lookup: async name => state.get(name), run };
+  await publishArtifacts(options, io);
+  assert.deepEqual(writes, ['@hellgato/core', 'hellgato']);
+  writes.length = 0;
+  await publishArtifacts(options, io);
+  assert.deepEqual(writes, []);
+  state.set('hellgato', previous(manifest.packages[1]));
+  await publishArtifacts(options, io);
+  assert.deepEqual(writes, ['hellgato']);
+  await assert.rejects(blockedPublishArtifacts(options, io), /hard-disabled/);
+});
+
+test('beta publication rejects wrong branch, changed latest/beta baselines and post-publish latest drift', async () => {
+  const { options, manifest, previous, published, environment } = betaReleaseFixture();
+  let writes = 0;
+  const run = (_tool, args) => { if (args[0] === '--version') return NPM_VERSION; writes++; };
+  await assert.rejects(publishArtifacts(options, { environment: { ...environment, GITHUB_REF: 'refs/heads/main' }, lookup: async () => { throw new Error('must not read registry'); }, run }), /original repository/);
+  for (const mutation of [x => x.registryLatest = '0.0.2', x => x.registryLatestIntegrity = 'different', x => x.registryBeta = '0.1.2-beta.0', x => x.registryBetaIntegrity = 'different']) {
+    await assert.rejects(publishArtifacts(options, { environment, lookup: async name => { const value = previous(manifest.packages.find(p => p.name === name)); mutation(value); return value; }, run }), /baseline changed/);
+  }
+  assert.equal(writes, 0);
+  let didPublish = false;
+  await assert.rejects(publishArtifacts(options, { environment, lookup: async name => {
+    const pkg = manifest.packages.find(p => p.name === name);
+    return didPublish && name === '@hellgato/core' ? { ...published(pkg), registryLatest: pkg.version, registryLatestIntegrity: pkg.integrity } : previous(pkg);
+  }, run: (_tool, args) => { if (args[0] === '--version') return NPM_VERSION; didPublish = true; writes++; } }), /latest baseline changed/);
+  assert.equal(writes, 1);
+});
+
+test('ordinary beta source CI artifacts never inherit stale release approval', async () => {
+  const { options, manifest } = fixture();
+  Object.assign(manifest, { schemaVersion: 2, candidateOnly: true, consumer: 'source-ci', planSha256: null });
+  writeFileSync(resolve(options.artifactDir, MANIFEST), JSON.stringify(manifest));
+  const source = { ...options, planPath: undefined, approvalPath: undefined, sourceChannel: 'beta' };
+  assert.equal(verifyArtifacts(source).consumer, 'source-ci');
+  assert.throws(() => verifyArtifacts({ ...source, sourceChannel: undefined }), /schema/);
+  assert.throws(() => verifyArtifacts({ ...source, planPath: options.planPath }), /cannot accept/);
+  assert.throws(() => verifyArtifacts({ ...source, approvalPath: options.approvalPath }), /cannot accept/);
+  manifest.planSha256 = digest(readFileSync(options.planPath));
+  writeFileSync(resolve(options.artifactDir, MANIFEST), JSON.stringify(manifest));
+  assert.throws(() => verifyArtifacts(source), /schema/);
+  await assert.rejects(blockedPublishArtifacts(source), /hard-disabled/);
+});
+
+test('registry readback verifies bounded exact-version official tarball bytes', async () => {
+  const bytes = Buffer.from('the exact approved package archive');
+  const integrity = `sha512-${digest(bytes, 'sha512', 'base64')}`;
+  const tarball = `${REGISTRY}hellgato/-/hellgato-${VERSION}.tgz`;
+  const packument = { name: 'hellgato', versions: { [VERSION]: { name: 'hellgato', version: VERSION, dist: { integrity, tarball } } }, 'dist-tags': { latest: VERSION } };
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push(url); assert.equal(options.redirect, 'error');
+    assert.equal(options.headers.Authorization, undefined);
+    return url === tarball ? new Response(bytes, { headers: { 'Content-Length': String(bytes.length) } }) : Response.json(packument);
+  };
+  const found = await readRegistryVersion('hellgato', VERSION, { fetchImpl });
+  assert.deepEqual(found.verifiedTarball, { size: bytes.length, sha256: digest(bytes), integrity });
+  assert.deepEqual(calls, [`${REGISTRY}hellgato`, tarball]);
+  for (const url of ['http://registry.npmjs.org/hellgato/-/hellgato-0.1.0.tgz', 'https://example.invalid/package.tgz', `${tarball}?token=unexpected`, `${REGISTRY}hellgato/-/hellgato-0.0.1.tgz`, 'https://name:secret@registry.npmjs.org/hellgato/-/hellgato-0.1.0.tgz']) {
+    let reads = 0;
+    await assert.rejects(readRegistryVersion('hellgato', VERSION, { fetchImpl: async () => { reads++; return Response.json({ ...packument, versions: { [VERSION]: { ...packument.versions[VERSION], dist: { integrity, tarball: url } } } }); } }), /tarball URL/);
+    assert.equal(reads, 1);
+  }
+  for (const response of [() => new Response('different'), () => new Response(bytes, { headers: { 'Content-Length': String(33 * 1024 * 1024) } }), () => new Response(bytes, { headers: { 'Content-Length': String(bytes.length + 1) } }), () => new Response(null), () => new Response('unavailable', { status: 503 }), () => new Response(new Uint8Array(32 * 1024 * 1024 + 1))]) {
+    await assert.rejects(readRegistryVersion('hellgato', VERSION, { fetchImpl: async url => url === tarball ? response() : Response.json(packument) }), /integrity conflict|size|truncated|HTTP|byte limit/);
+  }
+});
+
+test('matching registry metadata cannot replace actual approved-byte readback', async () => {
+  const { options, manifest } = fixture();
+  let writes = 0;
+  for (const mutate of [x => delete x.verifiedTarball, x => x.verifiedTarball.sha256 = '0'.repeat(64), x => x.verifiedTarball.size++, x => x.verifiedTarball.integrity = 'wrong']) {
+    await assert.rejects(publishArtifacts(options, { environment, lookup: async name => { const value = recorded(manifest.packages.find(p => p.name === name)); mutate(value); return value; }, run: (_tool, args) => { if (args[0] === 'publish') writes++; return NPM_VERSION; } }), /tarball bytes/);
+  }
+  assert.equal(writes, 0);
+});
+
+test('completed beta retries refuse stable values on the beta alias', async () => {
+  const { options, manifest, published, environment } = betaReleaseFixture();
+  let writes = 0;
+  await assert.rejects(publishArtifacts(options, { environment, lookup: async name => ({ ...published(manifest.packages.find(p => p.name === name)), registryBeta: '1.0.0' }), run: (_tool, args) => { if (args[0] === 'publish') writes++; return NPM_VERSION; } }), /Confirmed beta/);
+  assert.equal(writes, 0);
 });

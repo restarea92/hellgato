@@ -1,3 +1,4 @@
+import { CHANNEL_HANDOFF_PATH, validateChannelHandoff } from './release-handoff.mjs';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -5,21 +6,25 @@ import { pathToFileURL } from 'node:url';
 import { ROOT, SHA, invariant, git, gitFile, configuration, parseChangeset, readJson, globMatch, safePath, argumentsFor } from './release-lib.mjs';
 import { validateReleasePlan } from './release-version.mjs';
 
-export async function checkReleaseImpact({ root = ROOT, base, head = 'HEAD', workingTree = false, structuralOnly = false } = {}) {
+export async function checkReleaseImpact({ root = ROOT, base, head = 'HEAD', workingTree = false, structuralOnly = false, targetBranch } = {}) {
   invariant(typeof base === 'string' && base.length > 0 && !base.startsWith('-') && !/^0+$/.test(base), 'An explicit valid diff --base is required');
   invariant(typeof head === 'string' && head.length > 0 && !head.startsWith('-'), 'Invalid head reference');
   const baseSha = git(root, 'merge-base', base, head).trim();
   invariant(SHA.test(baseSha), 'Cannot establish the full PR merge-base');
-  const config = await configuration(root);
   const paths = [...new Set([
     ...git(root, 'diff', '--name-only', '--no-renames', baseSha, ...(workingTree ? [] : [head])).trim().split('\n').filter(Boolean),
     ...(workingTree ? git(root, 'ls-files', '--others', '--exclude-standard').trim().split('\n').filter(Boolean) : []),
   ])].sort();
+  if (paths.includes(CHANNEL_HANDOFF_PATH)) {
+    const handoff = await validateChannelHandoff({ root, baseSha, ...(workingTree ? {} : { headSha: git(root, 'rev-parse', head).trim() }), workingTree, targetBranch });
+    return { baseSha, releasePlan: false, sourceOnly: true, handoff, paths, required: [], declared: [] };
+  }
   if (paths.includes('.release/plan.json')) {
     invariant(existsSync(resolve(root, '.release/plan.json')), 'Release intent cannot be manually deleted');
     await validateReleasePlan({ root, baseSha, ...(workingTree ? {} : { headSha: git(root, 'rev-parse', head).trim() }), structuralOnly });
     return { baseSha, releasePlan: true, paths, required: [], declared: [] };
   }
+  const config = await configuration(root, { channel: existsSync(resolve(root, '.changeset/pre.json')) ? 'beta' : 'stable' });
   const exceptions = new Map();
   let bootstrap = false;
   for (const path of paths.filter(p => /^\.release\/no-release\/[^/]+\.json$/.test(p))) {
@@ -72,6 +77,6 @@ export async function checkReleaseImpact({ root = ROOT, base, head = 'HEAD', wor
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = argumentsFor(process.argv.slice(2));
-  invariant(Object.keys(args).every(key => ['base', 'head', 'working-tree', 'structural-only'].includes(key)), 'Unknown release-impact option');
-  checkReleaseImpact({ base: args.base, head: args.head, workingTree: Boolean(args['working-tree']), structuralOnly: Boolean(args['structural-only']) }).then(result => console.log(JSON.stringify(result, null, 2))).catch(error => { console.error(`Release impact refused: ${error.message}`); process.exitCode = 1; });
+  invariant(Object.keys(args).every(key => ['base', 'head', 'working-tree', 'structural-only', 'target-branch'].includes(key)), 'Unknown release-impact option');
+  checkReleaseImpact({ base: args.base, head: args.head, workingTree: Boolean(args['working-tree']), structuralOnly: Boolean(args['structural-only']), targetBranch: args['target-branch'] }).then(result => console.log(JSON.stringify(result, null, 2))).catch(error => { console.error(`Release impact refused: ${error.message}`); process.exitCode = 1; });
 }

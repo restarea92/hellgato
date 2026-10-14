@@ -1,86 +1,149 @@
 # @hellgato/core
 
-The Node.js network bridge behind [Hellgato](https://github.com/restarea92/hellgato).
-Connect hardware inputs and display output to the official Stream Deck application.
-ESM, Node 24, no npm dependencies. API version `0.1.0`.
+An explicit, physical-device-neutral Stream Deck network bridge. ESM, Node 24,
+no npm runtime dependencies. `hellgato` provides the higher-level adapter/session API.
+This package does not open USB, launch Python, install software, patch Stream Deck,
+write identity files, or include the Windows product.
 
-```sh
-npm install @hellgato/core
+## Explicit API
+
+```js
+import { createDeviceBridge } from '@hellgato/core';
+import { validateDeviceDescriptor } from '@hellgato/core/contracts';
+
+const device = validateDeviceDescriptor({
+  id: 'two-key-1', adapterId: 'example', modelId: 'two-key',
+  capabilities: {
+    keys: 2, dials: 0, touch: null, displays: [],
+    dialPress: 'unsupported', dialRelease: 'unavailable',
+  },
+});
+const bridge = createDeviceBridge({
+  device,
+  sessionId: 'my-session', generation: 1,
+  target: {
+    id: 'example-two-key',
+    geometry: {
+      rows: 1, columns: 2, keyCount: 2, keyWidth: 72, keyHeight: 72,
+      encoderCount: 0, touchWidth: 0, touchHeight: 0, productName: 'Example',
+    },
+    config: {
+      serialNumber: 'MYDOCK0001', childSerialNumber: 'MYCHILD0001',
+      dockFirmwareVersion: '1.0', childFirmwareVersion: '1.0',
+      productId: 0x0080, macAddress: [2, 0, 0, 0, 0, 1],
+    },
+  },
+});
+bridge.on('output', output => { /* forward normalized frame/control to adapter */ });
+await bridge.start();
+bridge.submitInput({
+  deviceId: device.id, sessionId: bridge.sessionId, generation: bridge.generation,
+  sequence: 1, type: 'key', index: 0, state: 'down',
+});
+bridge.submitInput({
+  deviceId: device.id, sessionId: bridge.sessionId, generation: bridge.generation,
+  sequence: 2, type: 'key', index: 0, state: 'up',
+});
+await bridge.stop();
 ```
 
-## Example
+The example is a protocol fixture, not evidence that this custom geometry works in
+an unmodified Stream Deck installation. A caller must select a host-supported
+mapping target and perform any required host readiness checks before `start()`.
+Physical capabilities, virtual target capabilities and verified hardware support
+are separate facts. Pairing is manual; servers bind only to `127.0.0.1`, with no mDNS.
+
+## Lifecycle and identity
+
+Import and construction are inert: runtime loading and server creation happen at
+`start()`. Default ports are 5343/5344; use zero for assigned test ports. Calls to
+`start()` and `stop()` are serialized and idempotent. Failed startup closes every
+acquired listener/socket and can be retried. `state`, `getState()`, `state` and
+`connection` events expose lifecycle separately from primary/child host connectivity.
+
+`deviceId`, `sessionId` and `generation` have distinct fields. Generation increments
+when a bridge that reached ready is stopped and restarted. Use the current getter
+for new input; stale identities, generations and duplicate/nonincreasing sequences
+return false. A failed startup retry keeps its generation. `submitInput`/`sendInput`
+validate normalized input against the selected host geometry after physical mapping.
+They return false without a connected child. Bad payloads throw `ContractError` or
+`RangeError`. Only actually forwarded presses are tracked; disconnect/stop clears
+state and sends safe releases where a host connection is still available.
+
+`releaseInputs()` safely resets forwarded state. Low-level `sendKey`, `sendDial`
+and `sendTouch` remain available for compatibility; callers using these methods own
+input sequencing. `kind: 'pulse'` in normalized dial input explicitly requests a
+synthetic down/up click. It does not imply a physical dial release or hold support.
+
+Persistent physical selection and stable virtual serial allocation belong to the
+caller/product. Switching mapping profiles must not silently allocate a new serial.
+
+## Public contracts and output
+
+`@hellgato/core/contracts` exports TypeScript types and validators for
+`AdapterDescriptor`, `DeviceDescriptor`, `DeviceCapabilities`, `MappingProfile`,
+`HostTarget`, `InputEvent`, `DisplayFrame` and `ControlCommand`. `validate*` and
+`assert*` return the checked value or throw `ContractError` (`ERR_CONTRACT`, `path`).
+The serialized source is `@hellgato/core/schemas/contracts.schema.json`; semantic
+checks additionally enforce unique surface IDs, mapping bounds, capability
+consistency and image byte/dimension limits. `validateContract` provides structural
+schema validation only; use the named validators at application trust boundaries.
+
+Capability status distinguishes native, emulated, unsupported and unverified.
+N4 pulse input requires `dialPress: 'pulse'`, `dialRelease: 'unavailable'`. Physical
+descriptors can have zero keys, dials or touch, and are not limited to four dials.
+The current Stream Deck transport supports up to four target encoders and either
+no virtual touch strip or the Stream Deck Plus 800×100 target. These restrictions
+belong to the host implementation. Physical sensors can have different dimensions.
+
+`output` emits a public `DisplayFrame` or `ControlCommand` plus device/session,
+generation and output sequence. Frame bytes are padded base64, never a path or
+vendor object. Supported formats are JPEG and RGB888. JPEG SOI/EOI and SOF dimensions
+are checked before forwarding; the physical adapter must still fully decode and
+verify the actual image before native output. Limits: 1 MiB compressed bytes, 8192
+per dimension, 16,777,216 pixels, exact RGB888 byte length, and bounded regions.
+Unsupported/malformed host output emits a structured `diagnostic` and is not forwarded.
+New normalized output does not claim BMP/gen1 support.
+
+Virtual surface names are `key:N`, `touch`, and `lcd`. Key/touch geometry comes from
+the target. To receive full LCD frames, declare
+`target.displays: [{ id: 'lcd', width, height, format: 'jpeg', partial: false }]`.
+The facade maps these virtual names to physical display IDs. Controls include
+brightness, sleep duration, clear, fill, sleep, wake and show-logo; this does not
+promise every adapter implements them. `sleepDuration` is caller-persisted state.
+
+## Legacy compatibility
+
+The original root imports `createBridge(options?)` and `createN4ProProfile(...)`
+remain callable, including the no-argument N4 default. They are deprecated in types
+and source. The only built-in N4 default lives in a quarantined core legacy module;
+the explicit API never imports that module and core never imports the facade.
 
 ```js
 import { createBridge, createN4ProProfile } from '@hellgato/core';
-
-const bridge = await createBridge(createN4ProProfile(42));
-bridge.on('image', ({ keyIndex, data, format }) => {
-  // Send these image bytes to your hardware's display driver.
-  console.log(keyIndex, format, data.length);
-});
-bridge.on('touchImage', ({ data, region }) => console.log(region, data.length));
-bridge.on('clientConnected', ({ role }) => console.log(`${role} connected`));
+const bridge = await createBridge({ ...createN4ProProfile(42), port: 0, childPort: 0 });
 await bridge.start();
-
-// Pair Stream Deck's Network connection with 127.0.0.1:5343 on first use.
-// Call these from your device's input callbacks once the child is connected.
-bridge.sendKey(0, 'down');
-bridge.sendKey(0, 'up');
-bridge.sendDial({ kind: 'rotate', index: 0, delta: 1 });
-bridge.sendDial({ kind: 'press', index: 0, state: 'down' });
-bridge.sendDial({ kind: 'press', index: 0, state: 'up' });
-bridge.sendTouch({ type: 'tap', x: 100, y: 50 });
-
-process.once('SIGINT', () => { void bridge.stop(); });
+await bridge.stop();
 ```
 
-## API
+Legacy image/display events retain their earlier byte payloads: `image`,
+`touchImage`, `lcdImage`, `lcdFrameStarted`, `displayCommand`, `sleepDuration`, and
+`brightness`. Connection/log events retain `{ role, detail }`. A future removal
+requires a documented major migration. Legacy N4 functionality and historical
+hardware evidence do not verify the new architecture on real USB hardware.
 
-- `createBridge(options?)`: asynchronously creates an idle bridge. Importing or creating one does not open ports or write files.
-- `createN4ProProfile(identity?, dockIdentity?)`: returns the existing 10-key, four-dial N4 Pro geometry and stable serial configuration. Default identity: `2`.
-- `options.geometry`, `options.config`: override profile fields. Use a stable, distinct identity for each device.
-- `options.port`, `options.childPort`: default to `5343` and `5344`. Use `0` for automatically assigned test ports.
-- `options.sleepDuration`: initial idle timeout in seconds, from `0` (disabled) to `2147483647`. The adapter is responsible for persistence and the hardware idle timer.
-- `bridge.start()`, `bridge.stop()`: start and stop both servers. Repeated calls are safe; failed startup releases acquired ports.
-- `bridge.ports`: actual `{ primary, child }` listening ports, or `null` values while stopped.
-- `bridge.primaryConnected`, `bridge.childConnected`: connection state.
-- `bridge.sendKey(index, state)`: zero-based key index, `down` or `up`.
-- `bridge.sendDial(event)`: zero-based dial index; `rotate` with integer `delta` from -128 to 127, or `press` with `state`.
-- `bridge.sendTouch(event)`: `tap`, `hold` or `swipe` with `x`, `y`, and for swipes `endX`, `endY`.
+## Source and license
 
-Input methods return `false` when no child client is connected, otherwise `true`.
-Invalid input throws. Do not send a release before its matching press has been delivered.
+`packages/core/src` is the sole authored core source. Contracts, device bridge and
+Stream Deck target glue are strict `.mts` implementations. `pnpm build:types`
+compiles their ESM and declarations; `pnpm typecheck` rejects source errors and
+stale generated output. Edit TypeScript rather than the adjacent generated files.
+The retained protocol extensions and pinned vendor runtime use explicit typed
+compatibility boundaries; they are not claimed as strictly converted sources. `app/cora` contains development
+compatibility wrappers; packaging copies no application source and rewrites no
+application imports. The pinned DeckBridge runtime is reproducibly prepared into
+`src/vendor` (ignored generated content) and copied verbatim to `dist/vendor`.
 
-Events: `image`, `touchImage`, `lcdImage`, `lcdFrameStarted`, `displayCommand`, `sleepDuration`, `brightness`, `clientConnected`, `clientDisconnected`, `log`, `comm`.
-Connection, log and communication events provide `{ role, detail }`, where `role` is
-`primary` or `child` and `detail` contains the upstream event arguments.
-Image and brightness events retain their DeckBridge payloads. Add an event listener
-before starting the bridge. Store or forward images in your adapter as needed.
-
-`lcdImage` provides `{ data, format: 'jpeg' }` for the complete 800×480 LCD.
-`lcdFrameStarted` signals the first nonempty valid chunk, before the image is complete.
-`sleepDuration` provides an integer number of seconds. `displayCommand` provides
-`{ type: 'showLogo' }` or `{ type: 'fill', color: [r, g, b], keyIndex? }`; an absent
-`keyIndex` fills the whole LCD. The adapter implements these operations. Malformed,
-out-of-order or oversized full LCD transfers are discarded.
-
-## Scope
-
-This package provides local network transport. It does not include a USB driver,
-the desktop GUI, or Stream Deck process-memory adjustments. Servers bind only to
-`127.0.0.1`; pairing is manual and mDNS is disabled. It has no installation scripts.
-
-The Windows client, Hellgato Stream Dog, targets Stream Deck 7.5.1 and later. Startup,
-USB reconnection and manual Stream Deck relaunch were verified on 7.6.0.23012
-with one Mirabox N4 Pro E running stock firmware
-`V4.N4 Pro E.02.010`. See the [tested software versions](../../README.md#stream-deck-compatibility)
-and [device firmware](../../README.md#supported-devices) for the validated scope.
-N4 Pro ten-key support also needs the desktop application's
-compatibility and geometry adjustments; this package alone does not provide them.
-Other hardware, firmware versions and operating systems are not validated by this release.
-
-## License
-
-MIT. Includes adapted DeckBridge code, copyright 2026 Lukas, under MIT.
-See `THIRD-PARTY-NOTICES.txt` and `dist/vendor/LICENSE`.
-Independent of Elgato and Mirabox.
+MIT. Includes adapted DeckBridge code, copyright 2026 Lukas, under MIT. See
+`THIRD-PARTY-NOTICES.txt`, `dist/vendor/LICENSE` and provenance.json. Independent of
+Elgato and Mirabox. No hardware validation or public-release claim is made here.

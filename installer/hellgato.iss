@@ -5,6 +5,7 @@
 AppId={{FB7179C2-B55A-487C-B462-C50E15F91B1B}
 AppName=Hellgato Stream Dog
 AppVersion={#AppVersion}
+VersionInfoVersion={#AppVersionNumeric}
 AppPublisher=Hellgato
 DefaultDirName={autopf}\Hellgato
 UsePreviousAppDir=no
@@ -22,6 +23,7 @@ SetupIconFile=..\app\assets\icons\stream-dog.ico
 UninstallDisplayIcon={app}\Hellgato.exe
 CloseApplications=no
 RestartApplications=no
+InfoBeforeFile=limitations.txt
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -52,8 +54,8 @@ Source: "{#NativeUiSource}"; DestDir: "{app}\_internal\native"; Flags: ignorever
 Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Icons]
-Name: "{group}\Hellgato Stream Dog"; Filename: "{app}\Hellgato.exe"; IconFilename: "{app}\_internal\app\assets\icons\stream-dog.ico"; AppUserModelID: "Hellgato.N4Pro"
-Name: "{autodesktop}\Hellgato Stream Dog"; Filename: "{app}\Hellgato.exe"; Tasks: desktopicon; IconFilename: "{app}\_internal\app\assets\icons\stream-dog.ico"; AppUserModelID: "Hellgato.N4Pro"
+Name: "{group}\Hellgato Stream Dog"; Filename: "{app}\Hellgato.exe"; IconFilename: "{app}\_internal\app\assets\icons\hellgato-app.ico"; AppUserModelID: "Hellgato.N4Pro"
+Name: "{autodesktop}\Hellgato Stream Dog"; Filename: "{app}\Hellgato.exe"; Tasks: desktopicon; IconFilename: "{app}\_internal\app\assets\icons\hellgato-app.ico"; AppUserModelID: "Hellgato.N4Pro"
 
 [Registry]
 Root: HKLM; Subkey: "Software\Hellgato\Installer\StartupShortcuts"; ValueType: string; ValueName: "{code:GetStartupShortcut}"; ValueData: "{code:GetStartupShortcut}"; Flags: uninsdeletekey

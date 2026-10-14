@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hellgato.dev/schemas/ipc-v1.json",
+  "title": "Hellgato IPC v1 JSON-RPC envelope",
+  "description": "One UTF-8 JSON object per LF-terminated line, maximum 1500000 bytes including LF. Commands require IDs, params.deadlineAt, an initial hello, and the documented method-specific validation. Serialized frame, input and control payloads use the canonical SDK contracts schema. No batch support.",
+  "oneOf": [
+    {"$ref": "#/$defs/Request"},
+    {"$ref": "#/$defs/Notification"},
+    {"$ref": "#/$defs/Result"},
+    {"$ref": "#/$defs/Error"}
+  ],
+  "$defs": {
+    "Id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "Method": {"type": "string", "minLength": 1, "maxLength": 64},
+    "Request": {
+      "type": "object",
+      "properties": {"jsonrpc": {"const": "2.0"}, "id": {"$ref": "#/$defs/Id"}, "method": {"$ref": "#/$defs/Method"}, "params": {"type": "object"}},
+      "required": ["jsonrpc", "id", "method", "params"],
+      "not": {"anyOf": [{"required": ["result"]}, {"required": ["error"]}]}
+    },
+    "Notification": {
+      "type": "object",
+      "properties": {"jsonrpc": {"const": "2.0"}, "method": {"$ref": "#/$defs/Method"}, "params": {"type": "object"}},
+      "required": ["jsonrpc", "method", "params"],
+      "not": {"anyOf": [{"required": ["id"]}, {"required": ["result"]}, {"required": ["error"]}]}
+    },
+    "Result": {
+      "type": "object",
+      "properties": {"jsonrpc": {"const": "2.0"}, "id": {"anyOf": [{"$ref": "#/$defs/Id"}, {"type": "null"}]}, "result": {}},
+      "required": ["jsonrpc", "id", "result"],
+      "not": {"anyOf": [{"required": ["method"]}, {"required": ["error"]}]}
+    },
+    "Error": {
+      "type": "object",
+      "properties": {"jsonrpc": {"const": "2.0"}, "id": {"anyOf": [{"$ref": "#/$defs/Id"}, {"type": "null"}]},
+        "error": {"type": "object", "properties": {"code": {"type": "integer"}, "message": {"type": "string", "maxLength": 1024}, "data": {}}, "required": ["code", "message"]}},
+      "required": ["jsonrpc", "id", "error"],
+      "not": {"anyOf": [{"required": ["method"]}, {"required": ["result"]}]}
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, cpSync, rmSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { coraModulePath } from './cora-paths.mjs';
 import { fileURLToPath } from 'node:url';
@@ -52,3 +52,8 @@ copyFileSync(resolve(checkout, 'LICENSE'), resolve(outputRoot, 'LICENSE'));
 writeFileSync(resolve(outputRoot, 'package.json'), JSON.stringify({ type: 'module' }));
 writeFileSync(resolve(outputRoot, 'provenance.json'), JSON.stringify({ repository: 'https://github.com/lukasMega/DeckBridge', revision, modules: [...visited].map(p => coraModulePath(sourceRoot, p)).sort(), adaptations: ['Node TCP transport', 'loopback binding only', 'manual pairing only; mDNS disabled', 'log level info', 'TypeScript transformed by Node'] }, null, 2));
 console.log(`Prepared ${visited.size} modules from ${revision}`);
+
+// The core owns its runtime independently of app/ and work/ paths.
+const coreVendor = resolve(root, 'packages/core/src/vendor');
+rmSync(coreVendor, { recursive: true, force: true });
+cpSync(outputRoot, coreVendor, { recursive: true });

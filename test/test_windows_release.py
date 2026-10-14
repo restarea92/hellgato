@@ -20,6 +20,7 @@ SPEC = importlib.util.spec_from_file_location('windows_release', ROOT / 'scripts
 release = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(release)
 SHA, BASE, HEAD, TREE = (letter * 40 for letter in 'abcd')
+REAL_API_GET, REAL_ASSET_BYTES, REAL_ARCHIVE_BYTES = release.api_get, release.asset_bytes, release.artifact_archive_bytes
 
 
 class ReleaseChecks(unittest.TestCase):
@@ -27,9 +28,9 @@ class ReleaseChecks(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        for name in ('installer', 'app', 'packages/windows-release', 'docs/releases', 'dist', '.release', 'scripts'):
+        for name in ('installer', 'app', 'packages/windows-release', 'docs/releases', 'dist', '.release', 'scripts', 'vendor/mirabox-sdk'):
             (self.root / name).mkdir(parents=True, exist_ok=True)
-        for name in ('installer/requirements-build.txt', 'scripts/prepare-windows.py', 'scripts/prepare-cora.mjs'):
+        for name in ('installer/requirements-build.txt', 'scripts/prepare-windows.py', 'scripts/prepare-cora.mjs', 'vendor/mirabox-sdk/manifest.json', 'pyproject.toml', 'uv.lock'):
             (self.root / name).write_bytes((ROOT / name).read_bytes())
         self.env = {'GITHUB_EVENT_NAME': 'push', 'GITHUB_REPOSITORY': release.REPOSITORY,
                     'GITHUB_REF': 'refs/heads/main', 'GITHUB_SHA': SHA, 'RELEASE_SHA': SHA,
@@ -67,7 +68,13 @@ class ReleaseChecks(unittest.TestCase):
         bytes_patch = patch.object(release, 'asset_bytes', side_effect=lambda asset: self.bytes[asset['id']])
         self.asset_read = bytes_patch.start(); self.addCleanup(bytes_patch.stop)
         self.write_plan()
-        self.manifest = release.build_manifest(self.root, self.env)
+        self.write_build()
+        archive_patch = patch.object(release, 'artifact_archive_bytes', side_effect=lambda identifier: self.archive)
+        self.archive_read = archive_patch.start(); self.addCleanup(archive_patch.stop)
+        self.run.reset_mock(); self.api.reset_mock()
+
+    def write_build(self, *, plan_path='.release/plan.json', source_channel=None):
+        self.manifest = release.build_manifest(self.root, self.env, plan_path=plan_path, source_channel=source_channel)
         content = io.BytesIO()
         with zipfile.ZipFile(content, 'w') as archive:
             for path in (self.installer, self.checksum, self.root / 'dist/build-manifest.json'):
@@ -75,27 +82,26 @@ class ReleaseChecks(unittest.TestCase):
         self.archive = content.getvalue()
         self.responses['actions/artifacts/55']['digest'] = 'sha256:' + release.sha256(self.archive)
         release._VERIFIED_ARCHIVES.clear()
-        archive_patch = patch.object(release, 'artifact_archive_bytes', side_effect=lambda identifier: self.archive)
-        self.archive_read = archive_patch.start(); self.addCleanup(archive_patch.stop)
-        self.run.reset_mock(); self.api.reset_mock()
 
     def set_version(self, version):
         self.version = version
         (self.root / 'packages/windows-release/package.json').write_text(json.dumps(
             {'name': '@hellgato/windows-release', 'private': True, 'version': version}))
         (self.root / 'installer/hellgato.iss').write_text('#include "version.iss"\n[Setup]\nAppVersion={#AppVersion}\n')
-        (self.root / 'installer/version.iss').write_text(f'#define AppVersion "{version}"\n')
-        (self.root / 'app/release.json').write_text(json.dumps({'version': version, 'channel': 'stable'}))
+        (self.root / 'installer/version.iss').write_text(f'#define AppVersion "{version}"\n#define AppVersionNumeric "{release.numeric_version(version)}"\n')
+        (self.root / 'app/release.json').write_text(json.dumps({'version': version, 'channel': release.version_channel(version)}))
         (self.root / f'docs/releases/{version}.md').write_text(f'# Hellgato {version}\n\nChanges.\n')
         self.installer = self.root / f'dist/Hellgato-{version}-Setup.exe'
         self.installer.write_bytes(b'unit test installer, not executable')
         self.checksum = self.installer.with_name(self.installer.name + '.sha256')
         self.checksum.write_text(f'{release.sha256(self.installer.read_bytes())}  {self.installer.name}\n')
 
-    def write_plan(self, *, bootstrap=True, old='0.1.1'):
+    def write_plan(self, *, bootstrap=True, old='0.1.1', public_baseline=None):
         self.plan = {'schemaVersion': 1, 'repository': release.REPOSITORY, 'baseSha': BASE, 'bootstrap': bootstrap,
                      'components': [{'component': 'windows', 'oldVersion': old, 'version': self.version,
                                      'channel': 'stable', 'tag': 'v' + self.version, 'notes': f'docs/releases/{self.version}.md'}]}
+        if public_baseline is not None:
+            self.plan['components'][0]['publicBaseline'] = public_baseline
         path = self.root / '.release/plan.json'; path.write_bytes(release.json_bytes(self.plan))
         self.approval = {'schemaVersion': 1, 'repository': release.REPOSITORY, 'releaseSha': SHA,
                          'planSha256': release.sha256(path.read_bytes()), 'baseSha': BASE,
@@ -105,6 +111,100 @@ class ReleaseChecks(unittest.TestCase):
         if not bootstrap:
             self.responses['pulls/7']['head']['ref'] = 'changeset-release/main'
             self.responses['pulls/7']['user']['login'] = 'github-actions[bot]'
+
+    def public_baseline(self, *, version='0.1.1', source='0.1.2'):
+        item = self.releases['v' + version]
+        assets = {asset['name']: asset for asset in item['assets']}
+        self.tags[item['tag_name']] = {'object': {'type': 'commit', 'sha': BASE}}
+        return {'schemaVersion': 1, 'component': 'windows', 'channel': release.version_channel(version), 'sourceVersion': source,
+                'version': version, 'tag': item['tag_name'], 'releaseId': item['id'], 'releaseSha': BASE,
+                'installerSha256': release.sha256(self.bytes[assets[f'Hellgato-{version}-Setup.exe']['id']]),
+                'manifestSha256': release.sha256(self.bytes[assets[release.MANIFEST_NAME]['id']]) if release.MANIFEST_NAME in assets else None,
+                'reason': 'Reviewed prepared source and the exact previous public Windows artifacts.'}
+
+    def prepare_public_baseline(self, *, version='0.1.3', source='0.1.2', public='0.1.1'):
+        baseline = self.public_baseline(version=public, source=source)
+        for path in (self.root / 'dist').iterdir():
+            path.unlink()
+        self.set_version(version)
+        self.write_plan(bootstrap=False, old=source, public_baseline=baseline)
+        self.write_build()
+        return baseline
+
+    def add_previous_manifest(self, version='0.1.1'):
+        item = self.releases['v' + version]
+        manifest = copy.deepcopy(self.public_manifest())
+        manifest.update(version=version, tag=item['tag_name'], releaseSha=BASE, channel=release.version_channel(version),
+                        files=[{'name': asset['name'], 'size': asset['size'], 'sha256': release.sha256(self.bytes[asset['id']])}
+                               for asset in item['assets']])
+        self.tags[item['tag_name']] = {'object': {'type': 'commit', 'sha': BASE}}
+        return self.add_asset(item, release.MANIFEST_NAME, release.json_bytes(manifest))
+
+    def refresh_channel_plan(self, *, candidate=False):
+        filename = '.release/candidate-plan.json' if candidate else '.release/plan.json'
+        path = self.root / filename
+        path.write_bytes(release.json_bytes(self.plan))
+        self.approval.update(planSha256=release.sha256(path.read_bytes()), bootstrap=False,
+                             components=self.plan['components'])
+        (self.root / '.release/approval.json').write_bytes(release.json_bytes(self.approval))
+        return filename
+
+    def prepare_channel_release(self, *, version='0.1.3-beta.0', source='0.1.2', public='0.1.1', candidate=False):
+        baseline = self.public_baseline(version=public, source=source)
+        for path in (self.root / 'dist').iterdir():
+            path.unlink()
+        self.set_version(version)
+        self.write_plan(bootstrap=False, old=source, public_baseline=None if candidate else baseline)
+        channel = release.version_channel(version)
+        policy = release.channel_policy(channel)
+        self.plan['components'][0]['channel'] = channel
+        before = {'mode': 'pre', 'tag': 'beta'} if channel == 'stable' or release.version_channel(source) == 'beta' else None
+        self.plan = {'schemaVersion': 2 if candidate else 3, 'repository': release.REPOSITORY,
+                     'candidateOnly': candidate, 'branch': 'next' if candidate else policy['branch'],
+                     'baseSha': BASE, 'channel': channel,
+                     'transition': 'exit' if channel == 'stable' else 'advance' if before else 'enter',
+                     'policy': policy, 'changesets': [], 'archivedBefore': [], 'archivedAfter': [],
+                     'preBefore': before, 'preAfter': {'mode': 'pre', 'tag': 'beta'} if channel == 'beta' else None,
+                     'components': self.plan['components'], 'generatedFiles': []}
+        (self.root / '.changeset').mkdir(exist_ok=True)
+        pre_path = self.root / '.changeset/pre.json'
+        if channel == 'beta':
+            pre_path.write_bytes(release.json_bytes(self.plan['preAfter']))
+        elif pre_path.exists():
+            pre_path.unlink()
+        paths = ['packages/windows-release/package.json', 'app/release.json', 'installer/version.iss',
+                 f'docs/releases/{version}.md']
+        if channel == 'beta':
+            paths.append('.changeset/pre.json')
+        self.plan['generatedFiles'] = [{'path': name, 'sha256': release.sha256((self.root / name).read_bytes())}
+                                      for name in sorted(paths)]
+        filename = self.refresh_channel_plan(candidate=candidate)
+        branch = policy['branch']
+        self.env['GITHUB_REF'] = 'refs/heads/' + branch
+        self.responses['pulls/7']['base']['ref'] = branch
+        self.responses['pulls/7']['head']['ref'] = policy['releaseBranch']
+        self.responses[f'compare/{SHA}...{branch}'] = {'status': 'identical', 'merge_base_commit': {'sha': SHA}}
+        self.responses['actions/artifacts/55']['workflow_run']['head_branch'] = branch
+        self.responses['actions/runs/100/attempts/2']['head_branch'] = branch
+        self.write_build(plan_path=filename)
+        return baseline
+
+    def add_previous_public(self, version):
+        item = self.add_legacy(version)
+        item['prerelease'] = release.version_channel(version) == 'beta'
+        self.add_previous_manifest(version)
+        return item
+
+    def beta_simulation(self):
+        return release.BetaReleaseSimulation(checkout=SHA, responses=self.responses, releases=self.releases,
+                                             tags=self.tags, assets=self.bytes, archives={55: self.archive})
+
+    def simulate_beta(self, state):
+        with patch.object(release, 'api_get', REAL_API_GET), patch.object(release, 'asset_bytes', REAL_ASSET_BYTES), \
+                patch.object(release, 'artifact_archive_bytes', REAL_ARCHIVE_BYTES), \
+                patch.object(release.subprocess, 'run', side_effect=AssertionError('Simulation reached subprocess')), \
+                patch.object(release.urllib.request, 'urlopen', side_effect=AssertionError('Simulation reached network')):
+            return release.simulate_beta_publication(self.root, state, self.env)
 
     def add_asset(self, item, name, data):
         self.next_id += 1
@@ -129,7 +229,7 @@ class ReleaseChecks(unittest.TestCase):
     def add_ours(self, *, draft=False, missing=()):
         self.next_id += 1
         manifest = self.public_manifest()
-        item = {'id': self.next_id, 'tag_name': 'v' + self.version, 'draft': draft, 'prerelease': False,
+        item = {'id': self.next_id, 'tag_name': 'v' + self.version, 'draft': draft, 'prerelease': release.version_channel(self.version) == 'beta',
                 'name': f'Hellgato Stream Dog {self.version}', 'body': release.release_body(self.root, manifest),
                 'author': {'login': 'github-actions[bot]', 'type': 'Bot'}, 'assets': []}
         self.releases[item['tag_name']] = item
@@ -181,6 +281,16 @@ class ReleaseChecks(unittest.TestCase):
 
     def assert_no_publish(self):
         self.assertFalse(any(call.args[0][0] == 'gh' for call in self.run.call_args_list))
+
+    def test_ordinary_stable_build_does_not_bind_a_lingering_release_plan(self):
+        manifest = release.build_manifest(self.root, self.env)
+        self.assertIsNone(manifest['planSha256'])
+        with self.assertRaisesRegex(ValueError, 'approved source/plan/version'):
+            release.verify_build(self.root, self.approval, self.env)
+        (self.root / '.release/plan.json').write_text('malformed obsolete plan')
+        self.assertIsNone(release.build_manifest(self.root, self.env)['planSha256'])
+        with self.assertRaises(ValueError):
+            release.build_manifest(self.root, self.env, plan_path='.release/plan.json')
 
     def test_prepared_candidate_preflight_does_not_publish_or_create_tag(self):
         self.assertEqual(self.check(), ('v0.1.2', '0.1.2'))
@@ -297,7 +407,7 @@ class ReleaseChecks(unittest.TestCase):
 
     def test_resolver_semver_is_numeric_and_incomplete_is_diagnostic(self):
         self.set_version('0.1.10'); self.write_plan(bootstrap=False, old='0.1.1')
-        self.manifest = release.build_manifest(self.root, self.env); self.add_ours()
+        self.manifest = release.build_manifest(self.root, self.env, plan_path='.release/plan.json'); self.add_ours()
         incomplete = self.add_legacy('0.1.9'); incomplete['assets'] = []
         result = release.resolve_windows_stable()
         self.assertEqual(result['latest']['version'], '0.1.10')
@@ -341,6 +451,209 @@ class ReleaseChecks(unittest.TestCase):
     def test_old_public_version_must_match_approved_plan(self):
         self.write_plan(old='0.1.0')
         with self.assertRaisesRegex(ValueError, 'oldVersion'): self.check()
+
+    def test_unpublished_prepared_windows_baseline_blocks_normal_release(self):
+        self.set_version('0.1.3')
+        self.write_plan(bootstrap=False, old='0.1.2')
+        # Changesets uses source 0.1.2, but the fixture's latest public release
+        # remains 0.1.1. Both enabled and read-only preflight must stop.
+        with self.assertRaisesRegex(ValueError, 'oldVersion does not match'):
+            self.check()
+        with self.assertRaisesRegex(ValueError, 'oldVersion does not match'):
+            release.check_release(self.root, self.env, require_enabled=False)
+        self.assert_no_publish()
+
+    def test_reviewed_public_baseline_allows_prepared_source_without_rewriting_old_version(self):
+        baseline = self.prepare_public_baseline()
+        self.assertEqual(self.plan['components'][0]['oldVersion'], '0.1.2')
+        self.assertEqual(baseline['version'], '0.1.1')
+        self.assertEqual(self.check(), ('v0.1.3', '0.1.3'))
+        self.assertEqual(release.check_release(self.root, self.env, require_enabled=False), ('v0.1.3', '0.1.3'))
+        self.api.assert_any_call('releases/tags/v0.1.1')
+        self.assert_no_publish(); self.assertNotIn('v0.1.3', self.tags)
+        latest = release.resolve_windows_stable()['latest']
+        self.assertEqual(set(latest), {'version', 'tag', 'url', 'installerUrl', 'checksumUrl'})
+
+    def test_public_baseline_requires_exact_shape_identity_reason_and_canonical_versions(self):
+        baseline = self.prepare_public_baseline()
+        component = self.plan['components'][0]
+        invalid = [None, [], {}, {**baseline, 'unexpected': True}]
+        invalid += [{key: value for key, value in baseline.items() if key != missing} for missing in baseline]
+        invalid += [{**baseline, key: value} for key, value in (
+            ('schemaVersion', True), ('schemaVersion', 1.0), ('schemaVersion', 2),
+            ('component', 'npm'), ('channel', 'beta'), ('sourceVersion', '0.1.1'),
+            ('sourceVersion', '0.1.2-beta.1'), ('version', '00.1.1'), ('version', '0.1.1-beta.1'),
+            ('tag', 'v0.1.0'), ('releaseId', True), ('releaseId', '11'), ('releaseId', 1.5),
+            ('releaseId', 0), ('releaseId', -1), ('releaseId', 2 ** 53), ('releaseSha', 'A' * 40), ('releaseSha', BASE[:7]),
+            ('installerSha256', 'A' * 64), ('installerSha256', None), ('manifestSha256', 'A' * 64),
+            ('reason', None), ('reason', ' ' * 40), ('reason', ' ' * 10 + 'x' * 29 + ' ' * 10))]
+        for record in invalid:
+            with self.subTest(record=record), self.assertRaises(ValueError):
+                release.validate_public_baseline({**component, 'publicBaseline': record}, bootstrap=False)
+        # An explicitly malformed record must stop at approval, before any remote read.
+        self.api.reset_mock()
+        self.write_plan(bootstrap=False, old='0.1.2', public_baseline={**baseline, 'unexpected': True})
+        with self.assertRaisesRegex(ValueError, 'public baseline fields'):
+            self.check()
+        self.api.assert_not_called(); self.assert_no_publish()
+
+    def test_public_baseline_requires_source_tie_and_strict_candidate_order(self):
+        baseline = self.prepare_public_baseline()
+        component = self.plan['components'][0]
+        for version, source, candidate in [('0.1.3', '0.1.2', '0.1.4'), ('0.1.1', '0.1.2', '0.1.2'),
+                                           ('0.1.1', '0.1.3', '0.1.2'), ('0.1.10', '0.1.9', '0.1.11')]:
+            record = {**baseline, 'version': version, 'tag': 'v' + version,
+                      'sourceVersion': source, 'manifestSha256': 'a' * 64}
+            with self.subTest(version=version, source=source, candidate=candidate), self.assertRaisesRegex(ValueError, 'above source'):
+                release.validate_public_baseline({**component, 'oldVersion': source, 'version': candidate,
+                                                  'publicBaseline': record}, bootstrap=False)
+        with self.assertRaisesRegex(ValueError, 'Invalid reviewed'):
+            release.validate_public_baseline({**component, 'oldVersion': '0.1.0'}, bootstrap=False)
+        record = {**baseline, 'version': '0.1.9', 'tag': 'v0.1.9',
+                  'sourceVersion': '0.1.10', 'manifestSha256': 'a' * 64}
+        self.assertEqual(release.validate_public_baseline({**component, 'oldVersion': '0.1.10', 'version': '0.1.11',
+                                                           'publicBaseline': record}, bootstrap=False), record)
+
+    def test_public_baseline_cannot_relax_bootstrap_or_nonlegacy_manifest_requirement(self):
+        baseline = self.public_baseline(source='0.1.1')
+        self.write_plan(public_baseline=baseline)
+        with self.assertRaisesRegex(ValueError, 'bootstrap'):
+            self.check()
+        self.api.assert_not_called()
+        baseline = self.prepare_public_baseline()
+        record = {**baseline, 'version': '0.1.2', 'tag': 'v0.1.2', 'manifestSha256': None}
+        with self.assertRaisesRegex(ValueError, 'Invalid reviewed'):
+            release.validate_public_baseline({**self.plan['components'][0], 'publicBaseline': record}, bootstrap=False)
+        self.assert_no_publish()
+
+    def test_public_baseline_rejects_changed_or_missing_latest_stable(self):
+        self.prepare_public_baseline()
+        self.add_legacy('0.1.2'); self.add_previous_manifest('0.1.2')
+        with self.assertRaisesRegex(ValueError, 'baseline does not match the latest'):
+            self.check()
+        self.releases.clear()
+        with self.assertRaisesRegex(ValueError, 'baseline does not match the latest'):
+            self.check()
+        self.assert_no_publish()
+
+    def test_public_baseline_rejects_recreated_release_or_changed_dereferenced_source(self):
+        baseline = self.prepare_public_baseline()
+        item = self.releases['v0.1.1']; item['id'] += 1000
+        with self.assertRaisesRegex(ValueError, 'release ID, tag, or source'):
+            self.check()
+        item['id'] = baseline['releaseId']
+        self.tags['v0.1.1'] = {'object': {'type': 'tag', 'sha': HEAD}}
+        self.responses[f'git/tags/{HEAD}'] = {'object': {'type': 'commit', 'sha': BASE}}
+        self.assertEqual(self.check(), ('v0.1.3', '0.1.3'))
+        self.responses[f'git/tags/{HEAD}']['object']['sha'] = SHA
+        with self.assertRaisesRegex(ValueError, 'release ID, tag, or source'):
+            self.check()
+        self.assert_no_publish()
+
+    def test_public_baseline_rejects_consistently_replaced_installer_and_checksum(self):
+        self.prepare_public_baseline()
+        assets = {asset['name']: asset for asset in self.releases['v0.1.1']['assets']}
+        name, content = 'Hellgato-0.1.1-Setup.exe', b'replacement installer with its own valid checksum'
+        for filename, data in [(name, content), (name + '.sha256', f'{release.sha256(content)}  {name}\n'.encode())]:
+            self.bytes[assets[filename]['id']] = data
+            assets[filename]['size'] = len(data)
+        with self.assertRaisesRegex(ValueError, 'baseline installer or checksum'):
+            self.check()
+        self.assert_no_publish()
+
+    def test_public_baseline_binds_raw_manifest_bytes_and_detects_added_or_removed_manifest(self):
+        asset = self.add_previous_manifest()
+        self.prepare_public_baseline()
+        self.assertEqual(self.check(), ('v0.1.3', '0.1.3'))
+        # The same valid JSON, with different whitespace, still breaks exact-byte approval.
+        self.bytes[asset['id']] += b'\n'
+        asset['size'] += 1
+        with self.assertRaisesRegex(ValueError, 'manifest bytes have changed'):
+            self.check()
+        self.releases['v0.1.1']['assets'].remove(asset)
+        with self.assertRaisesRegex(ValueError, 'manifest bytes have changed'):
+            self.check()
+        self.prepare_public_baseline()
+        self.add_previous_manifest()
+        with self.assertRaisesRegex(ValueError, 'manifest bytes have changed'):
+            self.check()
+        self.assert_no_publish()
+
+    def test_public_baseline_accepts_verified_nonlegacy_manifest(self):
+        self.add_legacy('0.1.2'); self.add_previous_manifest('0.1.2')
+        self.prepare_public_baseline(version='0.1.4', source='0.1.3', public='0.1.2')
+        self.assertEqual(self.check(), ('v0.1.4', '0.1.4'))
+        self.assert_no_publish()
+
+    def test_public_baseline_preserves_owner_merge_and_exact_source_provenance(self):
+        self.prepare_public_baseline()
+        self.responses['pulls/7']['merged_by']['login'] = 'someone-else'
+        with self.assertRaisesRegex(ValueError, 'owner-merged'):
+            self.check()
+        self.responses['pulls/7']['merged_by']['login'] = 'restarea92'
+        self.responses[f'git/commits/{HEAD}']['tree']['sha'] = BASE
+        with self.assertRaisesRegex(ValueError, 'approved tree mismatch'):
+            self.check()
+        self.responses[f'git/commits/{HEAD}']['tree']['sha'] = TREE
+        self.add_ours(draft=True)
+        path = self.root / 'vendor/mirabox-sdk/manifest.json'
+        path.write_bytes(path.read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, 'source/toolchain provenance mismatch'):
+            self.check()
+        self.assert_no_publish()
+
+    def test_reviewed_baseline_publication_and_completed_retry_remain_immutable(self):
+        self.prepare_public_baseline()
+        self.assertIn('Confirmed Windows stable', release.publish_release(self.root, self.env))
+        self.assertFalse(self.releases['v0.1.3']['draft'])
+        self.run.reset_mock()
+        self.assertIn('Already confirmed', release.publish_release(self.root, self.env))
+        with patch.object(release, 'resolve_windows_stable', return_value={'latest': {'version': '0.2.0'}, 'diagnostics': []}):
+            self.assertIn('Already confirmed', release.publish_release(self.root, self.env))
+        self.assert_no_publish()
+
+    def test_completed_baseline_retry_still_rejects_malformed_record_and_changed_bytes(self):
+        baseline = self.prepare_public_baseline(); item = self.add_ours()
+        self.write_plan(bootstrap=False, old='0.1.2', public_baseline={**baseline, 'reason': 'too short'})
+        with self.assertRaisesRegex(ValueError, 'Invalid reviewed'):
+            release.publish_release(self.root, self.env)
+        self.write_plan(bootstrap=False, old='0.1.2', public_baseline=baseline)
+        self.bytes[item['assets'][0]['id']] = b'changed installer'
+        with self.assertRaises(ValueError):
+            release.publish_release(self.root, self.env)
+        self.assert_no_publish()
+
+    def test_public_baseline_changed_during_upload_stops_before_finalization(self):
+        self.prepare_public_baseline(); self.add_ours(draft=True, missing=(self.installer.name,))
+        original_command = self.command
+        def change_public_identity(args, **kwargs):
+            result = original_command(args, **kwargs)
+            if args[:3] == ['gh', 'release', 'upload']:
+                self.releases['v0.1.1']['id'] += 1000
+            return result
+        self.run.side_effect = change_public_identity
+        with self.assertRaisesRegex(ValueError, 'release ID, tag, or source'):
+            release.publish_release(self.root, self.env)
+        self.assertTrue(self.releases['v0.1.3']['draft'])
+        self.assertFalse(any(call.args[0][:3] == ['gh', 'release', 'edit'] for call in self.run.call_args_list))
+
+    def test_windows_preflight_does_not_require_selected_npm_publication(self):
+        self.set_version('0.1.3')
+        self.write_plan(bootstrap=False, old='0.1.2')
+        npm = {'component': 'npm', 'oldVersion': '0.1.0', 'version': '0.2.0',
+               'channel': 'stable', 'tag': 'hellgato@0.2.0', 'notes': 'docs/releases/npm-0.2.0.md',
+               'packages': [{'name': name, 'oldVersion': '0.1.0', 'version': '0.2.0', 'tag': name + '@0.2.0'}
+                            for name in ('@hellgato/core', 'hellgato')]}
+        self.plan['components'].append(npm)
+        plan_path = self.root / '.release/plan.json'
+        plan_path.write_bytes(release.json_bytes(self.plan))
+        self.approval['components'] = self.plan['components']
+        self.approval['planSha256'] = release.sha256(plan_path.read_bytes())
+        (self.root / '.release/approval.json').write_bytes(release.json_bytes(self.approval))
+        with patch.object(release, 'resolve_windows_stable', return_value={'latest': {'version': '0.1.2'}, 'diagnostics': []}):
+            self.assertEqual(self.check(), ('v0.1.3', '0.1.3'))
+        self.assertFalse(any('npm' in call.args[0] for call in self.api.call_args_list))
+        self.assert_no_publish()
 
     def test_first_stable_requires_explicit_nonbootstrap_plan(self):
         self.releases.clear(); self.write_plan(bootstrap=False, old=None)
@@ -480,6 +793,261 @@ class ReleaseChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unknown assets'): release.publish_release(self.root, self.env)
         self.assert_no_publish()
 
+    def test_channel_numeric_versions_preserve_beta_sequence_and_stable_order(self):
+        for version, expected in [('0.1.3-beta.0', '0.1.3.1'), ('0.1.3-beta.10', '0.1.3.11'),
+                                  ('0.1.3-beta.65533', '0.1.3.65534'), ('0.1.3', '0.1.3.65535')]:
+            with self.subTest(version=version):
+                self.assertEqual(release.numeric_version(version), expected)
+        for version in ('0.1.3-beta.65534', '65536.0.0', '1.65536.0-beta.0'):
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                release.numeric_version(version)
+        for version in ('0.1.3-beta', '0.1.3-beta.01', '0.1.3-rc.1', '0.1.3+build', '01.1.3-beta.1'):
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                release.version_channel(version)
+        self.assertLess(release.version_key('0.1.3-beta.9'), release.version_key('0.1.3-beta.10'))
+        self.assertLess(release.version_key('0.1.3-beta.65533'), release.version_key('0.1.3'))
+
+    def test_beta_build_requires_exact_plan_and_binds_numeric_runtime_and_generated_bytes(self):
+        self.prepare_channel_release()
+        with self.assertRaisesRegex(ValueError, 'explicit exact'):
+            release.installer_version(self.root)
+        self.assertEqual(release.installer_version(self.root, plan_path='.release/plan.json'), '0.1.3-beta.0')
+        self.assertEqual(self.manifest['channel'], 'beta')
+        self.assertEqual(self.manifest['planSha256'], self.approval['planSha256'])
+        self.assertIn('pyproject.toml', self.manifest['sources']); self.assertIn('uv.lock', self.manifest['sources'])
+        path = self.root / 'installer/version.iss'; original = path.read_bytes()
+        path.write_bytes(original.replace(b'0.1.3.1', b'0.1.3.0'))
+        with self.assertRaisesRegex(ValueError, 'AppVersion/include'):
+            release.installer_version(self.root, plan_path='.release/plan.json')
+        path.write_bytes(original + b'\n')
+        with self.assertRaisesRegex(ValueError, 'generated-file bytes'):
+            release.installer_version(self.root, plan_path='.release/plan.json')
+        self.assert_no_publish()
+
+    def test_artifact_only_beta_plan_cannot_be_used_as_public_release_approval(self):
+        self.prepare_channel_release(candidate=True)
+        self.assertEqual(release.installer_version(self.root, plan_path='.release/candidate-plan.json'), '0.1.3-beta.0')
+        with self.assertRaises(ValueError): self.check()
+        (self.root / '.release/plan.json').write_bytes((self.root / '.release/candidate-plan.json').read_bytes())
+        with self.assertRaisesRegex(ValueError, 'channel plan'):
+            self.check()
+        self.assert_no_publish()
+
+    def test_source_beta_ci_ignores_stale_plan_and_cannot_supply_public_artifacts(self):
+        self.prepare_channel_release()
+        plan = self.root / '.release/plan.json'; original = plan.read_bytes()
+        plan.write_text('not a valid, current release plan')
+        self.assertEqual(release.installer_version(self.root, source_channel='beta'), '0.1.3-beta.0')
+        manifest = release.build_manifest(self.root, self.env, source_channel='beta')
+        self.assertIsNone(manifest['planSha256'])
+        self.assertEqual(manifest['channel'], 'beta')
+        plan.write_bytes(original)
+        with self.assertRaisesRegex(ValueError, 'approved source/plan/version'):
+            release.verify_build(self.root, self.approval, self.env)
+        self.set_version('0.1.2')
+        self.assertEqual(release.installer_version(self.root, source_channel='beta'), '0.1.2')
+        self.assertIsNone(release.build_manifest(self.root, self.env, source_channel='beta')['planSha256'])
+        self.assert_no_publish()
+
+    def test_source_beta_ci_requires_canonical_active_state_and_exclusive_binding(self):
+        self.prepare_channel_release()
+        for state in ({}, {'mode': 'exit', 'tag': 'beta'}, {'mode': 'pre', 'tag': 'rc'},
+                      {'mode': 'pre', 'tag': 'beta', 'unexpected': True}):
+            (self.root / '.changeset/pre.json').write_bytes(release.json_bytes(state))
+            with self.subTest(state=state), self.assertRaisesRegex(ValueError, 'prerelease state'):
+                release.installer_version(self.root, source_channel='beta')
+        with self.assertRaisesRegex(ValueError, 'exclusive'):
+            release.installer_version(self.root, plan_path='.release/plan.json', source_channel='beta')
+        (self.root / '.changeset/pre.json').unlink()
+        with self.assertRaises(ValueError): release.installer_version(self.root, source_channel='beta')
+        self.assert_no_publish()
+
+    def test_channel_plan_rejects_malformed_policy_identity_source_and_missing_baseline(self):
+        self.prepare_channel_release()
+        original = copy.deepcopy(self.plan)
+        mutations = [('schemaVersion', 2), ('schemaVersion', True), ('candidateOnly', True), ('branch', 'main'),
+                     ('channel', 'stable'), ('policy', release.channel_policy('stable')), ('transition', 'exit'),
+                     ('baseSha', BASE[:7]), ('unexpected', True), ('generatedFiles', []), ('preAfter', None)]
+        for key, value in mutations:
+            self.plan = {**copy.deepcopy(original), key: value}; self.refresh_channel_plan()
+            with self.subTest(key=key), self.assertRaises(ValueError): self.check()
+        for mutate in ('missing', 'source', 'channel', 'manifest'):
+            self.plan = copy.deepcopy(original)
+            baseline = self.plan['components'][0]['publicBaseline']
+            if mutate == 'missing': del self.plan['components'][0]['publicBaseline']
+            elif mutate == 'source': baseline['sourceVersion'] = '0.1.1'
+            elif mutate == 'channel': baseline['channel'] = 'beta'
+            else: baseline.update(version='0.1.2-beta.0', tag='v0.1.2-beta.0', channel='beta', manifestSha256=None)
+            self.refresh_channel_plan()
+            with self.subTest(mutate=mutate), self.assertRaises(ValueError): self.check()
+        self.api.assert_not_called(); self.assert_no_publish()
+
+    def test_beta_approval_and_original_artifact_require_exact_next_provenance(self):
+        self.prepare_channel_release()
+        self.assertEqual(self.check(), ('v0.1.3-beta.0', '0.1.3-beta.0'))
+        self.api.assert_any_call(f'compare/{SHA}...next')
+        self.assertEqual(release.verify_build(self.root, self.approval, self.env)['channel'], 'beta')
+        remote = self.responses['pulls/7']
+        mutations = [(remote['base'], 'ref', 'main'), (remote['head'], 'ref', 'changeset-release/main'),
+                     (remote['merged_by'], 'login', 'someone-else'), (remote['head']['repo'], 'full_name', 'fork/hellgato')]
+        for item, key, value in mutations:
+            old = item[key]; item[key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError): self.check()
+            item[key] = old
+        for item in (self.responses['actions/artifacts/55']['workflow_run'], self.responses['actions/runs/100/attempts/2']):
+            item['head_branch'] = 'main'
+            with self.assertRaises(ValueError): release.verify_build(self.root, self.approval, self.env)
+            item['head_branch'] = 'next'
+        self.assert_no_publish()
+
+    def test_beta_resolver_is_channel_isolated_numeric_and_manifest_verified(self):
+        self.add_previous_public('0.1.3-beta.9'); self.add_previous_public('0.1.3-beta.10')
+        self.add_previous_public('9.0.0')
+        self.assertEqual(release.resolve_windows_beta()['latest']['version'], '0.1.3-beta.10')
+        self.assertEqual(release.resolve_windows_stable()['latest']['version'], '9.0.0')
+        self.assertFalse(any(call.args[0] == 'releases/latest' for call in self.api.call_args_list))
+        item = self.releases['v0.1.3-beta.10']
+        item['assets'] = [asset for asset in item['assets'] if asset['name'] != release.MANIFEST_NAME]
+        with self.assertRaisesRegex(ValueError, 'missing its manifest'): release.resolve_windows_beta()
+        self.assertEqual(release.resolve_windows_stable()['latest']['version'], '9.0.0')
+        self.assert_no_publish()
+
+    def test_first_beta_baseline_requires_absent_public_beta_and_exact_public_stable(self):
+        self.prepare_channel_release()
+        self.assertEqual(self.check(), ('v0.1.3-beta.0', '0.1.3-beta.0'))
+        self.add_previous_public('0.1.2-beta.0')
+        with self.assertRaisesRegex(ValueError, 'first beta baseline'):
+            self.check()
+        del self.releases['v0.1.2-beta.0']
+        self.releases['v0.1.1']['id'] += 1000
+        with self.assertRaisesRegex(ValueError, 'release ID, tag, or source'):
+            self.check()
+        self.assert_no_publish()
+
+    def test_subsequent_beta_binds_latest_beta_instead_of_global_latest(self):
+        self.add_previous_public('0.1.3-beta.0')
+        self.prepare_channel_release(version='0.1.3-beta.1', source='0.1.3-beta.0', public='0.1.3-beta.0')
+        self.assertEqual(self.check(), ('v0.1.3-beta.1', '0.1.3-beta.1'))
+        self.releases['v0.1.3-beta.0']['id'] += 1000
+        with self.assertRaisesRegex(ValueError, 'release ID, tag, or source'):
+            self.check()
+        self.assert_no_publish()
+
+    def test_stable_promotion_binds_beta_baseline_and_cannot_regress_public_stable(self):
+        self.add_previous_public('0.1.3-beta.1')
+        self.prepare_channel_release(version='0.1.3', source='0.1.3-beta.1', public='0.1.3-beta.1')
+        self.assertEqual(self.check(), ('v0.1.3', '0.1.3'))
+        self.add_previous_public('0.1.4')
+        with self.assertRaisesRegex(ValueError, 'greater than'):
+            self.check()
+        self.assert_no_publish()
+
+    def test_beta_same_engine_simulation_never_uses_live_io_or_mutates_latest(self):
+        self.prepare_channel_release(); state = self.beta_simulation()
+        stable = copy.deepcopy(state.releases['v0.1.1'])
+        self.assertIn('Confirmed Windows beta', self.simulate_beta(state))
+        self.assertEqual(state.releases['v0.1.1'], stable)
+        self.assertFalse(state.releases['v0.1.3-beta.0']['draft'])
+        self.assertTrue(state.releases['v0.1.3-beta.0']['prerelease'])
+        commands = state.commands
+        create = next(args for args in commands if args[:3] == ['gh', 'release', 'create'])
+        self.assertIn('--prerelease', create)
+        self.assertEqual(commands[-1][-1], '--prerelease=true')
+        self.assertFalse(any(value.startswith('--latest') for args in commands for value in args))
+        count = len(commands)
+        self.assertIn('Already confirmed', self.simulate_beta(state))
+        self.assertEqual(len(state.commands), count)
+        self.next_id = state.next_id + 100
+        newer = self.add_previous_public('0.1.4-beta.0')
+        state.releases[newer['tag_name']] = copy.deepcopy(newer)
+        state.tags[newer['tag_name']] = copy.deepcopy(self.tags[newer['tag_name']])
+        state.assets.update(self.bytes)
+        self.assertIn('Already confirmed', self.simulate_beta(state))
+        self.assertEqual(len(state.commands), count)
+        self.assertIsNone(release._SIMULATION.get())
+
+    def test_beta_public_engine_remains_approval_gated_and_does_not_require_npm(self):
+        self.prepare_channel_release()
+        self.api.reset_mock()
+        with self.assertRaisesRegex(ValueError, 'enabled shared'):
+            release.publish_release(self.root, {**self.env, 'RELEASE_ENABLED': 'false'})
+        self.api.assert_not_called(); self.assert_no_publish()
+        self.assertIn('Confirmed Windows beta', release.publish_release(self.root, self.env))
+        commands = [call.args[0] for call in self.run.call_args_list if call.args[0][0] == 'gh']
+        self.assertTrue(self.releases['v0.1.3-beta.0']['prerelease'])
+        self.assertFalse(any(value.startswith('--latest') for args in commands for value in args))
+        self.assertFalse(any('npm' in call.args[0] for call in self.api.call_args_list))
+
+    def test_beta_simulation_rejects_unknown_drafts_stale_public_identity_and_tampered_build(self):
+        self.prepare_channel_release()
+        state = self.beta_simulation(); state.releases['v0.1.1']['id'] += 1000
+        with self.assertRaises(ValueError): self.simulate_beta(state)
+        self.assertEqual(state.commands, [])
+        item = self.add_ours(draft=True); item['body'] = 'unknown draft'
+        state = self.beta_simulation()
+        with self.assertRaisesRegex(ValueError, 'unknown source'): self.simulate_beta(state)
+        self.assertEqual(state.commands, [])
+        del self.releases['v0.1.3-beta.0']; del self.tags['v0.1.3-beta.0']
+        state = self.beta_simulation(); state.archives[55] = b'replaced artifact'
+        release._VERIFIED_ARCHIVES.clear()
+        with self.assertRaisesRegex(ValueError, 'archive SHA-256'): self.simulate_beta(state)
+        self.assertEqual(state.commands, [])
+        self.assertIsNone(release._SIMULATION.get())
+
+    def test_beta_simulation_detects_baseline_change_during_upload_before_finalization(self):
+        self.prepare_channel_release(); self.add_ours(draft=True, missing=(self.installer.name,))
+        state = self.beta_simulation()
+        command = release.BetaReleaseSimulation.command
+        def mutate_baseline(simulation, args, *, cwd):
+            command(simulation, args, cwd=cwd)
+            if args[:3] == ['gh', 'release', 'upload']:
+                simulation.releases['v0.1.1']['id'] += 1000
+        with patch.object(release.BetaReleaseSimulation, 'command', mutate_baseline):
+            with self.assertRaisesRegex(ValueError, 'release ID, tag, or source'):
+                self.simulate_beta(state)
+        self.assertTrue(state.releases['v0.1.3-beta.0']['draft'])
+        self.assertFalse(any(args[:3] == ['gh', 'release', 'edit'] for args in state.commands))
+
+    def test_beta_cli_build_binding_and_source_ci_contract(self):
+        self.prepare_channel_release()
+        for mode in (['--plan', '.release/plan.json'], ['--source-channel', 'beta']):
+            for command in ('version', 'artifacts', 'manifest'):
+                with self.subTest(mode=mode, command=command), patch.object(release, '__file__', str(self.root / 'scripts/windows_release.py')), \
+                        patch.object(release.sys, 'argv', ['windows_release.py', command, *mode]), \
+                        patch.dict(os.environ, self.env), patch('sys.stdout', new_callable=io.StringIO) as output:
+                    release.main()
+                    self.assertTrue(output.getvalue().strip())
+        self.assert_no_publish()
+
+    def test_stable_promotion_publication_uses_main_provenance_and_stable_latest(self):
+        self.add_previous_public('0.1.3-beta.1')
+        self.prepare_channel_release(version='0.1.3', source='0.1.3-beta.1', public='0.1.3-beta.1')
+        self.assertIn('Confirmed Windows stable', release.publish_release(self.root, self.env))
+        self.api.assert_any_call(f'compare/{SHA}...main')
+        self.assertFalse(self.releases['v0.1.3']['prerelease'])
+        self.assertTrue(self.releases['v0.1.3-beta.1']['prerelease'])
+        commands = [call.args[0] for call in self.run.call_args_list if call.args[0][0] == 'gh']
+        create = next(args for args in commands if args[:3] == ['gh', 'release', 'create'])
+        self.assertNotIn('--prerelease', create)
+        self.assertEqual(commands[-1][-1], '--latest')
+        self.assertFalse(any('npm' in call.args[0] for call in self.api.call_args_list))
+        self.run.reset_mock()
+        self.assertIn('Already confirmed', release.publish_release(self.root, self.env))
+        self.assert_no_publish()
+
+    def test_beta_completed_retry_never_repairs_changed_public_asset_bytes(self):
+        self.prepare_channel_release(); state = self.beta_simulation()
+        self.simulate_beta(state)
+        count = len(state.commands)
+        item = state.releases['v0.1.3-beta.0']
+        installer = next(asset for asset in item['assets'] if asset['name'] == self.installer.name)
+        changed = b'changed public installer bytes'
+        state.assets[installer['id']] = changed; installer['size'] = len(changed)
+        with self.assertRaises(ValueError): self.simulate_beta(state)
+        self.assertEqual(len(state.commands), count)
+        self.assertFalse(item['draft'])
+        self.assertIsNone(release._SIMULATION.get())
+
 
 class ApiChecks(unittest.TestCase):
     def setUp(self):
@@ -568,7 +1136,7 @@ class ArchiveChecks(unittest.TestCase):
 
 class RuntimeMetadataChecks(unittest.TestCase):
     def test_packaged_and_source_roots_use_identical_runtime_metadata(self):
-        source = ast.parse((ROOT / 'app/hellgato.py').read_text())
+        source = ast.parse((ROOT / 'apps/stream-dog/python/hellgato_stream_dog/launcher.py').read_text())
         function = next(node for node in source.body if isinstance(node, ast.FunctionDef) and node.name == 'read_release_metadata')
         namespace = {'json': json, 're': re}
         exec(compile(ast.Module(body=[function], type_ignores=[]), '<runtime metadata>', 'exec'), namespace)
@@ -585,25 +1153,35 @@ class RuntimeMetadataChecks(unittest.TestCase):
 
 
 class WorkflowContractChecks(unittest.TestCase):
-    def test_build_is_read_only_and_preserves_security_checks(self):
+    def test_build_is_read_only_and_checks_application(self):
         text = (ROOT / '.github/workflows/windows-build.yml').read_text()
         self.assertIn('contents: read', text); self.assertNotIn('contents: write', text)
         self.assertNotIn('GH_TOKEN', text); self.assertNotIn('windows_release.py publish', text)
-        for command in ("python -m unittest discover -s test -p 'test_*.py'", '-File test/test_installer_migration.ps1',
-                        './scripts/build-windows.ps1 -Iscc', './work/build-runtime/node.exe --test test/*.test.mjs',
-                        'python scripts/windows_release.py artifacts', 'python scripts/windows_release.py manifest'):
+        for command in ("./.venv/Scripts/python.exe -m unittest discover -s test -p 'test_*.py'", '-File test/test_installer_migration.ps1',
+                        "./scripts/build-windows.ps1 -Python (Join-Path $pwd '.venv/Scripts/python.exe') -Iscc", './work/build-runtime/node.exe --test @applicationTests',
+                        'python scripts/windows_release.py artifacts'):
             self.assertIn(command, text)
-        self.assertIn('if-no-files-found: error', text); self.assertIn('dist/build-manifest.json', text)
+        self.assertIn('if-no-files-found: error', text)
         self.assertIn('windows-installer-${{ github.run_id }}-${{ github.run_attempt }}', text)
+        self.assertNotIn('ipc-candidate', text)
+        self.assertNotIn('scripts/release-ci.mjs', text)
+        self.assertLess(text.index('pnpm run build:npm'), text.index('-m unittest discover'))
 
-    def test_manual_publisher_delegates_same_coordinator(self):
+    def test_publication_is_deferred_and_has_no_automatic_coordinator(self):
         text = (ROOT / '.github/workflows/windows-release.yml').read_text()
         events = text.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
         self.assertEqual(re.findall(r'^  ([a-z_]+):', events, re.MULTILINE), ['workflow_dispatch'])
         self.assertIn('default: false', events)
-        self.assertNotIn('gh release create', text)
-        self.assertNotIn('windows_release.py publish', text)
-        self.assertIn('release.yml', text)
+        publisher = text.split('\n  publish:\n', 1)[1]
+        self.assertRegex(publisher, r'(?m)^    if: false$')
+        workflows = ROOT / '.github/workflows'
+        self.assertFalse((workflows / 'release-pr.yml').exists())
+        self.assertFalse((workflows / 'release.yml').exists())
+        for path in workflows.glob('*.yml'):
+            source = path.read_text()
+            self.assertNotIn('changesets/action', source)
+            self.assertNotIn('npm-release.mjs publish', source)
+            self.assertNotIn('gh workflow run', source)
 
     def test_build_script_derives_filename_without_changing_hash_generation(self):
         text = (ROOT / 'scripts/build-windows.ps1').read_text()

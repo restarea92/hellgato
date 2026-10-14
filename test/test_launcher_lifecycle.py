@@ -2,12 +2,15 @@ from pathlib import Path
 import queue
 import sys
 import threading
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'app'))
 from hellgato import INCOMPATIBLE, Session, WindowLifecycle
 from i18n import Message
+import hellgato
 
 
 class LifecycleTest(unittest.TestCase):
@@ -62,6 +65,68 @@ class LifecycleTest(unittest.TestCase):
         self.assertEqual(events.get_nowait(), ('error', Message('error.incompatible')))
         session.startup_failed(1)
         self.assertEqual(events.get_nowait(), Message('error.startup'))
+
+    def run_host_sequence(self, hosts, readiness):
+        session = Session(queue.Queue())
+        session.stop = Mock()
+        session.stop.wait.side_effect = [False] * len(hosts) + [True]
+        session.shutdown_bridge = Mock()
+        session.prepare_native_ui = Mock(return_value=True)
+        process = Mock(stdout=[])
+        process.poll.return_value = None
+        reader = Mock()
+        reader.start.side_effect = session.bridge_ready.set
+        presence = Mock()
+        presence.host.side_effect = hosts
+        with TemporaryDirectory() as directory, patch.object(hellgato, 'STATE', Path(directory)), \
+                patch.object(hellgato, 'default_executable', return_value=Path('known.exe')), \
+                patch.object(hellgato, 'read_status', side_effect=readiness) as inspect, \
+                patch.object(hellgato.subprocess, 'Popen', return_value=process) as spawn, \
+                patch.object(hellgato.threading, 'Thread', return_value=reader), \
+                patch.object(hellgato.subprocess, 'CREATE_NO_WINDOW', 0, create=True):
+            session.stop_file = Path(directory) / 'bridge.stop'
+            result = session.run_bridge(SimpleNamespace(pid=1, created='old', executable=Path('known.exe')),
+                                        presence, {})
+        return result, session, spawn, inspect
+
+    def test_streamdeck_restart_keeps_listener_and_reload_native_ui_for_new_prepared_host(self):
+        old = SimpleNamespace(pid=1, created='old', executable=Path('known.exe'))
+        new = SimpleNamespace(pid=2, created='new', executable=Path('known.exe'))
+        result, session, spawn, inspect = self.run_host_sequence(
+            [old, None, new, new, new],
+            [None, SimpleNamespace(state=1, ready=False), SimpleNamespace(state=2, ready=True)])
+        self.assertTrue(result)
+        spawn.assert_called_once()
+        session.shutdown_bridge.assert_called_once()
+        self.assertEqual([call.args[0] for call in session.prepare_native_ui.call_args_list], [1, 2])
+        self.assertEqual([call.args[0] for call in inspect.call_args_list], [new, new, new])
+        self.assertEqual([call.args[0] for call in session.bridge.stdin.write.call_args_list],
+                         ['{"command":"hostUnavailable"}\n', '{"command":"hostAvailable"}\n'])
+        self.assertEqual(spawn.call_args.kwargs['stdin'], hellgato.subprocess.PIPE)
+
+    def test_new_rejected_host_never_loads_native_ui(self):
+        new = SimpleNamespace(pid=2, created='new', executable=Path('known.exe'))
+        result, session, spawn, inspect = self.run_host_sequence([None, new], [SimpleNamespace(state=3, ready=False)])
+        self.assertFalse(result)
+        spawn.assert_called_once()
+        session.prepare_native_ui.assert_not_called()
+        session.shutdown_bridge.assert_called_once()
+        self.assertEqual(session.phase, 'error')
+        inspect.assert_called_once_with(new)
+
+    def test_new_unknown_executable_is_rejected_before_readiness_or_native_ui(self):
+        new = SimpleNamespace(pid=2, created='new', executable=Path('unknown.exe'))
+        with self.assertRaisesRegex(RuntimeError, 'different installation'):
+            self.run_host_sequence([new], [])
+
+    def test_presence_read_error_does_not_pause_usb_but_confirmed_absence_does(self):
+        old = SimpleNamespace(pid=1, created='old', executable=Path('known.exe'))
+        with self.assertLogs(level='WARNING'):
+            result, session, _, inspect = self.run_host_sequence([old, OSError('snapshot unavailable'), old, None, None], [])
+        self.assertTrue(result)
+        self.assertEqual([call.args[0] for call in session.bridge.stdin.write.call_args_list],
+                         ['{"command":"hostUnavailable"}\n'])
+        inspect.assert_not_called()
 
 
 if __name__ == '__main__':

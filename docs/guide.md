@@ -4,7 +4,7 @@
 
 ## Everyday use
 
-- **Connection:** open Stream Deck yourself, connect one N4 Pro over USB and open Hellgato Stream Dog. Startup support prepares the ten-key model during every Stream Deck launch, including launches without USB hardware. Complete Stream Deck's pairing confirmation when prompted. Closing Stream Deck stops the bridge and waits for your next Stream Deck launch. Removing and reconnecting USB reopens the USB handles while the Node bridge stays running. The control changes between Connect, Cancel and Disconnect to match the current state.
+- **Connection:** open Stream Deck yourself, connect one N4 Pro over USB and open Hellgato Stream Dog. Startup support prepares the ten-key model during every Stream Deck launch, including launches without USB hardware. Complete Stream Deck's pairing confirmation when prompted. Once connected, Hellgato keeps the network listener available during USB reconnection and Stream Deck restart. A new Stream Deck process must pass preparation checks before input and display forwarding resume. Restarting Hellgato while Stream Deck stays open can still require manual network pairing. The control changes between Connect, Cancel and Disconnect to match the current state.
 - **File menu:** export this device's profiles into one `.hellgatoProfiles` bundle (`Ctrl+E`), or import a bundle or several `.streamDeckProfile` files (`Ctrl+I`). Close Stream Deck yourself before importing. Imports back up replaced profiles; open Stream Deck again yourself afterward to resume a previously active Hellgato connection.
 - **Tray:** closing the window keeps Hellgato running. Choose Open or Exit from its tray menu.
 - **Startup:** the installer's finish page offers separate checkboxes to launch Hellgato Stream Dog now and at Windows sign-in. Stream Deck keeps its own startup setting. During normal use, Hellgato Stream Dog waits for you to open Stream Deck and does not launch, close or restart it.
@@ -39,7 +39,7 @@ Brightness, idle timeout, full LCD images, full-screen and individual-key color 
 
 Sleep without a screensaver uses N4 Pro's native screen-off command. With a screensaver, the image appears first and dims over 0.3 seconds to the LCD's minimum brightness, while knob lighting turns off immediately. Wake restores action images while dim/off, then fades back to the Stream Deck brightness and restores the selected knob brightness. Display animations do not reset the idle timer. Sleep timing is stored per virtual device and returned to Stream Deck after reconnection. Manual Sleep is recognized early when a recent key release is followed by timeout-disable and brightness-fade commands; when Stream Deck sends only brightness changes, screen-off waits for its zero-brightness command.
 
-Hardware checks confirmed the 5×2 layout when Stream Deck starts without USB hardware, operation of both rightmost keys after connection, USB reconnection while the virtual network device stays connected, and reconnection after manually quitting and reopening Stream Deck. Hellgato leaves a manually closed Stream Deck closed. Native knob brightness controls were also verified. Earlier beta checks covered five-minute idle activation, screensaver dimming and wake behavior.
+Hardware checks of the earlier bridge confirmed the 5×2 layout when Stream Deck starts without USB hardware, both rightmost keys, USB reconnection, Stream Deck relaunch and native knob brightness. Installed IPC build `bb51866` passed user checks for initial key images, USB reconnection with automatic connection and visible icons, return to the standalone device screen on Stream Deck exit, automatic reconnection on Stream Deck relaunch, button/knob/touch actions, profile/page image changes, display/knob brightness and sleep/wake. Hellgato leaves a manually closed Stream Deck closed. These results do not establish the complete hardware matrix. Earlier beta checks covered five-minute idle activation, screensaver dimming and wake behavior.
 
 Automated registry tests cover persistence across restarts, physical-serial matching after USB port changes, USB-path fallback and protection against reusing an assigned identity for another device. Physical identity recording and LCD button images were also verified after the Program Files migration. The image worker uses the writable user-data directory for SDK temporary images.
 
@@ -56,7 +56,9 @@ Mirabox StreamDock accepts 800×480 JPG/PNG images for the stored logo. Hellgato
 
 Elgato firmware updates do not apply to N4 Pro. Update controls and firmware-label actions are disabled for the selected virtual N4 Pro; genuine Elgato controls keep their normal behavior. The CORA bridge also rejects unsupported write operations before a success acknowledgement, logs the unsupported operation and closes that connection without a success reply. Firmware-version and discovery reads continue to work. The virtual device's reported compatibility version is separate from the N4 Pro's actual firmware.
 
-Closing Stream Deck stops the USB and CORA workers; Hellgato waits for the next user-initiated Stream Deck launch. Exiting or disconnecting Hellgato stops its workers. USB removal alone closes the USB handles and waits to reopen the device while preserving the Node CORA process. Pending hardware controls are cancelled during USB teardown, the heartbeat wait is interrupted, and the device is notified after display writers stop and before reader teardown when the transport is still available. Native disconnect and transport errors are logged. The last LCD image can remain until the device returns to its stored logo; hardware transition timing still needs measurement.
+Closing Stream Deck releases the USB device with its native close notification while leaving Hellgato's network listener available for the next user-initiated Stream Deck launch. Hellgato resumes USB use after the new Stream Deck process passes preparation checks. Exiting or disconnecting Hellgato stops its workers. USB removal closes the physical device handles while preserving the virtual network connection. Held inputs are released and are never replayed. Cached display state is restored when the USB worker reconnects. Return to the device's standalone screen on Stream Deck exit was physically confirmed in IPC build `bb51866`.
+
+Two Hellgato-only limitations were observed in `bb51866`: quitting Hellgato leaves the last screen visible for tens of seconds before native standby, and relaunching Hellgato while Stream Deck remains open requires manual network pairing. Key icons work after pairing.
 
 ## How it works
 
@@ -68,11 +70,11 @@ Hellgato presents N4 Pro as a network-connected Stream Deck. The official app ru
   <img src="visuals/hellgato-network.gif" alt="N4 Pro exchanges input and display updates with the Python USB worker, Node.js CORA bridge and Stream Deck app." width="800">
 </p>
 
-Blue carries input toward Stream Deck; orange carries display updates toward N4 Pro. The virtual device is the identity exposed by CORA. The Python worker sends input over `stdin` and reads display events and images from local files. CORA uses `127.0.0.1:5343` for pairing and `127.0.0.1:5344` for device traffic. Screensavers use the original asset saved by Stream Deck, bypassing its per-frame display transport.
+Blue carries input toward Stream Deck; orange carries display updates toward N4 Pro. The virtual device is the identity exposed by CORA. The desktop supervisor starts a Node SDK session and a separate USB worker; correlated IPC messages carry controls, display frames and input. CORA uses `127.0.0.1:5343` for pairing and `127.0.0.1:5344` for device traffic. When available, screensavers use the original asset saved by Stream Deck.
 
 The device preferences extension uses Stream Deck's loaded public Qt APIs and matches the selected virtual device's exact serial. It sends authenticated requests to a local control endpoint; the USB worker applies them on its own thread. Each connection refreshes the endpoint token without adding duplicate preference rows. If the expected Qt layout or serial cannot be verified, the extension leaves the host UI unchanged. See [the native extension](../native/hellgato-ui) for its build and integration checks.
 
-DisplayMirror combines repeated updates to each key or touch region within a batch. The default frame mode sends only the changed touch-strip region after its initial frame.
+The SDK output queue combines replaceable updates to each display surface. The default frame mode sends only the changed touch-strip region after its initial frame. Full LCD writes finish with a hardware refresh after the key and touch surfaces have been submitted. Fully black LCD frames clear native key icons instead of installing opaque black key images, allowing subsequent action icons to appear after initialization.
 
 ## Local data
 
@@ -100,33 +102,35 @@ Use **Help → Open logs** to access the data folder, or **Help → About Hellga
 
 ## Build and test
 
-Use Python 3.13 x64, Git, Visual Studio C++ Build Tools with the x64 MSVC tools and Windows SDK, and Inno Setup 6.7.3. Both native DLLs are built from source. The device preferences extension uses a pinned Qt 6.5.3 MSVC x64 development kit during compilation. It uses the Qt and C++ runtimes already loaded by Stream Deck; another Qt runtime is not bundled. In PowerShell, from the repository root:
+Use Python 3.13.7 x64, Node 24.19.0, npm 11.9.0, pnpm 11.10.0, uv 0.12.23, Git, Visual Studio C++ Build Tools with the x64 MSVC tools and Windows SDK, and Inno Setup 6.7.3. Both native DLLs are built from source. The device preferences extension uses a pinned Qt 6.5.3 MSVC x64 development kit during compilation. It uses the Qt and C++ runtimes already loaded by Stream Deck; another Qt runtime is not bundled. In PowerShell, from the repository root:
 
 ```powershell
-python -m venv work/build-venv
-./work/build-venv/Scripts/python.exe -m pip install -r installer/requirements-build.txt
-./work/build-venv/Scripts/python.exe scripts/prepare-windows.py
-./work/build-runtime/node.exe scripts/prepare-cora.mjs
-./work/build-venv/Scripts/python.exe native/hellgato-ui/prepare.py
-./work/build-venv/Scripts/python.exe native/hellgato-ui/build.py --output work/build-native-ui-package
-./work/build-venv/Scripts/python.exe native/hellgato-startup/build.py
-
-./work/build-venv/Scripts/python.exe -m unittest discover -s test -p 'test_*.py'
-./work/build-runtime/node.exe --test test/*.test.mjs
+python -m pip install uv==0.12.23
+uv sync --locked --no-install-workspace --python python
+pnpm install --frozen-lockfile
+pnpm run build:npm
+pnpm run typecheck
+pnpm test
+uv run --frozen --no-sync python scripts/check-python.py
+uv run --frozen --no-sync python -m unittest discover -s test -p 'test_*.py'
+./.venv/Scripts/python.exe scripts/prepare-windows.py
+./.venv/Scripts/python.exe host-integrations/streamdeck/windows/native/ui/prepare.py
+./.venv/Scripts/python.exe host-integrations/streamdeck/windows/native/ui/build.py --output work/build-native-ui-package
+./.venv/Scripts/python.exe host-integrations/streamdeck/windows/native/startup/build.py
 ```
 
 Before the first source run, close Stream Deck yourself and prepare startup support:
 
 ```powershell
-./work/build-venv/Scripts/python.exe scripts/setup-startup.py --install --elevate
-./work/build-venv/Scripts/python.exe scripts/setup-startup.py --check
+./.venv/Scripts/python.exe scripts/setup-startup.py --install --elevate
+./.venv/Scripts/python.exe scripts/setup-startup.py --check
 ```
 
 Then open Stream Deck yourself and start Hellgato Stream Dog:
 
 ```powershell
 $env:HELLGATO_NODE = (Resolve-Path ./work/build-runtime/node.exe).Path
-./work/build-venv/Scripts/python.exe app/hellgato.py
+./.venv/Scripts/python.exe apps/stream-dog/python/stream-dog.py
 ```
 
 The native startup build produces `work/build-native-startup/version.dll`; the installer bundles it as `_internal/native/version.dll` along with `scripts/setup-startup.py` and the Python compatibility modules. Setup defaults to `%ProgramFiles%\Elgato\StreamDeck\StreamDeck.exe`; use `--exe` for a different installation. `--check` reads the current preparation state. Repeat `--install --elevate` after a Stream Deck update changes the executable hash. `--remove --elevate` removes only verified Hellgato-owned startup files. Elevation is requested only when the target directory requires it. None of these commands launches, closes or restarts Stream Deck.
@@ -136,19 +140,23 @@ The native startup build produces `work/build-native-startup/version.dll`; the i
 Build the installer:
 
 ```powershell
-./scripts/build-windows.ps1 -Python ./work/build-venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
+./scripts/build-windows.ps1 -Python ./.venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
 ```
 
-Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-<version>-Setup.exe` and its SHA-256 sidecar. The version comes only from `packages/windows-release/package.json`, through generated runtime and installer metadata. Personal profiles and logs are excluded. Ordinary pushes and PRs build without publishing. A separately reviewed Changesets release PR selects Windows and/or npm; its owner-approved merge authorizes publication only after rollout is explicitly enabled. See [release operations](windows-releases.md) and [setup requirements](release-setup.md).
+Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-<version>-Setup.exe` and its SHA-256 sidecar. The version comes only from `packages/windows-release/package.json`, through generated runtime and installer metadata. Personal profiles and logs are excluded. Ordinary pushes and PRs run checks and builds without publishing. Automatic release coordination was removed and publication is deferred while desktop integration is completed.
 
 | Directory | Purpose |
 | --- | --- |
-| `app/` | Windows launcher, interface and localization |
-| `app/n4/` | Hardware input, display, profiles and compatibility |
-| `app/cora/` | Stream Deck network transport |
+| `apps/stream-dog/` | Canonical Windows product, GUI and Node session runner |
+| `adapters/mirabox-python/` | Bundled physical-only IPC worker |
+| `host-integrations/streamdeck/windows/` | Canonical host inspection and native startup/Qt integration |
+| `packages/core/src/` | Canonical Stream Deck bridge and contracts |
+| `packages/hellgato/` | Session, sidecar, explicit bindings and conformance SDK |
+| `app/` | Legacy entrypoint aliases and retained assets |
+| `app/n4/` | Legacy physical engine and compatibility helpers |
+| `app/cora/` | Compatibility entrypoint wrappers |
 | `app/locales/` | Interface translations |
-| `native/hellgato-ui/` | Public Qt device preference extension and isolated test host |
-| `native/hellgato-startup/` | Startup DLL that validates and prepares the model before publication |
+| `native/` | Compatibility build wrappers for the canonical host integration |
 | `scripts/` | Dependency preparation, startup setup, diagnostics and builds |
 | `installer/` | Packaging and third-party notices |
 | `test/` | Compatibility, profiles, UI state and CORA checks |
@@ -159,7 +167,7 @@ Open an issue or submit a pull request with a focused change. Run both test suit
 
 ### npm bridge packages
 
-`hellgato` re-exports `@hellgato/core`. Both are built from `app/cora/bridge.mjs`, which the Windows app also uses. See [the core API](../packages/core) for usage and supported scope.
+`hellgato` composes explicit adapters and sessions around `@hellgato/core`. The canonical core source is `packages/core/src`; Stream Dog consumes the verified package artifacts. See [the core API](../packages/core) for usage and supported scope.
 
 Use Node 24 and the exact pnpm version in the root `packageManager` field:
 
@@ -167,13 +175,17 @@ Use Node 24 and the exact pnpm version in the root `packageManager` field:
 pnpm install --frozen-lockfile
 pnpm run prepare:cora
 pnpm run build:npm
+pnpm run typecheck
+pnpm test
 node scripts/pack-npm.mjs --destination dist/npm
 node scripts/verify-npm.mjs --artifacts dist/npm
 ```
 
+Build before running tests or type checks: facade imports resolve the public core exports in generated `packages/core/dist`, which is absent in a clean checkout.
+
 Changesets keeps the two npm versions fixed together. The source facade uses `workspace:*`; pnpm pack converts that to the exact core version inside the tarball. Both tarballs are inspected and installed into an isolated consumer for import and lifecycle checks. The root and Windows metadata workspaces stay private. Packages include the prepared DeckBridge runtime and license, so consumers need no Git checkout or build step.
 
-Include a changeset with releasable code changes. A change to shared `app/cora/**` requires both npm and Windows targets. Windows-only changes do not publish npm. The [release workflow](windows-releases.md) publishes only immutable, verified tarballs selected by the approved release plan.
+Changesets metadata remains available for future releases; automatic publication is currently deferred. Local Windows packaging consumes the verified SDK tarballs without publishing them.
 
 ### Translations
 
@@ -186,3 +198,18 @@ The interface supports English, Korean, Spanish, Japanese, French, German, Russi
 Translation checks validate JSON, duplicate keys, missing/extra messages and placeholders. If you cannot submit a PR, use the [translation feedback form](https://github.com/restarea92/hellgato/issues/new?template=translation.yml).
 
 The catalogs use standard flat JSON, compatible with translation platforms such as Weblate. No paid translation service or API key is required to run or build Hellgato.
+
+
+### Packed SDK staging
+
+After installing the pinned Node/pnpm workspace dependencies, run
+`pnpm run stage:windows-sdk` to prepare the source product's SDK runtime.
+This builds, verifies and offline-installs both SDK tarballs into the generated
+`work/stream-dog-sdk` product runtime. `scripts/build-windows.ps1` performs the same
+step automatically. The old `app/cora/server.mjs` is now only a launcher; do not copy
+core sources or substitute workspace symlinks into a distributed installer.
+
+The ordinary desktop app runs the sidecar SDK and the separately packaged Mirabox
+worker. Build and stage that worker with `scripts/build-windows.ps1` before running
+the product. See the [architecture](architecture/0001-device-neutral-sdk.md) for
+the boundary between host integration, SDK sessions and physical device code.

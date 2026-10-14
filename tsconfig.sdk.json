@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmitOnError": true,
+    "declaration": true,
+    "resolveJsonModule": true,
+    "types": [
+      "node"
+    ],
+    "rootDir": ".",
+    "outDir": "work/typescript-sdk",
+    "paths": {
+      "@hellgato/core": [
+        "./packages/core/src/bridge.mts"
+      ],
+      "@hellgato/core/contracts": [
+        "./packages/core/src/contracts/index.mts"
+      ]
+    },
+    "newLine": "lf"
+  },
+  "include": [
+    "packages/core/src/**/*.mts",
+    "packages/hellgato/**/*.ts",
+    "packages/hellgato/**/*.mts",
+    "packages/core/types/**/*.d.ts"
+  ],
+  "exclude": [
+    "packages/core/src/vendor",
+    "packages/core/dist",
+    "packages/hellgato/node_modules"
+  ]
+}

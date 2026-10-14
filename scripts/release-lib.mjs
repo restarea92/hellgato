@@ -1,9 +1,10 @@
-import { readFile, readdir, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, readdir, writeFile, mkdir, lstat, readlink, unlink, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { releaseChannel, validatePrereleaseState } from './release-policy.mjs';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const SHA = /^[a-f0-9]{40}$/;
@@ -20,6 +21,23 @@ export function globMatch(path, pattern) { const regex = pattern.split('**').map
 export function pnpm(root, args, { capture = false } = {}) {
   const command = process.env.HELLGATO_PNPM || (process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm');
   return execFileSync(command, args, { cwd: root, encoding: 'utf8', stdio: capture ? 'pipe' : ['ignore', 'inherit', 'inherit'], shell: process.platform === 'win32', env: { ...process.env, CI: 'true' }, maxBuffer: 64 * 1024 * 1024 });
+}
+export async function cleanupReplayWorktree(root, temporary, { dependencyLinkCreated = false } = {}) {
+  const dependencyPath = resolve(temporary, 'node_modules');
+  let dependency;
+  try { dependency = await lstat(dependencyPath); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (dependency) {
+    invariant(dependencyLinkCreated && dependency.isSymbolicLink(), 'Replay dependency path changed; preserving temporary worktree');
+    const target = resolve(temporary, await readlink(dependencyPath));
+    const expected = resolve(root, 'node_modules');
+    invariant(process.platform === 'win32' ? target.toLowerCase() === expected.toLowerCase() : target === expected, 'Replay dependency target changed; preserving temporary worktree');
+    // Git for Windows follows junctions during worktree removal. A failed
+    // unlink must preserve the worktree and its shared dependency target.
+    await unlink(dependencyPath);
+  }
+  try { git(root, 'worktree', 'remove', '--force', temporary); }
+  finally { await rm(temporary, { recursive: true, force: true }); }
 }
 // Keep structural validation dependency-free. Deliberately accept only this
 // repository's small YAML subset; aliases, inline lists, duplicate keys, escaped
@@ -53,7 +71,9 @@ export function parseWorkspacePackages(source) {
   invariant(new Set(members).size === members.length, 'Unsupported workspace YAML: duplicate member');
   return members.sort();
 }
-export async function configuration(root) {
+export async function configuration(root, { channel = 'stable' } = {}) {
+  invariant(['stable', 'beta'].includes(channel), 'Unknown configuration channel');
+  if (channel === 'stable') invariant(!existsSync(resolve(root, '.changeset/pre.json')), 'Prerelease mode is not supported by the stable release pipeline');
   const config = await readJson(resolve(root, '.release/components.json'));
   invariant(config.schemaVersion === 1 && config.repository === 'restarea92/hellgato', 'Unsupported component configuration');
   invariant(config.components.length === 2 && config.components[0].component === 'windows' && config.components[1].component === 'npm', 'Expected explicit Windows/npm components');
@@ -70,7 +90,7 @@ export async function configuration(root) {
   const packages = [];
   for (const p of declared) {
     const manifest = await readJson(resolve(root, p.path, 'package.json'));
-    invariant(manifest.name === p.name && VERSION.test(manifest.version), `Invalid stable package metadata: ${p.path}`);
+    invariant(manifest.name === p.name && (channel === 'stable' ? VERSION.test(manifest.version) : ['stable', 'beta'].includes(releaseChannel(manifest.version))), `Invalid stable package metadata: ${p.path}`);
     invariant(p.name === '@hellgato/windows-release' ? manifest.private === true : manifest.private !== true, 'Windows metadata must remain private and npm workspaces publishable');
     packages.push({ ...p, version: manifest.version, manifest });
   }
@@ -79,7 +99,7 @@ export async function configuration(root) {
   invariant(core.version === facade.version && facade.manifest.dependencies?.['@hellgato/core'] === 'workspace:*', 'npm packages must keep equal source versions and workspace:* dependency');
   const changesets = await readJson(resolve(root, '.changeset/config.json'));
   invariant(JSON.stringify(changesets.fixed) === JSON.stringify([['@hellgato/core', 'hellgato']]) && changesets.privatePackages?.version === true && changesets.privatePackages?.tag === false && changesets.ignore?.length === 0 && changesets.changelog === '@changesets/cli/changelog' && changesets.commit === false && changesets.baseBranch === 'main', 'Changesets fixed/private policy changed');
-  invariant(!existsSync(resolve(root, '.changeset/pre.json')), 'Prerelease mode is not supported by the stable release pipeline');
+  if (channel === 'beta' && existsSync(resolve(root, '.changeset/pre.json'))) validatePrereleaseState(await readJson(resolve(root, '.changeset/pre.json')));
   return { ...config, packages };
 }
 export function parseChangeset(content, id) {

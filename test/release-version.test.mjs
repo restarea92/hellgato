@@ -89,7 +89,7 @@ test('no pending changesets creates no release intent', async t => {
 });
 
 test('impact shared source and upstream require Windows and npm', async t => {
-  for (const path of ['app/cora/bridge.mjs', 'scripts/prepare-cora.mjs', 'scripts/cora-paths.mjs']) {
+  for (const path of ['app/cora/bridge.mjs', 'scripts/prepare-cora.mjs', 'scripts/cora-paths.mjs', 'packages/core/src/contracts/index.mjs', 'packages/core/schemas/contracts.schema.json', 'packages/hellgato/src/session/index.mjs', 'packages/hellgato/src/adapters/mirabox-n4-pro/index.mjs', 'schemas/adapter.json', 'vendor/deckbridge/manifest.json']) {
     const root = await fixture(t);
     const base = git(root, 'rev-parse', 'HEAD').trim();
     await put(root, path, '// changed shared implementation\n');
@@ -239,4 +239,193 @@ test('workspace additions with comments, quotes, or inline YAML fail closed', as
     await put(root, 'pnpm-workspace.yaml', unsupported);
     await assert.rejects(checkReleaseImpact({ root, base, workingTree: true }), /Unsupported workspace YAML/);
   }
+});
+
+
+test('stage-A worker, product, host, SDK inventory and staging changes affect Windows only', async t => {
+  const root = await fixture(t);
+  const base = git(root, 'rev-parse', 'HEAD').trim();
+  await change(root, 'windows-stage-a', ['@hellgato/windows-release']);
+  for (const path of ['adapters/mirabox-python/src/hellgato_mirabox/worker.py', 'apps/stream-dog/node/session.mjs', 'host-integrations/streamdeck/windows/python/prepare.py', 'vendor/mirabox-sdk/manifest.json', 'scripts/stage-windows-sdk.mjs', 'pyproject.toml', 'uv.lock']) {
+    await put(root, path, '# product runtime fixture\n');
+    assert.deepEqual((await checkReleaseImpact({ root, base, workingTree: true })).required, ['windows']);
+    await rm(resolve(root, path));
+  }
+});
+
+test('new architecture tests are classified but unknown runtime and script paths still fail', async t => {
+  const root = await fixture(t);
+  const base = git(root, 'rev-parse', 'HEAD').trim();
+  await put(root, '.changeset/contracts-tests.md', '---\n---\n\nAdd adapter contract fixtures without changing runtime behavior.\n');
+  await put(root, 'tests/contracts/fixture.json', '{}\n');
+  assert.deepEqual((await checkReleaseImpact({ root, base, workingTree: true })).required, []);
+  for (const path of ['adapters/unreviewed/driver.py', 'scripts/unreviewed-build.mjs', 'packages/unreviewed/src/index.mjs']) {
+    await put(root, path, '# unknown path\n');
+    await assert.rejects(checkReleaseImpact({ root, base, workingTree: true }), /Unclassified paths/);
+    await rm(resolve(root, path));
+  }
+});
+
+test('beta metadata cannot enter the stable release pipeline', async t => {
+  const root = await fixture(t);
+  await put(root, '.changeset/pre.json', json({ mode: 'pre', tag: 'beta', initialVersions: {}, changesets: [] }));
+  await assert.rejects(generateReleasePlan({ root }), /Prerelease mode is not supported/);
+});
+
+const publicBaseline = () => ({ schemaVersion: 1, component: 'windows', channel: 'stable', sourceVersion: '0.1.2', version: '0.1.1', tag: 'v0.1.1', releaseId: 91, releaseSha: 'd'.repeat(40), installerSha256: 'e'.repeat(64), manifestSha256: null, reason: 'Skip the unpublished prepared version while binding verified public Windows bytes.' });
+
+test('reviewed public Windows baseline is distinct from deterministic source oldVersion', async t => {
+  const root = await fixture(t);
+  const baseline = publicBaseline();
+  await put(root, '.release/windows-public-baseline.json', json(baseline));
+  await change(root, 'architecture-transition', ['@hellgato/windows-release']);
+  const baseSha = await commit(root);
+  const plan = await generateReleasePlan({ root, baseSha });
+  assert.equal(plan.components[0].oldVersion, '0.1.2');
+  assert.equal(plan.components[0].version, '0.1.3');
+  assert.deepEqual(plan.components[0].publicBaseline, baseline);
+  await validateReleasePlan({ root, baseSha });
+  plan.components[0].publicBaseline.releaseSha = 'a'.repeat(40);
+  await put(root, '.release/plan.json', json(plan));
+  await assert.rejects(validateReleasePlan({ root, baseSha, structuralOnly: true }), /not canonical/);
+});
+
+test('public baseline cannot replace source equality, bootstrap, or exact reviewed base', async t => {
+  const root = await fixture(t);
+  await put(root, '.release/windows-public-baseline.json', json(publicBaseline()));
+  const baseSha = await commit(root);
+  await assert.rejects(generateReleasePlan({ root, baseSha, bootstrap: 'windows', from: '0.1.1' }), /cannot be combined with bootstrap/);
+  await change(root, 'public-transition', ['@hellgato/windows-release']);
+  const updatedBase = await commit(root);
+  const plan = await generateReleasePlan({ root, baseSha: updatedBase });
+  plan.components[0].oldVersion = '0.1.1';
+  await put(root, '.release/plan.json', json(plan));
+  await assert.rejects(validateReleasePlan({ root, baseSha: updatedBase, structuralOnly: true }), /exact source/);
+});
+
+test('channel policy rejects ambiguous versions and preserves numeric beta upgrade order', async () => {
+  const { releaseChannel, channelPolicy, windowsNumericVersion, compareReleaseVersions, validatePublicBaseline } = await import('../scripts/release-policy.mjs');
+  assert.deepEqual(channelPolicy('beta'), { branch: 'next', releaseBranch: 'changeset-release/next', distTag: 'beta', prerelease: true });
+  assert.equal(windowsNumericVersion('1.2.3-beta.0'), '1.2.3.1');
+  assert.equal(windowsNumericVersion('1.2.3-beta.65533'), '1.2.3.65534');
+  assert.equal(windowsNumericVersion('1.2.3'), '1.2.3.65535');
+  for (const version of ['1.2.3-alpha.0', '1.2.3-beta', '1.2.3-beta.01', '01.2.3', '1.2.3+other', null]) assert.throws(() => releaseChannel(version));
+  for (const version of ['65536.0.0', '1.2.3-beta.65534']) assert.throws(() => windowsNumericVersion(version));
+  for (const [a, b] of [['1.2.3-beta.0', '1.2.3-beta.1'], ['1.2.3-beta.9', '1.2.3-beta.10'], ['1.2.3-beta.10', '1.2.3'], ['1.2.3', '1.2.4-beta.0']]) assert.equal(compareReleaseVersions(a, b), -1);
+  assert.throws(() => channelPolicy('nightly'));
+  for (const mutation of [b => b.sourceVersion = '0.1.1', b => b.version = '0.1.3', b => b.tag = 'v0.1.0', b => b.releaseSha = '', b => b.releaseId = true, b => b.installerSha256 = '', b => b.reason = 'skip', b => b.extra = true]) {
+    const baseline = publicBaseline(); mutation(baseline);
+    assert.throws(() => validatePublicBaseline(baseline, '0.1.2', '0.1.3'));
+  }
+});
+
+test('real Changesets candidate beta enter, advance, and stable exit replay exactly', async t => {
+  const { generateCandidatePlan, validateCandidatePlan } = await import('../scripts/release-candidate.mjs');
+  const root = await fixture(t);
+  git(root, 'checkout', '-b', 'next');
+  await change(root, 'beta-entry', ['@hellgato/core', '@hellgato/windows-release']);
+  let baseSha = await commit(root);
+  let plan = await generateCandidatePlan({ root, baseSha, channel: 'beta' });
+  assert.equal(plan.schemaVersion, 2);
+  assert.equal(plan.candidateOnly, true);
+  assert.equal(plan.transition, 'enter');
+  assert.deepEqual(plan.components.map(c => c.version), ['0.1.3-beta.0', '0.1.1-beta.0']);
+  assert.equal(plan.policy.distTag, 'beta');
+  assert.equal(plan.preAfter.tag, 'beta');
+  await validateCandidatePlan({ root, baseSha });
+  await assert.rejects(generateReleasePlan({ root }), /Prerelease mode is not supported/);
+  await commit(root);
+  assert.equal(await generateCandidatePlan({ root, channel: 'beta' }), null);
+  await change(root, 'beta-advance', ['@hellgato/core', '@hellgato/windows-release']);
+  baseSha = await commit(root);
+  plan = await generateCandidatePlan({ root, baseSha, channel: 'beta' });
+  assert.equal(plan.transition, 'advance');
+  assert.deepEqual(plan.components.map(c => c.version), ['0.1.3-beta.1', '0.1.1-beta.1']);
+  await validateCandidatePlan({ root, baseSha });
+  baseSha = await commit(root);
+  plan = await generateCandidatePlan({ root, baseSha, channel: 'stable' });
+  assert.equal(plan.transition, 'exit');
+  assert.equal(plan.preAfter, null);
+  assert.deepEqual(plan.components.map(c => c.version), ['0.1.3', '0.1.1']);
+  assert.deepEqual(await pendingChangesets(root), []);
+  await validateCandidatePlan({ root, baseSha });
+});
+
+test('candidate generation and replay reject wrong branch, fake channels, tampering and source changes', async t => {
+  const { generateCandidatePlan, validateCandidatePlan } = await import('../scripts/release-candidate.mjs');
+  const root = await fixture(t);
+  await change(root, 'beta-candidate', ['@hellgato/core']);
+  await commit(root);
+  await assert.rejects(generateCandidatePlan({ root, channel: 'beta' }), /only be generated on next/);
+  git(root, 'checkout', '-b', 'next');
+  await assert.rejects(generateCandidatePlan({ root, channel: 'alpha' }), /explicit --channel/);
+  await assert.rejects(generateCandidatePlan({ root, channel: 'stable' }), /active beta track/);
+  const plan = await generateCandidatePlan({ root, channel: 'beta' });
+  const content = json(plan);
+  plan.policy.distTag = 'latest';
+  await put(root, '.release/candidate-plan.json', json(plan));
+  await assert.rejects(validateCandidatePlan({ root }), /Noncanonical channel policy/);
+  await put(root, '.release/candidate-plan.json', content);
+  await put(root, 'app/hellgato.py', '# unrelated source mutation\n');
+  await assert.rejects(validateCandidatePlan({ root }), /Unexpected source change/);
+});
+
+test('reviewed beta plans replay exact channel intent and both public baselines', async t => {
+  const root = await fixture(t);
+  git(root, 'checkout', '-b', 'next');
+  await put(root, '.release/windows-public-baseline.json', json(publicBaseline()));
+  const tag = { version: '0.0.1-beta', integrity: `sha512-${'A'.repeat(86)}==` };
+  await put(root, '.release/npm-public-baseline.json', json({ schemaVersion: 1, component: 'npm', sourceVersion: '0.1.0', packages: ['@hellgato/core', 'hellgato'].map(name => ({ name, latest: tag, beta: tag })), reason: 'Introduce the reviewed beta track while preserving the current registry latest aliases.' }));
+  await change(root, 'reviewed-beta', ['@hellgato/core', '@hellgato/windows-release']);
+  const baseSha = await commit(root);
+  const plan = await generateReleasePlan({ root, baseSha, channel: 'beta' });
+  assert.equal(plan.schemaVersion, 3);
+  assert.equal(plan.candidateOnly, false);
+  assert.equal(plan.branch, 'next');
+  assert.equal(plan.components[0].publicBaseline.sourceVersion, '0.1.2');
+  assert.equal(plan.components[1].publicBaseline.sourceVersion, '0.1.0');
+  await validateReleasePlan({ root, baseSha });
+  await validateReleasePlan({ root, baseSha, structuralOnly: true });
+  plan.components[1].publicBaseline.packages[0].latest = null;
+  await put(root, '.release/plan.json', json(plan));
+  await assert.rejects(validateReleasePlan({ root, baseSha, structuralOnly: true }), /Noncanonical channel component/);
+});
+
+test('reviewed beta release cannot silently invent a public baseline', async t => {
+  const root = await fixture(t);
+  git(root, 'checkout', '-b', 'next');
+  await change(root, 'missing-beta-baseline', ['@hellgato/core']);
+  const baseSha = await commit(root);
+  await assert.rejects(generateReleasePlan({ root, baseSha, channel: 'beta' }), /require committed.*npm-public-baseline/);
+});
+
+test('Windows-only approved plans expose a private SDK consumer context, never npm intent', async t => {
+  const { consumerSdkSource, selectedNpm } = await import('../scripts/npm-release.mjs');
+  const root = await fixture(t);
+  await change(root, 'windows-consumer', ['@hellgato/windows-release']);
+  const baseSha = await commit(root);
+  const plan = await generateReleasePlan({ root, baseSha });
+  const releaseSha = await commit(root);
+  const context = consumerSdkSource(resolve(root, '.release/plan.json'), releaseSha);
+  assert.equal(context.version, '0.1.0');
+  assert.equal(context.channel, 'stable');
+  assert.throws(() => selectedNpm(plan), /does not select npm/);
+  assert.throws(() => consumerSdkSource(resolve(root, '.release/plan.json'), 'a'.repeat(40)), /differs from artifact source/);
+});
+
+test('Changesets action version branch requires the exact target-branch base', async t => {
+  const root = await fixture(t);
+  git(root, 'checkout', '-b', 'next');
+  await put(root, '.release/windows-public-baseline.json', json(publicBaseline()));
+  await change(root, 'action-beta', ['@hellgato/windows-release']);
+  const baseSha = await commit(root);
+  git(root, 'checkout', '-b', 'changeset-release/next');
+  const plan = await generateReleasePlan({ root, baseSha, channel: 'beta' });
+  assert.equal(plan.branch, 'next');
+  await validateReleasePlan({ root, baseSha });
+  git(root, 'reset', '--hard', baseSha);
+  git(root, 'clean', '-fd');
+  await put(root, 'source-edit.txt', 'The release branch cannot silently include an unmerged source commit.\n');
+  await commit(root);
+  await assert.rejects(generateReleasePlan({ root, channel: 'beta' }), /exact reviewed release-PR base/);
 });

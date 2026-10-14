@@ -40,6 +40,7 @@ def export(master, prefix, windows_icon=False):
 def main():
     export('hellgato-master.png', 'hellgato')
     export('hellgato-front-master.png', 'hellgato-front', windows_icon=True)
+    export('hellgato-app-master.png', 'hellgato-app', windows_icon=True)
 
 
 if __name__ == '__main__':

@@ -3,12 +3,38 @@
   "version": "0.1.0",
   "description": "Node.js bridge for Stream Deck network input and display events",
   "type": "module",
-  "exports": "./dist/bridge.mjs",
-  "files": ["dist", "LICENSE", "THIRD-PARTY-NOTICES.txt"],
+  "exports": {
+    ".": {
+      "types": "./dist/bridge.d.mts",
+      "import": "./dist/bridge.mjs"
+    },
+    "./contracts": {
+      "types": "./dist/contracts/index.d.mts",
+      "import": "./dist/contracts/index.mjs"
+    },
+    "./schemas/contracts.schema.json": "./schemas/contracts.schema.json"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.txt"
+  ],
   "license": "MIT",
-  "engines": { "node": ">=24 <25" },
-  "repository": { "type": "git", "url": "git+https://github.com/restarea92/hellgato.git", "directory": "packages/core" },
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/restarea92/hellgato.git",
+    "directory": "packages/core"
+  },
   "bugs": "https://github.com/restarea92/hellgato/issues",
   "homepage": "https://github.com/restarea92/hellgato#readme",
-  "publishConfig": { "access": "public", "tag": "latest", "registry": "https://registry.npmjs.org/" }
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "types": "./dist/bridge.d.mts"
 }

@@ -1,0 +1,316 @@
+{
+  "schemaVersion": 1,
+  "valid": [
+    {
+      "contract": "DeviceDescriptor",
+      "value": {
+        "id": "buttons-1",
+        "adapterId": "example-buttons",
+        "modelId": "two-key",
+        "capabilities": {
+          "keys": 2,
+          "dials": 0,
+          "touch": null,
+          "displays": [
+            {
+              "id": "screen",
+              "width": 2,
+              "height": 2,
+              "format": "jpeg",
+              "partial": false
+            }
+          ],
+          "dialPress": "unsupported",
+          "dialRelease": "unavailable"
+        }
+      }
+    },
+    {
+      "contract": "InputEvent",
+      "value": {
+        "deviceId": "buttons-1",
+        "generation": 1,
+        "sequence": 0,
+        "type": "key",
+        "index": 0,
+        "state": "down"
+      }
+    },
+    {
+      "contract": "DisplayFrame",
+      "value": {
+        "type": "frame",
+        "surfaceId": "screen",
+        "format": "jpeg",
+        "width": 2,
+        "height": 2,
+        "data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAACAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDx2iiiu04z/9k="
+      }
+    },
+    {
+      "contract": "DisplayFrame",
+      "value": {
+        "type": "frame",
+        "surfaceId": "rgb",
+        "format": "rgb888",
+        "width": 2,
+        "height": 2,
+        "region": {
+          "x": 1,
+          "y": 1,
+          "width": 1,
+          "height": 1
+        },
+        "data": "AQID"
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "brightness",
+        "value": 42
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "knobBrightness",
+        "value": 0
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "knobBrightness",
+        "value": 100
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "followDisplayBrightness",
+        "value": true
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "followDisplayBrightness",
+        "value": false
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "screensaver"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "contract": "DeviceDescriptor",
+      "value": {
+        "id": "",
+        "adapterId": "example-buttons",
+        "modelId": "two-key",
+        "capabilities": {
+          "keys": 2,
+          "dials": 0,
+          "touch": null,
+          "displays": [
+            {
+              "id": "screen",
+              "width": 2,
+              "height": 2,
+              "format": "jpeg",
+              "partial": false
+            }
+          ],
+          "dialPress": "unsupported",
+          "dialRelease": "unavailable"
+        }
+      }
+    },
+    {
+      "contract": "DeviceDescriptor",
+      "value": {
+        "id": "buttons-1",
+        "adapterId": "example-buttons",
+        "modelId": "two-key",
+        "capabilities": {
+          "keys": 2,
+          "dials": 1,
+          "touch": null,
+          "displays": [
+            {
+              "id": "screen",
+              "width": 2,
+              "height": 2,
+              "format": "jpeg",
+              "partial": false
+            }
+          ],
+          "dialPress": "pulse",
+          "dialRelease": "native"
+        }
+      }
+    },
+    {
+      "contract": "InputEvent",
+      "value": {
+        "deviceId": "buttons-1",
+        "generation": 1,
+        "sequence": 0,
+        "type": "key",
+        "index": 0,
+        "state": "held"
+      }
+    },
+    {
+      "contract": "InputEvent",
+      "value": {
+        "deviceId": "buttons-1",
+        "generation": 1,
+        "sequence": 0,
+        "type": "touch",
+        "gesture": "swipe",
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "contract": "DisplayFrame",
+      "value": {
+        "type": "frame",
+        "surfaceId": "screen",
+        "format": "jpeg",
+        "width": 3,
+        "height": 2,
+        "data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAACAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDx2iiiu04z/9k="
+      }
+    },
+    {
+      "contract": "DisplayFrame",
+      "value": {
+        "type": "frame",
+        "surfaceId": "screen",
+        "format": "jpeg",
+        "width": 2,
+        "height": 2,
+        "data": "/9j/2Q=="
+      }
+    },
+    {
+      "contract": "DisplayFrame",
+      "value": {
+        "type": "frame",
+        "surfaceId": "screen",
+        "format": "jpeg",
+        "width": 2,
+        "height": 2,
+        "data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAACAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDx2iiiu04z/9k=",
+        "region": {
+          "x": 1,
+          "y": 1,
+          "width": 2,
+          "height": 2
+        }
+      }
+    },
+    {
+      "contract": "DisplayFrame",
+      "value": {
+        "type": "frame",
+        "surfaceId": "rgb",
+        "format": "rgb888",
+        "width": 2,
+        "height": 2,
+        "data": "AQID"
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "firmwareWrite",
+        "value": 1
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "brightness",
+        "value": 101
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "knobBrightness",
+        "value": true
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "knobBrightness",
+        "value": 101
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "knobBrightness",
+        "value": -1
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "followDisplayBrightness",
+        "value": 1
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "screensaver",
+        "value": true
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "screensaver",
+        "path": "C:/arbitrary.png"
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "firmwareWrite"
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "bootLogo"
+      }
+    }
+  ]
+}

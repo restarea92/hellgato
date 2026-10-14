@@ -1,21 +1,26 @@
-import { readFile, readdir, mkdtemp, rm, symlink } from 'node:fs/promises';
+import { readFile, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ROOT, SHA, VERSION, invariant, sha256, json, git, gitFile, readJson, put, safePath, configuration, pendingChangesets, parseChangeset, pnpm, argumentsFor } from './release-lib.mjs';
+import { ROOT, SHA, VERSION, invariant, sha256, json, git, gitFile, readJson, put, safePath, configuration, pendingChangesets, parseChangeset, pnpm, argumentsFor, cleanupReplayWorktree } from './release-lib.mjs';
 import { syncReleaseMetadata } from './sync-release-metadata.mjs';
+import { generateCandidatePlan, validateCandidatePlan } from './release-candidate.mjs';
+import { CHANNEL_PLAN_SCHEMA, PUBLIC_BASELINE_PATH, validatePublicBaseline } from './release-policy.mjs';
 
 const PLAN = '.release/plan.json';
-const packagePath = name => ({ '@hellgato/core': 'packages/core', hellgato: 'packages/hellgato', '@hellgato/windows-release': 'packages/windows-release' })[name];
 const renderNotes = (component, version, changesets) => `# Hellgato ${component === 'windows' ? 'Windows' : 'npm'} ${version}\n\n${changesets.filter(c => c.releases.some(r => component === 'windows' ? r.name === '@hellgato/windows-release' : r.name !== '@hellgato/windows-release')).map(c => c.summary).join('\n\n')}\n`;
 const expectedFiles = components => [...new Set(['pnpm-lock.yaml', ...components.flatMap(c => [c.notes, ...(c.component === 'windows' ? ['app/release.json', 'installer/version.iss', 'packages/windows-release/package.json', 'packages/windows-release/CHANGELOG.md'] : ['packages/core/package.json', 'packages/core/CHANGELOG.md', 'packages/hellgato/package.json', 'packages/hellgato/CHANGELOG.md'])])])].sort();
-function componentRecord(component, oldVersion, version, packages) {
-  return { component, oldVersion, version, channel: 'stable', tag: component === 'windows' ? `v${version}` : `hellgato@${version}`, notes: `docs/releases/${component === 'npm' ? 'npm-' : ''}${version}.md`, ...(component === 'npm' ? { packages: packages.map(p => ({ name: p.name, oldVersion, version, tag: `${p.name}@${version}` })) } : {}) };
+function componentRecord(component, oldVersion, version, packages, publicBaseline) {
+  return { component, oldVersion, version, channel: 'stable', tag: component === 'windows' ? `v${version}` : `hellgato@${version}`, notes: `docs/releases/${component === 'npm' ? 'npm-' : ''}${version}.md`, ...(component === 'npm' ? { packages: packages.map(p => ({ name: p.name, oldVersion, version, tag: `${p.name}@${version}` })) } : {}), ...(publicBaseline ? { publicBaseline } : {}) };
 }
 
-export async function generateReleasePlan({ root = ROOT, baseSha, bootstrap, from, replay = false } = {}) {
+export async function generateReleasePlan({ root = ROOT, baseSha, bootstrap, from, replay = false, channel } = {}) {
+  if (channel) {
+    invariant(!bootstrap && !from, 'Channel release plans cannot use bootstrap overrides');
+    return generateCandidatePlan({ root, baseSha, channel, replay, releaseIntent: true });
+  }
   const config = await configuration(root);
   baseSha ??= git(root, 'rev-parse', 'HEAD').trim();
   invariant(SHA.test(baseSha), 'Versioning requires an exact base SHA');
@@ -30,6 +35,7 @@ export async function generateReleasePlan({ root = ROOT, baseSha, bootstrap, fro
   const before = new Map(config.packages.map(p => [p.name, p.version]));
   const components = [];
   if (bootstrap) {
+    invariant(!existsSync(resolve(root, PUBLIC_BASELINE_PATH)), 'Explicit public baseline cannot be combined with bootstrap');
     invariant(['windows', 'npm'].includes(bootstrap), 'Bootstrap requires one explicit component');
     invariant(changesets.every(c => c.releases.length === 0), 'Bootstrap cannot consume pending version bumps');
     for (const changeset of changesets) await rm(resolve(root, `.changeset/${changeset.id}.md`));
@@ -51,7 +57,9 @@ export async function generateReleasePlan({ root = ROOT, baseSha, bootstrap, fro
       const name = component.packages[0].name;
       const version = after.packages.find(p => p.name === name).version;
       if (version === before.get(name)) continue;
-      const record = componentRecord(component.component, before.get(name), version, component.packages);
+      const baselineBytes = component.component === 'windows' ? gitFile(root, baseSha, PUBLIC_BASELINE_PATH) : null;
+      const publicBaseline = baselineBytes === null ? undefined : validatePublicBaseline(JSON.parse(baselineBytes), before.get(name), version);
+      const record = componentRecord(component.component, before.get(name), version, component.packages, publicBaseline);
       invariant(!existsSync(resolve(root, record.notes)), `Refusing to replace existing release notes: ${record.notes}`);
       await put(root, record.notes, renderNotes(component.component, version, changesets));
       components.push(record);
@@ -75,6 +83,7 @@ export async function generateReleasePlan({ root = ROOT, baseSha, bootstrap, fro
 
 export async function validateReleasePlan({ root = ROOT, baseSha, headSha, structuralOnly = false } = {}) {
   const plan = await readJson(resolve(root, PLAN));
+  if (plan.schemaVersion === CHANNEL_PLAN_SCHEMA) return validateCandidatePlan({ root, baseSha, headSha, releaseIntent: true, structuralOnly });
   invariant(JSON.stringify(Object.keys(plan).sort()) === JSON.stringify(['schemaVersion', 'repository', 'baseSha', 'bootstrap', 'changesets', 'components', 'generatedFiles'].sort()), 'Unexpected release plan fields');
   invariant(plan.schemaVersion === 1 && plan.repository === 'restarea92/hellgato' && typeof plan.bootstrap === 'boolean', 'Unsupported release plan');
   invariant(SHA.test(plan.baseSha) && (!baseSha || baseSha === plan.baseSha), 'Stale release plan: base SHA mismatch');
@@ -92,7 +101,10 @@ export async function validateReleasePlan({ root = ROOT, baseSha, headSha, struc
   for (const component of plan.components) {
     invariant(['windows', 'npm'].includes(component.component) && component.channel === 'stable' && (VERSION.test(component.oldVersion) || plan.bootstrap && component.component === 'npm' && component.oldVersion === '0.0.1-beta') && VERSION.test(component.version), 'Invalid stable component');
     const declaration = config.components.find(c => c.component === component.component);
-    const expected = componentRecord(component.component, component.oldVersion, component.version, declaration.packages);
+    const baselineBytes = component.component === 'windows' ? gitFile(root, baseSha, PUBLIC_BASELINE_PATH) : null;
+    invariant(!plan.bootstrap || baselineBytes === null, 'Explicit public baseline cannot be combined with bootstrap');
+    const publicBaseline = baselineBytes === null ? undefined : validatePublicBaseline(JSON.parse(baselineBytes), component.oldVersion, component.version);
+    const expected = componentRecord(component.component, component.oldVersion, component.version, declaration.packages, publicBaseline);
     invariant(JSON.stringify(component) === JSON.stringify(expected), 'Component tags/notes/packages are not canonical');
     for (const pkg of declaration.packages) {
       const original = JSON.parse(gitFile(root, baseSha, `${pkg.path}/package.json`));
@@ -113,14 +125,16 @@ export async function validateReleasePlan({ root = ROOT, baseSha, headSha, struc
   if (headSha) invariant(git(root, 'diff', '--name-only', headSha).trim() === '', 'Dirty release checkout');
   if (!structuralOnly) {
     const temporary = await mkdtemp(join(tmpdir(), 'hellgato-plan-'));
+    let dependencyLinkCreated = false;
     try {
       git(root, 'worktree', 'add', '--quiet', '--detach', temporary, baseSha);
       invariant(existsSync(resolve(root, 'node_modules/@changesets/cli/package.json')), 'Install frozen release dependencies before full plan replay');
       await symlink(resolve(root, 'node_modules'), resolve(temporary, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+      dependencyLinkCreated = true;
       const replay = await generateReleasePlan({ root: temporary, baseSha, replay: true, ...(plan.bootstrap ? { bootstrap: plan.components[0].component, from: plan.components[0].oldVersion } : {}) });
       invariant(JSON.stringify(replay) === JSON.stringify(plan), 'Release tree differs from deterministic Changesets regeneration');
     } finally {
-      try { git(root, 'worktree', 'remove', '--force', temporary); } finally { await rm(temporary, { recursive: true, force: true }); }
+      await cleanupReplayWorktree(root, temporary, { dependencyLinkCreated });
     }
   }
   return plan;
@@ -128,13 +142,13 @@ export async function validateReleasePlan({ root = ROOT, baseSha, headSha, struc
 
 async function main() {
   const args = argumentsFor(process.argv.slice(2));
-  invariant(Object.keys(args).every(key => ['base', 'head', 'check-plan', 'check', 'structural-only', 'bootstrap', 'from'].includes(key)), 'Unknown release-version option');
+  invariant(Object.keys(args).every(key => ['base', 'head', 'check-plan', 'check', 'structural-only', 'bootstrap', 'from', 'channel'].includes(key)), 'Unknown release-version option');
   if (args['check-plan'] || args.check) {
     const plan = await validateReleasePlan({ baseSha: args.base, headSha: args.head, structuralOnly: Boolean(args['structural-only']) });
     console.log(`Verified ${plan.bootstrap ? 'bootstrap' : 'Changesets'} plan for ${plan.components.map(c => c.component).join(', ')}`);
   } else {
     invariant(!args['structural-only'] && !args.head, 'Validation options require --check-plan');
-    const plan = await generateReleasePlan({ baseSha: args.base, bootstrap: args.bootstrap, from: args.from });
+    const plan = await generateReleasePlan({ baseSha: args.base, bootstrap: args.bootstrap, from: args.from, channel: args.channel });
     console.log(plan ? `Prepared ${plan.components.map(c => `${c.component} ${c.oldVersion} -> ${c.version}`).join(', ')}` : 'No pending release changesets; no release intent generated');
   }
 }

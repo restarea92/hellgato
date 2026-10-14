@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "policyId": "mirabox-n4-pro-experimental-v1",
+  "adapterId": "mirabox-n4-pro",
+  "modelId": "n4-pro",
+  "supportStatus": "experimental",
+  "physicalHardwareVerified": false,
+  "allowedFirmware": ["V4.N4 Pro E.02.010"],
+  "evidenceKind": "historical-product-baseline-only",
+  "sourceEvidence": "docs/releases/0.1.0.md"
+}
