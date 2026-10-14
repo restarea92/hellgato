@@ -36,7 +36,7 @@ if sys.argv[1:] == ['--version']:
     print(VERSION)
     raise SystemExit(0)
 os.environ['HELLGATO_STATE_DIR'] = str(STATE)
-# Keep legacy import/patch targets available while the approved USB bridge remains.
+# Host setup and native preferences remain product-owned.
 sys.path.insert(0, str(ROOT / 'app/n4'))
 sys.path.insert(0, str(ROOT / 'host-integrations/streamdeck/windows/python'))
 from hellgato_host.compatibility import INCOMPATIBLE
@@ -53,7 +53,7 @@ def command(script, *arguments):
 
 
 def worker():
-    allowed = {'bridge.py', 'start-streamdeck.py', 'patch-device-geometry.py', 'patch-background-grid.py',
+    allowed = {'bridge.py', 'ipc_bridge.py', 'start-streamdeck.py', 'patch-device-geometry.py', 'patch-background-grid.py',
                'load-native-ui.py', 'setup-startup.py'}
     script = Path(sys.argv[2]).resolve()
     if not script.is_relative_to(ROOT.resolve()) or script.name not in allowed:
@@ -150,12 +150,17 @@ class Session:
 
     def log_bridge(self, stream, log):
         for line in stream:
-            log.write(line)
-            log.flush()
             try:
                 event = json.loads(line)
             except ValueError:
+                log.write(line)
+                log.flush()
                 continue
+            if not isinstance(event, dict) or not isinstance(event.get('detail', {}), dict):
+                continue
+            safe = {**event, 'detail': {key: value for key, value in event.get('detail', {}).items() if key != 'deviceId'}}
+            log.write(json.dumps(safe) + '\n')
+            log.flush()
             if event.get('event') == 'bridgeReady':
                 self.bridge_ready.set()
             elif event.get('event') in ('deviceReady', 'deviceReconnected'):
@@ -185,6 +190,9 @@ class Session:
             elif event.get('event') == 'child.clientDisconnected':
                 self.connected.clear()
                 self.status('detail.pairing', 'pairing')
+            elif event.get('event') == 'ipcFailed':
+                logging.error('SDK product runtime failed: %s', event.get('detail', {}).get('code'))
+                self.status('error.device', 'error')
 
     def run(self, prepare=False):
         from .settings import load_settings
@@ -251,7 +259,7 @@ class Session:
         self.status('detail.device', 'starting')
         with (STATE / 'bridge.log').open('a', encoding='utf-8') as log:
             logging.info('Starting bridge for prepared host pid=%s created=%s', host.pid, host.created)
-            self.bridge = subprocess.Popen(command('app/n4/bridge.py', '--init'),
+            self.bridge = subprocess.Popen(command('apps/stream-dog/python/hellgato_stream_dog/ipc_bridge.py', '--init'),
                                            cwd=STATE, env=environment, stdout=subprocess.PIPE,
                                            stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace',
                                            creationflags=subprocess.CREATE_NO_WINDOW)

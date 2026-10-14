@@ -11,9 +11,10 @@ object, so old imports and test patch targets remain valid. Assets, translations
 and release metadata keep their existing packaged paths for this migration.
 
 The canonical launcher uses `hellgato_host` for Windows host preparation/status.
-It still launches the existing `app/n4/bridge.py` device engine: switching the
-stable GUI onto the independent IPC candidate requires Windows and real-device
-parity evidence. The candidate and physical worker remain separate entrypoints.
+It starts `ipc_bridge.py`, which owns the SDK process lifetime and translates
+session events for the existing GUI. The SDK starts a separate Mirabox worker;
+the desktop process does not import the USB SDK. Saved identity, native knob
+controls, and profile transfer keep their existing product interfaces.
 
 ## Locked development/build environment
 

@@ -18,7 +18,7 @@ function fixture() {
     sdk.push({ name, version: '0.1.0', sha256: 'a'.repeat(64) });
   }
   writeFileSync(resolve(root, 'legacy-server.mjs'), 'export {};\n');
-  const manifest = { schemaVersion: 1, component: 'stream-dog-sdk', engine: 'legacy-compatibility', productVersion: '0.1.2', releaseSha: 'b'.repeat(40), sdk, files: stageInventory(root) };
+  const manifest = { schemaVersion: 1, component: 'stream-dog-sdk', engine: 'ipc', productVersion: '0.1.2', releaseSha: 'b'.repeat(40), sdk, files: stageInventory(root) };
   writeFileSync(resolve(root, 'product-build-manifest.json'), JSON.stringify(manifest));
   return root;
 }

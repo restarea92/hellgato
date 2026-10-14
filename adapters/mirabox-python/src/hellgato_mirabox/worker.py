@@ -117,6 +117,17 @@ class Worker:
         require(not self.stopped.is_set(), 'Worker stopping', 'ERR_WORKER_STOPPED')
         check_deadline(params)
 
+    def _error_details(self, details):
+        snapshot = getattr(self.backend, 'get_display_observations', None)
+        if callable(snapshot):
+            try:
+                observations = snapshot()
+                if isinstance(observations, dict):
+                    return {**details, 'displayObservations': observations}
+            except Exception:
+                pass
+        return details
+
     def dispatch(self, message):
         validate_rpc_message(message)
         require('method' in message and 'id' in message, 'Only requests with IDs are accepted')
@@ -232,10 +243,12 @@ class Worker:
                     code = exc.rpc_code if isinstance(exc, ProtocolError) else -32700
                     name = exc.code if isinstance(exc, ProtocolError) else 'ERR_IPC_PARSE'
                     text = str(exc)[:1024] if isinstance(exc, ProtocolError) else 'Malformed protocol message'
-                    self.send({'jsonrpc': '2.0', 'id': request_id, 'error': {'code': code, 'message': text, 'data': {'code': name}}})
+                    details = self._error_details({'code': name})
+                    self.send({'jsonrpc': '2.0', 'id': request_id, 'error': {'code': code, 'message': text, 'data': details}})
                 except Exception:
+                    details = self._error_details({'code': 'ERR_DEVICE_OPERATION', 'outcome': 'unknown'})
                     self.send({'jsonrpc': '2.0', 'id': request_id, 'error': {'code': -32000,
-                        'message': 'Physical backend operation failed', 'data': {'code': 'ERR_DEVICE_OPERATION', 'outcome': 'unknown'}}})
+                        'message': 'Physical backend operation failed', 'data': details}})
                 finally:
                     self.requests.task_done()
         finally:
@@ -275,6 +288,8 @@ def main(argv=None):
     parser.add_argument('--backend', choices=('mirabox', 'fake'), default='mirabox')
     parser.add_argument('--sdk-path', type=Path, help='Explicit prepared vendor SDK source directory')
     parser.add_argument('--strip-mode', choices=('frame', 'panels'), default='panels', help='Explicit N4 touch output policy; product passes the saved mode')
+    parser.add_argument('--lcd-mode', choices=('normal', 'stream-screensaver'), default='normal',
+                        help='Interpret streamed host LCD images as screensaver overlays when explicitly selected')
     parser.add_argument('--logo-path', type=Path, help='Explicit absolute software display PNG; never boot-logo/firmware')
     parser.add_argument('--screensaver-path', type=Path, help='Explicit absolute saved image/animation; never modifies the file')
     parser.add_argument('--build-id', default='source-candidate', help='Build ID provided by verified runtime manifest')
@@ -298,7 +313,7 @@ def main(argv=None):
             from .transport.mirabox import MiraboxBackend
             if args.sdk_path is None or not args.sdk_path.is_absolute() or not args.sdk_path.is_dir():
                 parser.error('--sdk-path must name an explicit prepared absolute SDK directory')
-            backend = MiraboxBackend(args.sdk_path, args.screensaver_path, args.logo_path, args.strip_mode)
+            backend = MiraboxBackend(args.sdk_path, args.screensaver_path, args.logo_path, args.strip_mode, args.lcd_mode)
         worker = Worker(backend, sys.stdin.buffer, protocol_stdout, args.build_id)
         for name in ('SIGTERM', 'SIGINT'):
             if hasattr(signal, name):

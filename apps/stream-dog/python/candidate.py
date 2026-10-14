@@ -29,6 +29,11 @@ SAFE_TEXT = re.compile(r'[A-Za-z0-9_.:-]{1,96}\Z')
 SELF_TEST_CHECKS = frozenset(('verified-worker-manifest', 'fake-backend', 'explicit-identity',
     'fresh-host-reconnect-readiness', 'bounded-session-reconnect', 'settings-and-frame-restoration',
     'no-input-replay', 'clean-stop'))
+DISPLAY_SURFACES = (*('key:' + str(index) for index in range(10)), 'touch', 'lcd')
+DISPLAY_WRITERS = frozenset(('none', 'initialize', 'key', 'lcd', 'clear', 'fill', 'restore', 'screensaver', 'logo'))
+VENDOR_RETURN_KINDS = ('none', 'zero', 'negative', 'positive', 'other')
+MAX_OBSERVATION_COUNT = 9007199254740991
+MAX_EVENT_BYTES = 16 * 1024
 
 
 def bundle_root():
@@ -120,6 +125,52 @@ def configuration(root, manifest, run, settings, record, controls, saver=None):
             'reconnect': {'maxAttempts': 3, 'delayMs': 1000}}
 
 
+def safe_display_observations(value):
+    if not isinstance(value, dict):
+        return None
+    def count(item, maximum=MAX_OBSERVATION_COUNT):
+        return type(item) is int and 0 <= item <= maximum
+    def dimension(item, maximum):
+        return item is None or type(item) is int and 0 < item <= maximum
+    def brightness(item):
+        return item is None or type(item) in (int, float) and math.isfinite(item) and 0 <= item <= 255
+    source = value.get('surfaces')
+    source = source if isinstance(source, dict) else {}
+    surfaces = {}
+    for name in DISPLAY_SURFACES:
+        item = source.get(name)
+        item = item if isinstance(item, dict) else {}
+        surfaces[name] = {key: item[key] for key in
+                          ('received', 'coalesced', 'submitted', 'failed', 'restored') if count(item.get(key))}
+    worker = value.get('worker')
+    safe_worker = None
+    if (isinstance(worker, dict) and count(worker.get('keyCacheCount'), 10)
+            and count(worker.get('keyCacheClears')) and isinstance(worker.get('keys'), list)
+            and len(worker['keys']) == 10 and all(isinstance(item, dict) for item in worker['keys'])):
+        keys = []
+        for item in worker['keys']:
+            writer = item.get('lastWriter')
+            returned = item.get('lastVendorReturnKind')
+            returns = item.get('vendorReturnKinds')
+            if (not all(count(item.get(key)) for key in ('attempted', 'submitted', 'failed'))
+                    or not isinstance(writer, str) or writer not in DISPLAY_WRITERS
+                    or not all(key in item for key in ('width', 'height', 'meanBrightness', 'black', 'lastVendorReturnKind'))
+                    or not dimension(item['width'], 800) or not dimension(item['height'], 480)
+                    or not brightness(item['meanBrightness'])
+                    or not (item['black'] is None or type(item['black']) is bool)
+                    or not (returned is None or isinstance(returned, str) and returned in VENDOR_RETURN_KINDS)
+                    or not isinstance(returns, dict) or not all(count(returns.get(kind)) for kind in VENDOR_RETURN_KINDS)):
+                return {'surfaces': surfaces, 'worker': None}
+            keys.append({
+                **{key: item[key] for key in ('attempted', 'submitted', 'failed', 'width', 'height', 'meanBrightness', 'black')},
+                'lastWriter': writer, 'lastVendorReturnKind': returned,
+                'vendorReturnKinds': {kind: returns[kind] for kind in VENDOR_RETURN_KINDS},
+            })
+        safe_worker = {'keyCacheCount': worker['keyCacheCount'],
+                       'keyCacheClears': worker['keyCacheClears'], 'keys': keys}
+    return {'surfaces': surfaces, 'worker': safe_worker}
+
+
 def safe_observations(value):
     """Fixed numeric timing/resource structures only, never arbitrary nested text."""
     if not isinstance(value, dict):
@@ -148,6 +199,9 @@ def safe_observations(value):
         if name.endswith('Ms') and isinstance(buckets, list) and len(buckets) <= 64 and all(number(item) for item in buckets):
             target['buckets'] = buckets
         result[name] = target
+    display = safe_display_observations(value.get('display'))
+    if display is not None:
+        result['display'] = display
     return result
 
 
@@ -183,7 +237,7 @@ class SanitizedEvents:
                 safe['observations'] = safe_observations(value['observations'])
         with self.lock:
             encoded = json.dumps(safe, allow_nan=False) + '\n'
-            if len(encoded.encode('utf-8')) > 16 * 1024:
+            if len(encoded.encode('utf-8')) > MAX_EVENT_BYTES:
                 return
             if self.written + len(encoded) > 1024 * 1024:
                 self.stream.close()
@@ -292,7 +346,7 @@ def supervised(root, config_path, run, *, self_test=False):
                                         last_printed[:] = safe
                                         print('Candidate: ' + ' / '.join(safe), flush=True)
                             buffer.clear()
-                        elif len(buffer) < 8192:
+                        elif len(buffer) < MAX_EVENT_BYTES:
                             buffer.append(byte)
                 if buffer:
                     log.line(bytes(buffer), source)

@@ -109,18 +109,18 @@ Touch alignment across plugins, extended use and reboot recovery need broader ha
 
 See the [guide](docs/guide.md) for everyday use, local data, builds and contributing, or the [Node bridge API](packages/core) for device integrations. Bug fixes, hardware reports and [translation feedback](https://github.com/restarea92/hellgato/issues/new?template=translation.yml) are welcome.
 
-## SDK architecture candidate
+## SDK architecture
 
 Development now separates the reusable core, explicit adapter/session SDK, and
-Stream Dog product. Windows builds consume verified npm tarballs offline; npm
-publication is temporarily disabled while versioning, changelogs and package
-validation continue. Existing Windows release approval gates remain in force.
+Stream Dog product. Windows builds consume npm tarballs offline. The desktop app
+starts the SDK session and a separate Python USB worker automatically, retains
+the saved device identity, and connects the native preferences controls through
+its local control endpoint. The USB vendor SDK is bundled only with the worker.
 
-The new Python sidecar is experimental. The installed product retains its existing
-N4 compatibility engine until candidate-specific hardware parity is recorded.
-The separate [Windows IPC trial bundle](docs/compatibility/ipc-trial.md) exercises
-the new worker with explicit selection, local backups and a return path to the
-existing engine. Its frozen fake-backend tests do not establish physical parity.
+Streamed screensaver frames preserve normal button and touch-strip images so
+input can restore them. Automated releases and npm publication are deferred.
+The older [isolated IPC trial](docs/compatibility/ipc-trial.md) remains available
+for development; the ordinary installer now includes the worker directly.
 See the [architecture and staged rollout](docs/architecture/0001-device-neutral-sdk.md),
 [adapter guide](docs/adapters/contributing.md), and
 [evidence requirements](docs/compatibility/architecture-candidate.md).

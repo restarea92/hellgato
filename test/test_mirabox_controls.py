@@ -478,6 +478,7 @@ class NativeLifecycleTests(unittest.TestCase):
         self.backend.screensaver_path = None
         self.backend.logo_path = None
         self.backend.strip_mode = 'panels'
+        self.backend.lcd_mode = 'normal'
         self.backend.button_key = lambda code: code
         self.backend.ownership = Mock()
         self.device = SimpleNamespace(transport=SimpleNamespace(heartbeat=Mock(),
@@ -539,6 +540,17 @@ class NativeLifecycleTests(unittest.TestCase):
         self.assertEqual(result['normalStateEffect'], 'replace-all')
         result = self.backend.set_control({'control': 'clear', 'surfaceId': 'key:2'}, lambda: None)
         self.assertEqual(result['normalStateEffect'], 'surface')
+
+    def test_open_propagates_explicit_streamed_lcd_mode_to_physical_state(self):
+        self.backend.lcd_mode = 'stream-screensaver'
+        self.backend.open('selected', Mock())
+        self.assertEqual(self.backend.get_state()['lcdMode'], 'stream-screensaver')
+        encoded = io.BytesIO()
+        Image.new('RGB', (800, 480), 'red').save(encoded, format='JPEG')
+        result = self.backend.set_output({'surfaceId': 'lcd', 'width': 800, 'height': 480,
+                                         'data': base64.b64encode(encoded.getvalue()).decode()}, lambda: None)
+        self.assertEqual(result['displayObservations']['keyCacheClears'], 0)
+        self.assertTrue(self.backend.get_state()['screensaverActive'])
 
     def test_dynamic_vendor_import_does_not_write_bytecode_into_immutable_inventory(self):
         with tempfile.TemporaryDirectory() as root:

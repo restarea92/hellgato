@@ -1,6 +1,7 @@
 """No-hardware verification of candidate isolation, snapshots and restore."""
 from __future__ import annotations
 
+from copy import deepcopy
 import hashlib
 import importlib.util
 import json
@@ -511,6 +512,104 @@ class CandidateSupervisorTests(unittest.TestCase):
                 logger.line(b'{"event":"state","state":"ready"}', 'node')
             logger.close()
             self.assertLessEqual(path.stat().st_size, 1024 * 1024)
+
+    def display_observations(self):
+        key = {'attempted': 2, 'submitted': 1, 'failed': 1, 'lastWriter': 'key',
+               'width': 120, 'height': 120, 'meanBrightness': 85, 'black': False,
+               'lastVendorReturnKind': 'positive',
+               'vendorReturnKinds': {'none': 0, 'zero': 0, 'negative': 1, 'positive': 1, 'other': 0}}
+        return {'surfaces': {'key:0': {'received': 3, 'coalesced': 1, 'submitted': 1, 'failed': 1, 'restored': 0}},
+                'worker': {'keyCacheCount': 1, 'keyCacheClears': 0, 'keys': [deepcopy(key) for _ in range(10)]}}
+
+    def test_display_evidence_projection_removes_private_nested_names_and_values(self):
+        display = self.display_observations()
+        display['surfaces']['PRIVATE profile path'] = {'received': 1}
+        display['surfaces']['key:0']['image'] = 'PRIVATE image'
+        display['worker']['deviceId'] = 'PRIVATE device'
+        display['worker']['keys'][0]['path'] = 'PRIVATE PNG'
+        display['worker']['keys'][0]['vendorReturnKinds']['PRIVATE native status'] = 1
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'safe.jsonl'
+            logger = self.module.SanitizedEvents(path)
+            logger.line(json.dumps({'observations': {'display': display}}).encode(), 'node')
+            logger.close()
+            text = path.read_text()
+            self.assertNotIn('PRIVATE', text)
+            observed = json.loads(text)['observations']['display']
+            self.assertEqual(set(observed['surfaces']), set(self.module.DISPLAY_SURFACES))
+            self.assertEqual(observed['surfaces']['key:0']['coalesced'], 1)
+            self.assertEqual(observed['worker']['keys'][0]['lastVendorReturnKind'], 'positive')
+            self.assertEqual(len(observed['worker']['keys']), 10)
+
+    def test_display_worker_evidence_fails_closed_on_malformed_required_fields(self):
+        maximum = self.module.MAX_OBSERVATION_COUNT
+        changes = (
+            {'attempted': True}, {'submitted': -1}, {'failed': maximum + 1}, {'lastWriter': 'PRIVATE'},
+            {'width': True}, {'width': 0}, {'width': 801}, {'height': 481}, {'meanBrightness': True},
+            {'meanBrightness': float('nan')}, {'meanBrightness': float('inf')}, {'meanBrightness': 256},
+            {'black': 'PRIVATE'}, {'lastVendorReturnKind': 'PRIVATE'},
+            {'vendorReturnKinds': {'positive': 1}},
+        )
+        for change in changes:
+            display = self.display_observations()
+            display['worker']['keys'][2].update(change)
+            with self.subTest(change=change):
+                observed = self.module.safe_observations({'display': display})['display']
+                self.assertIsNone(observed['worker'])
+                self.assertEqual(observed['surfaces']['key:0']['received'], 3)
+        for key, value in (('keys', []), ('keys', [None] * 10), ('keyCacheCount', True),
+                           ('keyCacheCount', 11), ('keyCacheClears', maximum + 1)):
+            display = self.display_observations()
+            display['worker'][key] = value
+            self.assertIsNone(self.module.safe_observations({'display': display})['display']['worker'])
+
+    def test_display_surface_projection_omits_invalid_counts_without_inventing_zero(self):
+        display = self.display_observations()
+        display['worker'] = None
+        display['surfaces']['touch'] = {'received': True, 'coalesced': -1, 'submitted': 2.5,
+                                        'failed': self.module.MAX_OBSERVATION_COUNT + 1, 'restored': 0}
+        observed = self.module.safe_observations({'display': display})['display']
+        self.assertIsNone(observed['worker'])
+        self.assertEqual(observed['surfaces']['touch'], {'restored': 0})
+        self.assertEqual(observed['surfaces']['lcd'], {})
+
+    def test_display_bounds_and_no_write_null_values_are_preserved(self):
+        display = self.display_observations()
+        key = display['worker']['keys'][0]
+        key.update(attempted=self.module.MAX_OBSERVATION_COUNT, width=800, height=480, meanBrightness=255)
+        display['worker']['keys'][1].update(width=None, height=None, meanBrightness=None, black=None,
+                                           lastWriter='none', lastVendorReturnKind=None)
+        observed = self.module.safe_observations({'display': display})['display']
+        self.assertEqual(observed['worker'], display['worker'])
+        del display['worker']['keys'][0]['width']
+        self.assertIsNone(self.module.safe_observations({'display': display})['display']['worker'])
+
+    def test_saturated_display_and_timing_snapshot_fits_bounded_event_logging(self):
+        maximum = self.module.MAX_OBSERVATION_COUNT
+        display = self.display_observations()
+        display['surfaces'] = {name: dict.fromkeys(('received', 'coalesced', 'submitted', 'failed', 'restored'), maximum)
+                               for name in self.module.DISPLAY_SURFACES}
+        display['worker'].update(keyCacheCount=10, keyCacheClears=maximum)
+        for key in display['worker']['keys']:
+            key.update(attempted=maximum, submitted=maximum, failed=maximum, lastWriter='screensaver',
+                       meanBrightness=254.99999999999997)
+            key['vendorReturnKinds'] = dict.fromkeys(self.module.VENDOR_RETURN_KINDS, maximum)
+        histogram = {**dict.fromkeys(('count', 'p50', 'p95', 'p99', 'max', 'mean'), maximum),
+                     'buckets': [maximum] * 20}
+        observations = {'display': display, 'bucketUpperBoundsMs': [maximum] * 19,
+                        **{name: histogram for name in ('nodeInputForwardMs', 'frameSubmitMs', 'controlSubmitMs')},
+                        'resources': dict.fromkeys(('elapsedMs', 'cpuUserMs', 'cpuSystemMs', 'cpuPercent',
+                                                   'rssBytes', 'observedPeakRssBytes'), maximum),
+                        'queue': {'configuredOutputLimit': 32, 'peakPendingConsoleControls': maximum}}
+        raw = json.dumps({'observations': observations}).encode()
+        self.assertGreater(len(raw), 8192)
+        self.assertLess(len(raw), self.module.MAX_EVENT_BYTES)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'safe.jsonl'
+            logger = self.module.SanitizedEvents(path)
+            logger.line(raw, 'node')
+            logger.close()
+            self.assertEqual(json.loads(path.read_text())['observations']['display']['worker'], display['worker'])
 
     def test_settings_controls_are_checked_and_readonly(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -9,13 +9,16 @@ from pathlib import Path
 from PIL import Image
 from ...protocol import ProtocolError, require
 from .animation import NativeAnimation
-from .display import DisplayWriter
+from .display import DisplayWriter, increment
 
 
 class DisplayState:
     def __init__(self, device, images_dir, *, screensaver_path=None, logo_path=None, strip_mode='panels', led_writer=None,
-                 clock=time.monotonic, check=lambda: None):
+                 clock=time.monotonic, check=lambda: None, lcd_mode='normal'):
+        if lcd_mode not in ('normal', 'stream-screensaver'):
+            raise ValueError('Unknown N4 LCD output mode')
         self.device = device
+        self.lcd_mode = lcd_mode
         self.writer = DisplayWriter(device, images_dir, strip_mode)
         self.clock = clock
         self.led_writer = led_writer
@@ -45,6 +48,7 @@ class DisplayState:
         self.logo_active = False
         self.background = Image.new('RGB', (800, 480), 'black')
         self.keys = {}
+        self.key_cache_clears = 0
         self.strip = Image.new('RGB', (800, 100), 'black')
         self.brightness = 100
         # No device readback is available. None means nothing submitted this session.
@@ -60,6 +64,8 @@ class DisplayState:
         self.idle = False
         self.sleeping = False
         self.native_active = False
+        self.stream_active = False
+        self.streamed_screensaver = None
         self.fade = None
         self.next_fade_update = 0
 
@@ -70,9 +76,8 @@ class DisplayState:
         cancellation guard, and waking is explicit because sleep has no readback.
         """
         self._screen(0, check)
-        check()
-        self.device.clearAllIcon()
-        self.writer.lcd(self.background, check)
+        self.writer.clear_keys(check, 'initialize')
+        self.writer.lcd(self.background, check, 'initialize')
         check()
         self.device.refresh()
         check()
@@ -140,16 +145,22 @@ class DisplayState:
         check()
         self.idle = True
         self.logo_active = False
+        self.stream_active = False
         self.sleep_candidate = None
         self._led(0, check)
         if self.screensaver_ready and not force_sleep:
             if not self.native_active:
-                check()
-                self.device.clearAllIcon()
+                self.writer.clear_keys(check, 'screensaver')
                 self._native_frame(check, restart=True)
                 self._wake(check)
                 self.native_active = True
                 self._fade(0)
+        elif self.streamed_screensaver is not None and not force_sleep:
+            self.native_active = False
+            self.writer.lcd(self.streamed_screensaver, check, 'screensaver')
+            self._wake(check)
+            self._fade(0)
+            self.stream_active = True
         else:
             self.native_active = False
             self.fade = None
@@ -163,8 +174,9 @@ class DisplayState:
         self.sleep_candidate = None
         was_idle = self.idle or self.sleeping or self.native_active
         wake_fade = self.fade if not was_idle else None
-        restore_surfaces = was_idle or self.logo_active
+        restore_surfaces = was_idle or self.logo_active or self.stream_active
         self.logo_active = False
+        self.stream_active = False
         self.native_active = False
         self.fade = None
         if was_idle:
@@ -176,7 +188,7 @@ class DisplayState:
                 image = self.keys.get(index)
                 if image is None:
                     image = self.background.crop((x, y, x + 120, y + 120))
-                self.writer.key(index, image, check)
+                self.writer.key(index, image, check, 'restore')
             self.writer.frame_initialized = False
             self.writer.touch(self.strip, (0, 0, 800, 100), check)
             check()
@@ -198,7 +210,7 @@ class DisplayState:
         self.last_activity = max(self.last_activity, now)
         self.last_key_release = now if key_release else None
         self.sleep_candidate = None
-        if self.idle or self.sleeping or self.logo_active:
+        if self.idle or self.sleeping or self.logo_active or self.stream_active:
             self.restore(check)
 
     def tick(self, check):
@@ -212,15 +224,36 @@ class DisplayState:
         if self.sleep_seconds and now - self.last_activity >= self.sleep_seconds:
             self.enter_idle(check)
 
-    def output(self, surface, image, region, check):
+    def _stream_lcd(self, image, check):
+        if self.clock() < self.ignore_saver_until:
+            return
+        if self.screensaver_ready:
+            self.enter_idle(check)
+            return
+        first = not self.idle or not self.stream_active
+        self.streamed_screensaver = image
+        self.writer.lcd(image, check, 'screensaver')
+        self._wake(check)
+        self.idle = True
+        self.logo_active = False
+        self.native_active = False
+        self.stream_active = True
+        self._led(0, check)
+        if first:
+            self._fade(0)
+
+    def output(self, surface, image, region, check, writer_type=None):
         check()
+        if surface == 'lcd' and self.lcd_mode == 'stream-screensaver' and writer_type is None:
+            self._stream_lcd(image, check)
+            return
         if surface.startswith('key:'):
             index = int(surface[4:])
             self.keys[index] = image
             if self.logo_active:
                 self.restore(check)
             elif not self.idle:
-                self.writer.key(index, image, check)
+                self.writer.key(index, image, check, writer_type or 'key')
         elif surface == 'touch':
             self.strip.paste(image, (region[0], region[1]))
             if self.logo_active:
@@ -230,11 +263,12 @@ class DisplayState:
         elif surface == 'lcd':
             self.background = image
             self.keys.clear()
+            self.key_cache_clears = increment(self.key_cache_clears)
             self.strip = image.crop((0, 380, 800, 480))
             if self.logo_active:
                 self.restore(check)
             elif not self.idle:
-                self.writer.lcd(image, check)
+                self.writer.lcd(image, check, writer_type or 'lcd')
 
     def control(self, control, check):
         kind = control['control']
@@ -250,12 +284,14 @@ class DisplayState:
             self.sleep_candidate = None
             if level == 0:
                 if now >= self.ignore_saver_until:
+                    if self.lcd_mode == 'stream-screensaver' and not self.screensaver_ready:
+                        self.streamed_screensaver = None
                     self.enter_idle(check)
             else:
                 if (self.idle or now < self.ignore_saver_until) and level < self.brightness:
                     return  # Remaining host fade must not wake a saved screensaver.
                 self.brightness = level
-                if self.idle or self.sleeping or self.logo_active:
+                if self.idle or self.sleeping or self.logo_active or self.stream_active:
                     self.restore(check)
                 if self.fade is not None:
                     start, initial, _ = self.fade
@@ -293,13 +329,14 @@ class DisplayState:
             require(self.logo is not None, 'No explicit software display logo was supplied', 'ERR_UNSUPPORTED_OPERATION', -32601)
             was_idle = self.idle or self.sleeping
             self.native_active = False
+            self.stream_active = False
             self.fade = None
             if was_idle:
                 self._screen(0, check)
             self.idle = False
             canvas = Image.new('RGB', (800, 480), 'black')
             canvas.paste(self.logo, ((800 - self.logo.width) // 2, (480 - self.logo.height) // 2), self.logo)
-            self.writer.lcd(canvas, check)
+            self.writer.lcd(canvas, check, 'logo')
             self._wake(check)
             self.logo_active = True
             if was_idle:
@@ -318,28 +355,34 @@ class DisplayState:
                     return {'normalStateEffect': 'background-only'}
                 was_idle = self.idle
                 self.native_active = False
+                self.stream_active = False
                 self.logo_active = False
                 self.fade = None
                 if was_idle:
                     self._screen(0, check)
                 self.idle = False
-                self.output(surface, Image.new('RGB', (800, 480), color), None, check)
+                self.output(surface, Image.new('RGB', (800, 480), color), None, check, kind)
                 self._wake(check)
                 self.last_activity = now
                 if was_idle:
                     self._fade(self.brightness)
             elif surface == 'touch':
-                self.output(surface, Image.new('RGB', (800, 100), color), (0, 0, 800, 100), check)
+                self.output(surface, Image.new('RGB', (800, 100), color), (0, 0, 800, 100), check, kind)
             else:
-                self.output(surface, Image.new('RGB', (120, 120), color), None, check)
+                self.output(surface, Image.new('RGB', (120, 120), color), None, check, kind)
             return {'normalStateEffect': 'replace-all' if surface == 'lcd' else 'surface'}
         else:
             require(False, 'Control is not implemented by the candidate worker', 'ERR_UNSUPPORTED_OPERATION', -32601)
 
+    def display_observations(self):
+        return {'keyCacheCount': len(self.keys), 'keyCacheClears': self.key_cache_clears,
+                'keys': self.writer.observations()}
+
     def state(self):
-        return {'stripMode': self.writer.strip_mode, 'brightness': self.brightness, 'screenBrightness': self.screen_level,
+        return {'stripMode': self.writer.strip_mode, 'lcdMode': self.lcd_mode,
+                'brightness': self.brightness, 'screenBrightness': self.screen_level,
                 'sleepDuration': self.sleep_seconds, 'idle': self.idle, 'sleeping': self.sleeping,
-                'screensaverReady': self.screensaver_ready, 'screensaverActive': self.native_active,
+                'screensaverReady': self.screensaver_ready, 'screensaverActive': self.native_active or self.stream_active,
                 'logoActive': self.logo_active,
                 'knobBrightness': self.brightness if self.knob_brightness is None else self.knob_brightness,
                 'followDisplayBrightness': self.knob_brightness is None, 'knobBrightnessLevel': self.led_level,

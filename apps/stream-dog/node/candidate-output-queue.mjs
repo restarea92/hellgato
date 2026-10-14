@@ -34,8 +34,8 @@ function supersedes(next, previous) {
 /** Product-only admission and pacing. Pending frames are not acknowledged
  * restoration history; the SDK still checks readiness and owns its output bound.
  */
-export function createCandidateOutputQueue({ submit, maxEntries = 32, maxBytes = 8 * 1024 * 1024 } = {}) {
-  if (typeof submit !== 'function' || !positive(maxEntries) || !positive(maxBytes)) {
+export function createCandidateOutputQueue({ submit, observeFrame = () => {}, maxEntries = 32, maxBytes = 8 * 1024 * 1024 } = {}) {
+  if (typeof submit !== 'function' || typeof observeFrame !== 'function' || !positive(maxEntries) || !positive(maxBytes)) {
     throw new CandidateError('CANDIDATE_CONFIG_INVALID');
   }
   let pending = [], pendingBytes = 0, active = null;
@@ -76,6 +76,7 @@ export function createCandidateOutputQueue({ submit, maxEntries = 32, maxBytes =
       let value, bytes;
       try { value = queuedPayload(payload); bytes = Buffer.byteLength(JSON.stringify(value)); }
       catch (error) { return Promise.reject(error); }
+      if (value.type === 'frame') observeFrame('received', value.surfaceId);
       let barrier = -1;
       for (let index = pending.length - 1; index >= 0; index--) {
         if (pending[index].payload.type === 'control') { barrier = index; break; }
@@ -93,7 +94,10 @@ export function createCandidateOutputQueue({ submit, maxEntries = 32, maxBytes =
         pending = [...retained, { payload: value, bytes, resolve, reject, settled: false, epoch }];
         pendingBytes = nextBytes;
       });
-      for (const item of removed) settle(item, 'resolve', { status: 'superseded' });
+      for (const item of removed) {
+        observeFrame('coalesced', item.payload.surfaceId);
+        settle(item, 'resolve', { status: 'superseded' });
+      }
       schedule();
       return result;
     },

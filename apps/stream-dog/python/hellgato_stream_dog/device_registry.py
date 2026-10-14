@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 
 
@@ -57,13 +58,17 @@ class DeviceRegistry:
                 or not _identity(record.get('identity'))
                 or not _identity(record.get('dockIdentity'))
                 or record.get('virtualSerial') != f"HGMOCK{record['identity']:06d}"
-                or record.get('identitySource') not in ('serial', 'usb-path')
-                or any(type(record.get(key)) is not int or not 0 <= record[key] <= 65535
-                       for key in ('vendorId', 'productId'))):
+                or record.get('identitySource') not in ('serial', 'usb-path', 'sdk')
+                or (record.get('identitySource') != 'sdk' and
+                    any(type(record.get(key)) is not int or not 0 <= record[key] <= 65535
+                        for key in ('vendorId', 'productId')))):
             raise ValueError('Invalid device registry entry; the file was preserved')
         serial = record.get('physicalSerial')
         if ((record['identitySource'] == 'serial' and (not isinstance(serial, str) or not serial))
-                or (record['identitySource'] == 'usb-path' and serial is not None)
+                or (record['identitySource'] in ('usb-path', 'sdk') and serial is not None)
+                or (record['identitySource'] == 'sdk' and
+                    (not re.fullmatch(r'n4-[a-f0-9]{64}', record['id']) or
+                     any(key in record for key in ('vendorId', 'productId'))))
                 or 'connected' in record):
             raise ValueError('Invalid physical device identity; the file was preserved')
 
@@ -101,6 +106,27 @@ class DeviceRegistry:
                   'identity': self.identity, 'dockIdentity': self.dock_identity,
                   'virtualSerial': f'HGMOCK{self.identity:06d}',
                   'firstSeen': now, 'lastSeen': now}
+        self._validate(record)
+        return record
+
+    def prepare_descriptor(self, descriptor):
+        """Bind worker discovery to the existing virtual identity without USB access."""
+        if (not isinstance(descriptor, dict) or descriptor.get('modelId') != 'n4-pro'
+                or not isinstance(descriptor.get('id'), str)
+                or not re.fullmatch(r'n4-[a-f0-9]{64}', descriptor['id'])):
+            raise ValueError('Unsupported discovered device')
+        identifier = descriptor['id']
+        for record in self._devices:
+            if record['id'] == identifier:
+                if record['identity'] != self.identity or record['dockIdentity'] != self.dock_identity:
+                    raise DeviceIdentityConflict(record)
+                return dict(record)
+            if record['identity'] == self.identity:
+                raise DeviceIdentityConflict(record)
+        now = _timestamp()
+        record = {'id': identifier, 'name': NAME, 'model': MODEL, 'physicalSerial': None,
+                  'identitySource': 'sdk', 'identity': self.identity, 'dockIdentity': self.dock_identity,
+                  'virtualSerial': f'HGMOCK{self.identity:06d}', 'firstSeen': now, 'lastSeen': now}
         self._validate(record)
         return record
 

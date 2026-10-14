@@ -84,6 +84,44 @@ format and dimensions after the last control command; partial frames and control
 order remain intact. Only completed submissions enter restoration history. An
 irreducible burst still stops with `OUTPUT_OVERFLOW` rather than losing partial data.
 
+### Diagnosing black key icons
+
+`status` and the supervisor's periodic status records include
+`observations.display`. These observations retain fixed numeric summaries, never
+image bytes, image hashes, profile names, paths or device identities.
+
+- `surfaces` has ten `key:0` through `key:9` entries, `touch` and `lcd`.
+  `received` counts validated frames entering the product queue; `coalesced`
+  counts pending frames replaced by newer matching full frames. `submitted`
+  counts successful worker replies, `failed` counts rejected submissions and
+  `restored` counts successful replay replies separately. Counts accumulate for
+  the run. A worker reply can mean a cached update while idle; it does not prove
+  that a vendor call or physical display update occurred.
+- `worker` is the latest worker summary, or `null` when unavailable. It resets
+  on a new device open. `keyCacheCount` describes the current normal key cache;
+  `keyCacheClears` counts cache-clear operations. Its ten `keys` entries track
+  physical key-write attempts, completed submissions and failures, including
+  LCD crops and all-icon clears. Each records the last writer type, dimensions,
+  mean RGB brightness and whether every pixel was black. Writer types distinguish
+  direct `key` frames from `lcd`, `clear`, `fill`, `initialize`, `restore`,
+  `screensaver` and `logo` writes.
+- `vendorReturnKinds` and `lastVendorReturnKind` distinguish `none`, `zero`,
+  `negative`, `positive` and `other` SDK return values. Positive nonzero values
+  remain submitted/unconfirmed under the existing writer policy; their presence
+  needs investigation against the pinned SDK. All-icon clears hide the native
+  return value, so `none` is not evidence of success. No return category proves
+  physical delivery.
+
+For a new committed, manifest-bound trial, collect a status while paired and
+another after changing profiles and returning. If no key frames are received,
+investigate host decoding/delivery. If replies succeed but physical key attempts
+do not increase, compare idle state and cached updates. If key attempts occur,
+compare their brightness, return categories and last writer. An `lcd` or `clear`
+writer with black pixels supports an overwrite hypothesis; a positive return
+supports a vendor-call failure hypothesis. Neither establishes the cause without
+the physical observation and timing of the trial. Stop before USB reconnect
+tests until this basic image path is understood.
+
 Use [the hardware recipe](../../tests/hardware/README.md) for the named physical
 combination: normal controls/display/idle behavior, 20 USB reconnects and 20 host
 restarts, crash cleanup, reboot and sleep/resume, contention, and a full workday with

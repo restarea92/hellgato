@@ -137,6 +137,7 @@
     {
       "paths": [
         "README.md",
+        "HANDOFF.md",
         "docs/**",
         "test/**",
         ".github/ISSUE_TEMPLATE/**",

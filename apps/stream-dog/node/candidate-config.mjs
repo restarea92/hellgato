@@ -22,14 +22,16 @@ export function validateSettings(value = {}) {
   return { ...value };
 }
 
-export function validateCandidateConfig(value, { selfTest = false } = {}) {
+export function validateCandidateConfig(value, { selfTest = false, discovery = false } = {}) {
   requireValue(object(value) && value.schemaVersion === 1, 'CANDIDATE_CONFIG_INVALID');
+  requireValue(value.productMode === undefined || typeof value.productMode === 'boolean', 'CANDIDATE_CONFIG_INVALID');
   const identity = value.identity;
-  requireValue(typeof value.deviceId === 'string' && value.deviceId.length > 0 && value.deviceId.length <= 128 && !/[\u0000-\u001f]/u.test(value.deviceId), 'CANDIDATE_DEVICE_REQUIRED');
+  requireValue(discovery && value.productMode === true && value.deviceId == null ||
+    typeof value.deviceId === 'string' && value.deviceId.length > 0 && value.deviceId.length <= 128 && !/[\u0000-\u001f]/u.test(value.deviceId), 'CANDIDATE_DEVICE_REQUIRED');
   requireValue(object(identity) && ['dockSerial', 'childSerial'].every(key => typeof identity[key] === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(identity[key])) &&
     Array.isArray(identity.macAddress) && identity.macAddress.length === 6 && identity.macAddress.every(byte => integer(byte, 0, 255)), 'CANDIDATE_IDENTITY_REQUIRED');
   requireValue(object(value.runtime) && pathValue(value.runtime.command) && pathValue(value.runtime.manifestPath) && argsValue(value.runtime.args ?? []), 'CANDIDATE_RUNTIME_REQUIRED');
-  requireValue(!value.runtime.args?.some(arg => /^--backend(?:=|$)/.test(arg)), 'CANDIDATE_BACKEND_RESERVED');
+  requireValue(!value.runtime.args?.some(arg => /^--(?:backend|lcd-mode)(?:=|$)/.test(arg)), 'CANDIDATE_BACKEND_RESERVED');
   requireValue(pathValue(value.statePath) && pathValue(value.diagnosticsPath) && value.statePath !== value.diagnosticsPath, 'CANDIDATE_PATH_REQUIRED');
   for (const path of [value.statePath, value.diagnosticsPath]) {
     requireValue(![value.runtime.command, value.runtime.manifestPath].includes(path), 'CANDIDATE_PATH_INVALID');
@@ -42,7 +44,7 @@ export function validateCandidateConfig(value, { selfTest = false } = {}) {
   requireValue((value.port ?? 5343) !== (value.childPort ?? 5344), 'CANDIDATE_PORT_INVALID');
   requireValue(['native', 'stream'].includes(value.screensaverMode ?? 'stream'), 'CANDIDATE_SCREENSAVER_MODE');
   return structuredClone({ ...value, runtime: { ...value.runtime, args: value.runtime.args ?? [] }, identity,
-    initialControls: validateSettings(value.initialControls), screensaverMode: value.screensaverMode ?? 'stream', reconnect });
+    initialControls: validateSettings(value.initialControls), screensaverMode: value.screensaverMode ?? 'stream', productMode: value.productMode ?? false, reconnect });
 }
 
 export function readBoundedJson(path, maxBytes = 65536) {

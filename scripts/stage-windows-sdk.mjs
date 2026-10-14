@@ -32,7 +32,7 @@ export function stageInventory(root) {
 export function verifyWindowsSdkStage(directory, { releaseSha, version } = {}) {
   invariant(!lstatSync(directory).isSymbolicLink(), 'Staging root cannot be a symlink');
   const manifest = json(resolve(directory, 'product-build-manifest.json'));
-  invariant(manifest.schemaVersion === 1 && manifest.component === 'stream-dog-sdk' && manifest.engine === 'legacy-compatibility', 'Unexpected product SDK manifest');
+  invariant(manifest.schemaVersion === 1 && manifest.component === 'stream-dog-sdk' && manifest.engine === 'ipc', 'Unexpected product SDK manifest');
   invariant(/^[a-f0-9]{40}$/.test(manifest.releaseSha) && (!releaseSha || releaseSha === manifest.releaseSha), 'Product source SHA mismatch');
   invariant(!version || manifest.productVersion === version, 'Product version mismatch');
   invariant(Array.isArray(manifest.sdk) && manifest.sdk.length === 2, 'Missing fixed SDK pair');
@@ -91,6 +91,9 @@ export function stageWindowsSdk({ root = ROOT, artifactDir, planPath, sourceChan
     writeFileSync(resolve(stage, 'package.json'), JSON.stringify({ name: 'stream-dog-runtime', private: true, type: 'module' }) + '\n');
     rmSync(resolve(stage, 'node_modules/.package-lock.json'), { force: true });
     for (const name of ['legacy-server.mjs', 'display-state.mjs', 'profiles.mjs']) cpSync(resolve(root, 'apps/stream-dog/node', name), resolve(stage, name));
+    for (const name of readdirSync(resolve(root, 'apps/stream-dog/node')).filter(name => /^candidate.*\.mjs$/.test(name))) {
+      cpSync(resolve(root, 'apps/stream-dog/node', name), resolve(stage, name));
+    }
     execFileSync(process.execPath, ['--input-type=module', '--eval', `
       import assert from 'node:assert/strict';
       import { createLegacyProductProfile } from './profiles.mjs';
@@ -105,7 +108,7 @@ export function stageWindowsSdk({ root = ROOT, artifactDir, planPath, sourceChan
       console.log('Packed product identity compatibility verified');
     `], { cwd: stage, env: environment, stdio: 'inherit', timeout: 30000 });
     const manifest = {
-      schemaVersion: 1, component: 'stream-dog-sdk', engine: 'legacy-compatibility',
+      schemaVersion: 1, component: 'stream-dog-sdk', engine: 'ipc',
       productVersion: json(resolve(root, 'packages/windows-release/package.json')).version,
       releaseSha, sdkChannel: artifacts.channel, releasePlanSha256: artifacts.planSha256, sdk: artifacts.packages.map(({ name, version, sha256, integrity }) => ({ name, version, sha256, integrity })),
       files: stageInventory(stage),

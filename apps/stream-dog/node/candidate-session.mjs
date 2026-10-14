@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { createSession, createSidecarAdapter, createDeviceBridge } from 'hellgato';
 import { createMiraboxN4ProAdapter, createN4ProMappingProfile } from 'hellgato/adapters/mirabox-n4-pro';
-import { assertControlCommand } from '@hellgato/core/contracts';
+import { assertControlCommand, assertDeviceDescriptor } from '@hellgato/core/contracts';
 import { CandidateError, validateCandidateConfig, loadCandidateManifest, loadCandidateSettings,
   saveCandidateSettings, createCandidateDiagnostics, diagnosticCode, validateSettings } from './candidate-config.mjs';
 import { createCandidateReadiness } from './candidate-readiness.mjs';
@@ -33,11 +33,13 @@ function covers(a, b) { return a.x <= b.x && a.y <= b.y && a.x + a.width >= b.x 
 
 /** Bounded ordered desired-display journal. A fresh open always starts cleared,
  * so partial updates have a deterministic baseline. Never contains input. */
-export function createDisplayJournal({ maxEntries = 64, maxBytes = 8 * 1024 * 1024 } = {}) {
+export function createDisplayJournal({ maxEntries = 64, maxBytes = 8 * 1024 * 1024, lcdMode = 'normal' } = {}) {
+  if (!['normal', 'stream-screensaver'].includes(lcdMode)) throw new CandidateError('CANDIDATE_CONFIG_INVALID');
   let entries = [];
   let blackBackground = true; // The product clears every fresh open first.
   return {
     prepare(payload, { normalStateEffect } = {}) {
+      if (lcdMode === 'stream-screensaver' && payload.type === 'frame' && payload.surfaceId === 'lcd') return null;
       const value = clone(payload);
       for (const key of ['deviceId', 'sessionId', 'generation', 'sequence']) delete value[key];
       if (value.type !== 'frame' && !['clear', 'fill'].includes(value.control)) return null;
@@ -68,21 +70,32 @@ export function createDisplayJournal({ maxEntries = 64, maxBytes = 8 * 1024 * 10
   };
 }
 
-function restoringAdapter(raw, { controls, persist, count, record, journal, observations }) {
+function restoringAdapter(raw, { controls, persist, persistControl, count, record, journal, observations }) {
   let context, opened = false, sequence = 0, idleControl = null, inputEpoch = 0, lastInputSequence = -1;
+  let previewKnob = false;
   let inputReceivedAt = null;
   const stamp = payload => ({ ...payload, deviceId: context.deviceId, sessionId: context.sessionId,
     generation: context.generation, sequence: ++sequence });
   const write = async (payload, restoring = false) => {
     if (!opened) throw new CandidateError('ERR_DEVICE_CLOSED');
     const candidate = stamp(payload);
+    const saveControl = restoring || persistControl(payload);
     const inputAtWrite = inputEpoch;
     const commit = !restoring && candidate.type === 'frame' ? journal.prepare(candidate) : null;
     let result;
     const submitStarted = performance.now();
     try { result = await raw[candidate.type === 'frame' ? 'setOutput' : 'setControl'](candidate); }
+    catch (error) {
+      if (candidate.type === 'frame') observations.displayFrame('failed', candidate.surfaceId);
+      observations.workerDisplay(error.details?.displayObservations);
+      throw error;
+    }
     finally { observations.submission(candidate.type, performance.now() - submitStarted); }
-    if (!['applied', 'submitted'].includes(result?.status)) throw new CandidateError('CANDIDATE_OUTPUT_RESULT');
+    if (!['applied', 'submitted'].includes(result?.status)) {
+      if (candidate.type === 'frame') observations.displayFrame('failed', candidate.surfaceId);
+      throw new CandidateError('CANDIDATE_OUTPUT_RESULT');
+    }
+    observations.displaySubmission(candidate, restoring, result);
     commit?.();
     if (!restoring && candidate.type === 'control' && ['clear', 'fill'].includes(candidate.control)) {
       if (!['background-only', 'replace-all', 'surface'].includes(result.normalStateEffect)) throw new CandidateError('CANDIDATE_OUTPUT_RESULT');
@@ -97,14 +110,22 @@ function restoringAdapter(raw, { controls, persist, count, record, journal, obse
         // Worker idle/fade policy can accept a brightness request without changing
         // the desired normal level. Read back intent, never claim hardware readback.
         const observed = await raw.getState();
+        observations.workerDisplay(observed.displayObservations);
         if (observed.deviceId !== context.deviceId || observed.generation !== context.generation ||
           !SETTINGS.every(key => Object.hasOwn(observed, key))) throw new CandidateError('CANDIDATE_OUTPUT_RESULT');
-        Object.assign(controls, validateSettings(Object.fromEntries(SETTINGS.map(key => [key, observed[key]]))));
+        const observedSettings = validateSettings(Object.fromEntries(SETTINGS.map(key => [key, observed[key]])));
+        if (saveControl) {
+          if (previewKnob && !['knobBrightness', 'followDisplayBrightness'].includes(candidate.control)) {
+            observedSettings.knobBrightness = controls.knobBrightness;
+            observedSettings.followDisplayBrightness = controls.followDisplayBrightness;
+          } else previewKnob = false;
+          Object.assign(controls, observedSettings);
+        } else if (candidate.control === 'knobBrightness') previewKnob = true;
         if (inputEpoch === inputAtWrite) {
           if (observed.idle === true) idleControl = observed.sleeping === true ? 'sleep' : 'screensaver';
           else if (observed.idle === false) idleControl = observed.logoActive ? 'showLogo' : null;
         }
-        persist(controls);
+        if (saveControl) persist(controls);
       }
     }
     if (!restoring && candidate.type === 'frame' && idleControl === 'showLogo') idleControl = null;
@@ -117,6 +138,8 @@ function restoringAdapter(raw, { controls, persist, count, record, journal, obse
     discover: options => raw.discover(options),
     async open(deviceId, options) {
       context = { deviceId, ...options }; sequence = 0; lastInputSequence = -1;
+      previewKnob = false;
+      observations.resetWorkerDisplay();
       await raw.open(deviceId, options); opened = true;
       // Rebuild only acknowledged desired state. Each write receives fresh IDs
       // and a new monotonically increasing worker sequence after open.
@@ -140,7 +163,11 @@ function restoringAdapter(raw, { controls, persist, count, record, journal, obse
     inputForwarded() { if (inputReceivedAt !== null) observations.inputForward(performance.now() - inputReceivedAt); },
     onState: listener => raw.onState(listener),
     onDiagnostic: listener => raw.onDiagnostic?.(listener) ?? (() => {}),
-    getState: options => raw.getState(options),
+    async getState(options) {
+      const result = await raw.getState(options);
+      observations.workerDisplay(result.displayObservations);
+      return result;
+    },
   };
 }
 
@@ -153,14 +180,63 @@ function delay(ms, signal) {
   });
 }
 
+function runtimeAdapter(config, { selfTest = false, adapter } = {}) {
+  if (adapter) return adapter;
+  const manifest = loadCandidateManifest(config.runtime);
+  const options = { command: config.runtime.command, args: [...config.runtime.args, '--backend', selfTest ? 'fake' : 'mirabox',
+    '--lcd-mode', config.screensaverMode === 'stream' ? 'stream-screensaver' : 'normal'],
+    cwd: dirname(config.statePath), manifest, requestTimeoutMs: 5000, stopTimeoutMs: 1000 };
+  return selfTest ? createSidecarAdapter({ ...options,
+    descriptor: { id: 'hellgato.fake-sidecar', version: '0.1.0', modelIds: ['buttons-dial'], platforms: ['any'], architectures: ['any'], apiVersion: 1, protocol: { major: 1, minor: 0 } } }) : createMiraboxN4ProAdapter(options);
+}
+
+export async function discoverProductDevices(input, dependencies = {}) {
+  const config = validateCandidateConfig(input, { selfTest: dependencies.selfTest === true, discovery: true });
+  if (!config.productMode) throw new CandidateError('CANDIDATE_CONFIG_INVALID');
+  const adapter = runtimeAdapter(config, dependencies);
+  try {
+    const options = dependencies.signal ? { signal: dependencies.signal } : {};
+    await adapter.preflight?.(options);
+    await adapter.start(options);
+    const devices = await adapter.discover(options);
+    if (!Array.isArray(devices) || devices.length > 64) throw new CandidateError('INVALID_DISCOVERY');
+    for (const device of devices) assertDeviceDescriptor(device);
+    return clone(devices.filter(device => device.adapterId === adapter.descriptor.id && adapter.descriptor.modelIds.includes(device.modelId)));
+  } finally { await adapter.stop(); }
+}
+
+function productDevice(device) {
+  const features = Object.fromEntries([...SETTINGS, 'screensaver', 'showLogo', 'sleep', 'wake'].map(name => {
+    const status = device?.capabilities.features?.[name]?.status;
+    return [name, { status: ['native', 'emulated', 'unavailable'].includes(status) ? status : 'unavailable' }];
+  }));
+  return { ...(device ? { deviceId: device.id, firmware: device.firmware ?? '' } : {}), capabilities: { features } };
+}
+
+function productWorkerState(value) {
+  const settings = validateSettings(Object.fromEntries(SETTINGS.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])));
+  const state = { ...settings };
+  for (const key of ['connected', 'idle', 'sleeping', 'screensaverActive', 'screensaverReady', 'logoActive']) {
+    if (typeof value[key] === 'boolean') state[key] = value[key];
+  }
+  for (const key of ['screenBrightness', 'knobBrightnessLevel']) {
+    if (value[key] === null || Number.isInteger(value[key]) && value[key] >= 0 && value[key] <= 100) state[key] = value[key];
+  }
+  if (['frame', 'panels'].includes(value.stripMode)) state.stripMode = value.stripMode;
+  return state;
+}
+
 /** Inert product composition. Test dependencies are never read from JSON config. */
 export function createCandidateRunner(input, dependencies = {}) {
   const selfTest = dependencies.selfTest === true;
   const config = validateCandidateConfig(input, { selfTest });
   const emitter = new EventEmitter();
+  const product = (event, detail = {}) => {
+    if (config.productMode) emitter.emit('product', { schemaVersion: 1, event, generation: session.generation, ...detail });
+  };
   const profile = createCandidateProfile(config.identity, { selfTest });
   const observations = createCandidateObservations();
-  const controls = loadCandidateSettings(config);
+  const controls = { ...(config.productMode ? { brightness: 100, knobBrightness: 100, followDisplayBrightness: true, sleepDuration: 0 } : {}), ...loadCandidateSettings(config) };
   const writeRecord = dependencies.record ?? createCandidateDiagnostics(config.diagnosticsPath);
   let diagnosticsFailure;
   const record = (...args) => {
@@ -176,13 +252,11 @@ export function createCandidateRunner(input, dependencies = {}) {
   const counts = Object.fromEntries(['readinessChecks', 'workerStarts', 'reconnectAttempts', 'frameWrites', 'controlWrites',
     'restoredWrites', 'unconfirmedWrites', 'simulationWrites', 'inputObserved', 'inputForwarded', 'inputNotDelivered', 'diagnostics', 'cleanStops'].map(key => [key, 0]));
   const count = key => { counts[key] = Math.min(Number.MAX_SAFE_INTEGER, counts[key] + 1); };
-  const manifest = dependencies.adapter ? null : loadCandidateManifest(config.runtime);
-  const adapterOptions = { command: config.runtime.command, args: [...config.runtime.args, '--backend', selfTest ? 'fake' : 'mirabox'],
-    cwd: dirname(config.statePath), manifest, requestTimeoutMs: 5000, stopTimeoutMs: 1000 };
-  const raw = dependencies.adapter ?? (selfTest ? createSidecarAdapter({ ...adapterOptions,
-    descriptor: { id: 'hellgato.fake-sidecar', version: '0.1.0', modelIds: ['buttons-dial'], platforms: ['any'], architectures: ['any'], apiVersion: 1, protocol: { major: 1, minor: 0 } } }) : createMiraboxN4ProAdapter(adapterOptions));
-  const adapter = restoringAdapter(raw, { controls, persist: state => saveCandidateSettings(config, state), count, record,
-    journal: createDisplayJournal(), observations });
+  const raw = runtimeAdapter(config, dependencies);
+  const adapter = restoringAdapter(raw, { controls, persist: settings => {
+    saveCandidateSettings(config, settings); product('settingsChanged', { settings: { ...settings } });
+  }, persistControl: payload => pendingOutputs.get(`${payload.generation}:${payload.sequence}`)?.persist !== false, count, record,
+    journal: createDisplayJournal({ lcdMode: config.screensaverMode === 'stream' ? 'stream-screensaver' : 'normal' }), observations });
   let activeBridge, hostApproved = false, hostEpoch = 0, outputFailure;
   let pendingControlCount = 0;
   const pendingOutputs = new Map();
@@ -213,17 +287,18 @@ export function createCandidateRunner(input, dependencies = {}) {
     const envelope = { deviceId: options.device.id, sessionId: options.sessionId, generation: options.generation };
     let closed = false;
     const outputQueue = createCandidateOutputQueue({ submit: payload => new Promise((resolve, reject) => {
-      const stamped = { ...payload, ...envelope, sequence: ++sequence };
+      const { persist, ...value } = payload;
+      const stamped = { ...value, ...envelope, sequence: ++sequence };
       const key = `${options.generation}:${stamped.sequence}`;
       const timer = setTimeout(() => {
         pendingOutputs.delete(key);
         const error = new CandidateError('CANDIDATE_OUTPUT_TIMEOUT');
         reject(error); failOutput(error);
       }, 7000);
-      pendingOutputs.set(key, { resolve, reject, timer });
+      pendingOutputs.set(key, { resolve, reject, timer, persist });
       try { facade.emit('output', stamped); }
       catch (error) { pendingOutputs.delete(key); clearTimeout(timer); reject(error); }
-    }) });
+    }), observeFrame: observations.displayFrame });
     const output = payload => {
       outputQueue.enqueue(payload).catch(error => {
         if (!closed && !['CANDIDATE_HOST_DISCONNECTED', 'CANDIDATE_SESSION_ENDED'].includes(error.code)) failOutput(error);
@@ -232,6 +307,8 @@ export function createCandidateRunner(input, dependencies = {}) {
     const relayOutput = payload => { if (config.screensaverMode !== 'native' || payload.surfaceId !== 'lcd') output(payload); };
     const saver = () => { if (config.screensaverMode === 'native') output({ type: 'control', control: 'screensaver' }); };
     const relay = event => detail => {
+      const role = detail?.role === 'primary' ? 'primary' : 'child';
+      product(`${role}.${event}`);
       if (detail?.role !== 'primary') {
         hostEpoch++; hostApproved = false;
         outputQueue.pause(); outputQueue.reset(new CandidateError('CANDIDATE_HOST_DISCONNECTED'));
@@ -243,7 +320,10 @@ export function createCandidateRunner(input, dependencies = {}) {
     bridge.on('output', relayOutput); bridge.on('lcdFrameStarted', saver); bridge.on('diagnostic', diagnostic);
     bridge.on('clientConnected', connected); bridge.on('clientDisconnected', disconnected);
     Object.assign(facade, { generation: options.generation,
-      start: () => bridge.start(),
+      async start() {
+        await bridge.start();
+        product('bridgeReady'); product('started', { ports: { primary: bridge.ports?.primary ?? null, child: bridge.ports?.child ?? null } });
+      },
       sendInput: event => bridge.sendInput(event), resumeOutput: () => outputQueue.resume(),
       async stop() {
         if (activeBridge === facade) { hostEpoch++; hostApproved = false; }
@@ -264,18 +344,24 @@ export function createCandidateRunner(input, dependencies = {}) {
     port: config.port, childPort: config.childPort, sleepDuration: controls.sleepDuration ?? 0 });
   const abort = new AbortController();
   let state = 'idle', stopping = false, launching = false, recovery = null, startPromise, stopPromise;
+  let readyGeneration = 0, disconnectedGeneration = 0;
   let lastCode = null, completion;
   const completed = new Promise(resolve => { completion = resolve; });
   const snapshot = () => ({ schemaVersion: 1, engine: 'ipc-candidate', state, generation: session.generation,
     code: lastCode, counters: { ...counts, inputSuppressed: Math.max(0, counts.inputObserved - counts.inputForwarded - counts.inputNotDelivered) },
     observations: observations.snapshot(), physicalHardwareVerified: false, simulation: selfTest });
-  const setState = next => { state = next; record(next, { generation: session.generation }); emitter.emit('state', snapshot()); };
+  const setState = next => {
+    state = next; record(next, { generation: session.generation }); emitter.emit('state', snapshot());
+    if (next === 'reconnecting') product('reconnecting', { attempt: counts.reconnectAttempts });
+    else if (next === 'stopped') product('stopped');
+  };
   const terminal = error => { lastCode = diagnosticCode(error); record('failure', { code: lastCode }); setState('failed'); completion(snapshot()); };
   const reconnect = reason => {
     if (recovery) return recovery;
     recovery = (async () => {
       let error = reason;
-      while (!stopping && counts.reconnectAttempts < config.reconnect.maxAttempts && RETRYABLE.has(diagnosticCode(error))) {
+      while (!stopping && (config.productMode || counts.reconnectAttempts < config.reconnect.maxAttempts) &&
+        (RETRYABLE.has(diagnosticCode(error)) || config.productMode && diagnosticCode(error) === 'ERR_DEVICE_OPERATION')) {
         count('reconnectAttempts'); setState('reconnecting'); record('reconnect', { attempt: counts.reconnectAttempts });
         await delay(config.reconnect.delayMs, abort.signal);
         if (stopping) return;
@@ -297,8 +383,19 @@ export function createCandidateRunner(input, dependencies = {}) {
     if (['stopping', 'stopped', 'failed'].includes(status.state)) { hostApproved = false; rejectOutputs(new CandidateError('CANDIDATE_SESSION_ENDED')); }
     // Start ACK timers only after the SDK accepts readiness and completes device restoration.
     if (status.state === 'ready' && !status.lastError && hostApproved && !stopping && !outputFailure &&
-      activeBridge?.generation === status.generation) activeBridge.resumeOutput();
+      activeBridge?.generation === status.generation) {
+      activeBridge.resumeOutput();
+      if (readyGeneration !== status.generation) {
+        const event = readyGeneration ? 'deviceReconnected' : 'deviceReady'; readyGeneration = status.generation;
+        product(event, productDevice(session.device));
+      }
+    }
     if (status.state === 'failed' && !stopping && !launching && !recovery) void reconnect(status.lastError).catch(() => {});
+  });
+  session.on('adapterState', detail => {
+    if (!stopping && ['disconnected', 'failed', 'crashed'].includes(detail.state ?? detail.status) && disconnectedGeneration !== session.generation) {
+      disconnectedGeneration = session.generation; product('deviceDisconnected', { code: 'ADAPTER_DISCONNECTED' });
+    }
   });
   session.on('diagnostic', detail => { count('diagnostics'); record('diagnostic', { code: diagnosticCode(detail), generation: session.generation }); });
   session.on('input', event => { count(event.delivered ? 'inputForwarded' : 'inputNotDelivered'); if (event.delivered) adapter.inputForwarded(); });
@@ -328,9 +425,11 @@ export function createCandidateRunner(input, dependencies = {}) {
       return reconnect(new CandidateError('ADAPTER_DISCONNECTED'));
     },
     async control(value) {
-      if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['control', 'value'].includes(key)) ||
+      if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['control', 'value', ...(config.productMode ? ['persist'] : [])].includes(key)) ||
+        value.persist !== undefined && (typeof value.persist !== 'boolean' || value.control !== 'knobBrightness') ||
         ![...SETTINGS, 'sleep', 'wake', 'screensaver', 'showLogo'].includes(value.control)) throw new CandidateError('CANDIDATE_CONTROL_INVALID');
-      try { assertControlCommand({ ...value, type: 'control' }); } catch { throw new CandidateError('CANDIDATE_CONTROL_INVALID'); }
+      const { persist, ...command } = value;
+      try { assertControlCommand({ ...command, type: 'control' }); } catch { throw new CandidateError('CANDIDATE_CONTROL_INVALID'); }
       if (stopping || outputFailure || state !== 'ready' || !activeBridge || !hostApproved) throw new CandidateError('CANDIDATE_CONTROL_NOT_READY');
       if (pendingControlCount >= 8) throw new CandidateError('CANDIDATE_CONTROL_LIMIT');
       pendingControlCount++; observations.pendingControls(pendingControlCount);
@@ -356,6 +455,14 @@ export function createCandidateRunner(input, dependencies = {}) {
       return stopPromise;
     },
     getStatus: snapshot,
+    async getProductWorkerState() {
+      if (!config.productMode || stopping || state !== 'ready') throw new CandidateError('CANDIDATE_CONTROL_NOT_READY');
+      const generation = session.generation;
+      const observed = await adapter.getState();
+      if (stopping || state !== 'ready' || generation !== session.generation || observed.generation !== generation || observed.deviceId !== config.deviceId ||
+        !SETTINGS.every(key => Object.hasOwn(observed, key))) throw new CandidateError('CANDIDATE_CONTROL_NOT_READY');
+      return { generation, state: productWorkerState(observed), capabilities: productDevice(session.device).capabilities };
+    },
     // Exposed only to the local product self-test, never the console protocol.
     getWorkerState: () => adapter.getState(),
     completed,

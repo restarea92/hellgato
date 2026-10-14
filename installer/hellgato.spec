@@ -13,6 +13,7 @@ def include_tree(relative, suffixes):
 
 include_tree('app/n4', {'.py'})
 include_tree('apps/stream-dog/python/hellgato_stream_dog', {'.py'})
+include_tree('apps/stream-dog/python/hellgato_candidate', {'.py'})
 include_tree('host-integrations/streamdeck/windows/python', {'.py'})
 # Only the compatibility launcher remains here; package runtime is packed below.
 datas.append((str(root / 'app/cora/server.mjs'), 'app/cora'))
@@ -23,7 +24,15 @@ for source in (root / 'work/stream-dog-sdk').rglob('*'):
         raise ValueError('Links are forbidden in the packaged SDK tree')
     if source.is_file():
         datas.append((str(source), str(source.parent.relative_to(root))))
-include_tree('work/references/mirabox/Python-SDK/src/StreamDock', {'.py', '.dll'})
+# The USB runtime is an independent executable, including its own Python and vendor DLLs.
+worker_root = root / 'dist/HellgatoMiraboxWorker'
+if not (worker_root / 'runtime-manifest.json').is_file():
+    raise ValueError('Build and stage the Mirabox worker before the desktop app')
+for source in worker_root.rglob('*'):
+    if source.is_symlink():
+        raise ValueError('Links are forbidden in the packaged worker tree')
+    if source.is_file():
+        datas.append((str(source), str(Path('runtime/mirabox') / source.parent.relative_to(worker_root))))
 for script in ('setup-startup.py', 'start-streamdeck.py', 'patch-device-geometry.py', 'patch-background-grid.py', 'load-native-ui.py'):
     datas.append((str(root / 'scripts' / script), 'scripts'))
 datas += [

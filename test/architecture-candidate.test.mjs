@@ -132,6 +132,8 @@ test('reconnect restores acknowledged settings and frames with fresh sequence an
   f.adapter.injectInput(old); assert.equal(f.bridges[1].inputs.length, 0);
   const saved = readFileSync(f.config.statePath, 'utf8'); assert.ok(!saved.includes('HGDOCK')); assert.ok(!saved.includes(data));
   assert.equal(JSON.parse(saved).controls.brightness, 25);
+  assert.deepEqual(f.runner.getStatus().observations.display.surfaces['key:0'],
+    { received: 1, coalesced: 0, submitted: 1, failed: 0, restored: 1 });
   await f.runner.stop();
 });
 
@@ -183,6 +185,8 @@ test('pairing bursts stay bounded during fresh inspection and submit only the la
   assert.equal(f.adapter.outputs.length, 1);
   assert.equal(f.adapter.outputs[0].data, Buffer.alloc(48, 99).toString('base64'));
   assert.equal(f.runner.getStatus().counters.readinessChecks, 2);
+  assert.deepEqual(f.runner.getStatus().observations.display.surfaces['key:0'],
+    { received: 100, coalesced: 99, submitted: 1, failed: 0, restored: 0 });
   await f.runner.stop();
 });
 

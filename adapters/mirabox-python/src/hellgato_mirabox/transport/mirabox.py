@@ -51,11 +51,14 @@ def checked_led_brightness(device, level):
 
 
 class MiraboxBackend:
-    def __init__(self, sdk_path, screensaver_path=None, logo_path=None, strip_mode='panels'):
+    def __init__(self, sdk_path, screensaver_path=None, logo_path=None, strip_mode='panels', lcd_mode='normal'):
+        if lcd_mode not in ('normal', 'stream-screensaver'):
+            raise ValueError('Unknown N4 LCD output mode')
         self.ownership = RuntimeOwnership()
         self.screensaver_path = screensaver_path
         self.logo_path = logo_path
         self.strip_mode = strip_mode
+        self.lcd_mode = lcd_mode
         # Only the explicitly supplied prepared runtime is imported. No repository fallback.
         # Frozen worker dependency inventory is immutable, including dynamic SDK imports.
         sys.dont_write_bytecode = True
@@ -217,7 +220,7 @@ class MiraboxBackend:
                 self.temporary = tempfile.TemporaryDirectory(prefix='hellgato-mirabox-')
                 self.display = DisplayState(device, self.temporary.name, screensaver_path=self.screensaver_path, logo_path=self.logo_path, strip_mode=self.strip_mode,
                     led_writer=(lambda level: checked_led_brightness(device, level)) if led_supported(device) else None,
-                    check=check_deadline)
+                    check=check_deadline, lcd_mode=self.lcd_mode)
                 # set_device before open sets decoder features, but the pinned
                 # SDK drops report-size configuration until a handle exists.
                 check_deadline()
@@ -293,17 +296,25 @@ class MiraboxBackend:
             check_deadline()
             self.display.output(frame['surfaceId'], image,
                 tuple(region[key] for key in ('x', 'y', 'width', 'height')), check_deadline)
+            observations = self.display.display_observations()
         # Vendor calls return no end-to-end display acknowledgement.
-        return {'status': 'submitted', 'verification': 'unconfirmed'}
+        return {'status': 'submitted', 'verification': 'unconfirmed', 'displayObservations': observations}
 
     def set_control(self, control, check_deadline):
         require(self.device is not None, 'Device disconnected', 'ERR_DEVICE_CLOSED')
         with self.lock:
             effect = self.display.control(control, check_deadline) or {}
             state = self.display.state()
+            observations = self.display.display_observations()
         return {'status': 'submitted', 'verification': 'unconfirmed', **effect,
+                'displayObservations': observations,
                 **{key: state[key] for key in ('idle', 'sleeping', 'screensaverActive', 'logoActive')}}
+
+    def get_display_observations(self):
+        with self.lock:
+            return self.display.display_observations() if self.display else None
 
     def get_state(self):
         return {'connected': self.device is not None, **(self.display.state() if self.display else {}),
+                'displayObservations': self.get_display_observations(),
                 'supportStatus': 'experimental', 'hardwareParityVerified': False}

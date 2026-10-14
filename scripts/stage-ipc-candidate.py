@@ -132,7 +132,7 @@ def source_identity(root):
 def verify_sdk_stage(directory, source_sha):
     sdk = read_json(directory / 'product-build-manifest.json')
     if (type(sdk.get('schemaVersion')) is not int or sdk['schemaVersion'] != 1
-            or sdk.get('component') != 'stream-dog-sdk' or sdk.get('engine') != 'legacy-compatibility'
+            or sdk.get('component') != 'stream-dog-sdk' or sdk.get('engine') not in ('legacy-compatibility', 'ipc')
             or sdk.get('releaseSha') != source_sha):
         raise ValueError('SDK candidate source differs from the frozen source')
     files = sdk.get('files')
