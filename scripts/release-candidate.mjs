@@ -1,12 +1,12 @@
 // Offline candidate plans are deliberately incompatible with the public
 // schema-v1 coordinator. This command never reads credentials or writes remotely.
-import { readFile, readdir, mkdtemp, rm, symlink } from 'node:fs/promises';
+import { readFile, readdir, mkdtemp, symlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ROOT, SHA, invariant, sha256, json, git, gitFile, readJson, put, configuration, pendingChangesets, parseChangeset, pnpm, argumentsFor } from './release-lib.mjs';
+import { ROOT, SHA, invariant, sha256, json, git, gitFile, readJson, put, configuration, pendingChangesets, parseChangeset, pnpm, argumentsFor, cleanupReplayWorktree } from './release-lib.mjs';
 import { CANDIDATE_SCHEMA, CHANNEL_PLAN_SCHEMA, NPM_BASELINE_PATH, PUBLIC_BASELINE_PATH, validateNpmBaseline, validateChannelWindowsBaseline, channelPolicy, releaseChannel, compareReleaseVersions, windowsNumericVersion, validatePrereleaseState } from './release-policy.mjs';
 import { syncReleaseMetadata } from './sync-release-metadata.mjs';
 
@@ -108,9 +108,11 @@ export async function validateCandidatePlan({ root = ROOT, baseSha, headSha, rel
   await validateChannelStructure({ root, plan, planPath, baseSha, headSha, releaseIntent });
   if (structuralOnly) return plan;
   const temporary = await mkdtemp(join(tmpdir(), 'hellgato-candidate-'));
+  let dependencyLinkCreated = false;
   try {
     git(root, 'worktree', 'add', '--quiet', '--detach', temporary, baseSha);
     await symlink(resolve(root, 'node_modules'), resolve(temporary, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+    dependencyLinkCreated = true;
     const expected = await generateCandidatePlan({ root: temporary, baseSha, channel: plan.channel, replay: true, releaseIntent });
     invariant(JSON.stringify(expected) === JSON.stringify(plan), 'Candidate plan differs from deterministic Changesets pre enter/version/exit replay');
     for (const file of expected.generatedFiles) invariant(sha256(await readFile(resolve(root, file.path))) === file.sha256, `Candidate generated file digest mismatch: ${file.path}`);
@@ -123,7 +125,7 @@ export async function validateCandidatePlan({ root = ROOT, baseSha, headSha, rel
     if (headSha) invariant(git(root, 'diff', '--name-only', headSha).trim() === '', 'Dirty candidate checkout');
     return plan;
   } finally {
-    try { git(root, 'worktree', 'remove', '--force', temporary); } finally { await rm(temporary, { recursive: true, force: true }); }
+    await cleanupReplayWorktree(root, temporary, { dependencyLinkCreated });
   }
 }
 

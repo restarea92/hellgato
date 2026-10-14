@@ -1,4 +1,4 @@
-import { readFile, readdir, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, readdir, writeFile, mkdir, lstat, readlink, unlink, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -21,6 +21,23 @@ export function globMatch(path, pattern) { const regex = pattern.split('**').map
 export function pnpm(root, args, { capture = false } = {}) {
   const command = process.env.HELLGATO_PNPM || (process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm');
   return execFileSync(command, args, { cwd: root, encoding: 'utf8', stdio: capture ? 'pipe' : ['ignore', 'inherit', 'inherit'], shell: process.platform === 'win32', env: { ...process.env, CI: 'true' }, maxBuffer: 64 * 1024 * 1024 });
+}
+export async function cleanupReplayWorktree(root, temporary, { dependencyLinkCreated = false } = {}) {
+  const dependencyPath = resolve(temporary, 'node_modules');
+  let dependency;
+  try { dependency = await lstat(dependencyPath); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (dependency) {
+    invariant(dependencyLinkCreated && dependency.isSymbolicLink(), 'Replay dependency path changed; preserving temporary worktree');
+    const target = resolve(temporary, await readlink(dependencyPath));
+    const expected = resolve(root, 'node_modules');
+    invariant(process.platform === 'win32' ? target.toLowerCase() === expected.toLowerCase() : target === expected, 'Replay dependency target changed; preserving temporary worktree');
+    // Git for Windows follows junctions during worktree removal. A failed
+    // unlink must preserve the worktree and its shared dependency target.
+    await unlink(dependencyPath);
+  }
+  try { git(root, 'worktree', 'remove', '--force', temporary); }
+  finally { await rm(temporary, { recursive: true, force: true }); }
 }
 // Keep structural validation dependency-free. Deliberately accept only this
 // repository's small YAML subset; aliases, inline lists, duplicate keys, escaped

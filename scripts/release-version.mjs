@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ROOT, SHA, VERSION, invariant, sha256, json, git, gitFile, readJson, put, safePath, configuration, pendingChangesets, parseChangeset, pnpm, argumentsFor } from './release-lib.mjs';
+import { ROOT, SHA, VERSION, invariant, sha256, json, git, gitFile, readJson, put, safePath, configuration, pendingChangesets, parseChangeset, pnpm, argumentsFor, cleanupReplayWorktree } from './release-lib.mjs';
 import { syncReleaseMetadata } from './sync-release-metadata.mjs';
 import { generateCandidatePlan, validateCandidatePlan } from './release-candidate.mjs';
 import { CHANNEL_PLAN_SCHEMA, PUBLIC_BASELINE_PATH, validatePublicBaseline } from './release-policy.mjs';
@@ -125,14 +125,16 @@ export async function validateReleasePlan({ root = ROOT, baseSha, headSha, struc
   if (headSha) invariant(git(root, 'diff', '--name-only', headSha).trim() === '', 'Dirty release checkout');
   if (!structuralOnly) {
     const temporary = await mkdtemp(join(tmpdir(), 'hellgato-plan-'));
+    let dependencyLinkCreated = false;
     try {
       git(root, 'worktree', 'add', '--quiet', '--detach', temporary, baseSha);
       invariant(existsSync(resolve(root, 'node_modules/@changesets/cli/package.json')), 'Install frozen release dependencies before full plan replay');
       await symlink(resolve(root, 'node_modules'), resolve(temporary, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+      dependencyLinkCreated = true;
       const replay = await generateReleasePlan({ root: temporary, baseSha, replay: true, ...(plan.bootstrap ? { bootstrap: plan.components[0].component, from: plan.components[0].oldVersion } : {}) });
       invariant(JSON.stringify(replay) === JSON.stringify(plan), 'Release tree differs from deterministic Changesets regeneration');
     } finally {
-      try { git(root, 'worktree', 'remove', '--force', temporary); } finally { await rm(temporary, { recursive: true, force: true }); }
+      await cleanupReplayWorktree(root, temporary, { dependencyLinkCreated });
     }
   }
   return plan;
