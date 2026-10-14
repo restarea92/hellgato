@@ -59,6 +59,10 @@ MAC. The candidate never creates a new virtual serial or rewrites the original s
 Open the existing Stream Deck app only when prompted. Every connection/reconnection
 requires fresh live host PID/creation-time, executable/installed shim/plan hashes and
 actual loaded ten-key geometry. A failed check stops instead of preparing the host.
+Keep the ordinary Hellgato app closed while this supervisor is running. If the N4
+profile does not appear, use Stream Deck's network-device pairing UI with
+`127.0.0.1` and port `5343`. This connects to the candidate's preserved virtual
+identity; seeing the PC app alone is not a physical display or input check.
 
 ## During the trial
 
@@ -72,6 +76,13 @@ Candidate output restoration is bounded, generation-stamped and never replays
 inputs. Physical SDK writes remain `submitted/unconfirmed`; fake writes alone are
 `applied/simulation`. Recovery has a finite attempt budget and fails closed if safe
 bounded display restoration is impossible. Saved images never become trace-file IPC.
+
+During fresh connection inspection, product output admission pauses. Its pending
+output is limited to 32 entries and 8 MiB, including one submitted operation awaiting
+the worker reply. A newer full frame may supersede pending frames of the same surface,
+format and dimensions after the last control command; partial frames and control
+order remain intact. Only completed submissions enter restoration history. An
+irreducible burst still stops with `OUTPUT_OVERFLOW` rather than losing partial data.
 
 Use [the hardware recipe](../../tests/hardware/README.md) for the named physical
 combination: normal controls/display/idle behavior, 20 USB reconnects and 20 host

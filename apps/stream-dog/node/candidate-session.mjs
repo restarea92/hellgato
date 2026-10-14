@@ -8,6 +8,7 @@ import { CandidateError, validateCandidateConfig, loadCandidateManifest, loadCan
   saveCandidateSettings, createCandidateDiagnostics, diagnosticCode, validateSettings } from './candidate-config.mjs';
 import { createCandidateReadiness } from './candidate-readiness.mjs';
 import { createCandidateObservations } from './candidate-observability.mjs';
+import { createCandidateOutputQueue } from './candidate-output-queue.mjs';
 
 const SETTINGS = ['brightness', 'knobBrightness', 'followDisplayBrightness', 'sleepDuration'];
 const RETRYABLE = new Set(['ADAPTER_DISCONNECTED', 'DEVICE_NOT_FOUND', 'HOST_NOT_READY', 'ERR_WORKER_EXIT',
@@ -182,18 +183,27 @@ export function createCandidateRunner(input, dependencies = {}) {
     descriptor: { id: 'hellgato.fake-sidecar', version: '0.1.0', modelIds: ['buttons-dial'], platforms: ['any'], architectures: ['any'], apiVersion: 1, protocol: { major: 1, minor: 0 } } }) : createMiraboxN4ProAdapter(adapterOptions));
   const adapter = restoringAdapter(raw, { controls, persist: state => saveCandidateSettings(config, state), count, record,
     journal: createDisplayJournal(), observations });
-  let activeBridge, hostApproved = false, hostEpoch = 0;
-  const pendingControls = new Map();
-  const rejectControls = error => {
-    for (const pending of pendingControls.values()) { clearTimeout(pending.timer); pending.reject(error); }
-    pendingControls.clear();
+  let activeBridge, hostApproved = false, hostEpoch = 0, outputFailure;
+  let pendingControlCount = 0;
+  const pendingOutputs = new Map();
+  const rejectOutputs = error => {
+    for (const pending of pendingOutputs.values()) { clearTimeout(pending.timer); pending.reject(error); }
+    pendingOutputs.clear();
+  };
+  const failOutput = error => {
+    if (stopping || outputFailure) return;
+    outputFailure = error; hostApproved = false;
+    count('diagnostics'); record('diagnostic', { code: diagnosticCode(error), generation: session.generation });
+    void session.stop().then(() => terminal(error), () => terminal(new CandidateError('CLEANUP_FAILED')));
   };
   const inspect = dependencies.readiness ?? createCandidateReadiness(config.readiness);
   const readiness = async context => {
     const epoch = hostEpoch;
     count('readinessChecks'); record('readiness', { generation: context.generation });
     const report = await inspect(context);
-    if (epoch === hostEpoch) hostApproved = report?.ready === true;
+    if (epoch === hostEpoch && context.generation === session.generation) {
+      hostApproved = report?.ready === true;
+    }
     return report;
   };
   const bridgeFactory = async options => {
@@ -201,13 +211,30 @@ export function createCandidateRunner(input, dependencies = {}) {
     const facade = new EventEmitter();
     let sequence = 0;
     const envelope = { deviceId: options.device.id, sessionId: options.sessionId, generation: options.generation };
-    const output = payload => facade.emit('output', { ...payload, ...envelope, sequence: ++sequence });
+    let closed = false;
+    const outputQueue = createCandidateOutputQueue({ submit: payload => new Promise((resolve, reject) => {
+      const stamped = { ...payload, ...envelope, sequence: ++sequence };
+      const key = `${options.generation}:${stamped.sequence}`;
+      const timer = setTimeout(() => {
+        pendingOutputs.delete(key);
+        const error = new CandidateError('CANDIDATE_OUTPUT_TIMEOUT');
+        reject(error); failOutput(error);
+      }, 7000);
+      pendingOutputs.set(key, { resolve, reject, timer });
+      try { facade.emit('output', stamped); }
+      catch (error) { pendingOutputs.delete(key); clearTimeout(timer); reject(error); }
+    }) });
+    const output = payload => {
+      outputQueue.enqueue(payload).catch(error => {
+        if (!closed && !['CANDIDATE_HOST_DISCONNECTED', 'CANDIDATE_SESSION_ENDED'].includes(error.code)) failOutput(error);
+      });
+    };
     const relayOutput = payload => { if (config.screensaverMode !== 'native' || payload.surfaceId !== 'lcd') output(payload); };
     const saver = () => { if (config.screensaverMode === 'native') output({ type: 'control', control: 'screensaver' }); };
     const relay = event => detail => {
       if (detail?.role !== 'primary') {
         hostEpoch++; hostApproved = false;
-        if (event === 'clientDisconnected') rejectControls(new CandidateError('CANDIDATE_HOST_DISCONNECTED'));
+        outputQueue.pause(); outputQueue.reset(new CandidateError('CANDIDATE_HOST_DISCONNECTED'));
       }
       facade.emit(event, detail);
     };
@@ -215,20 +242,19 @@ export function createCandidateRunner(input, dependencies = {}) {
     const diagnostic = detail => { count('diagnostics'); record('diagnostic', { code: diagnosticCode(detail), generation: options.generation }); };
     bridge.on('output', relayOutput); bridge.on('lcdFrameStarted', saver); bridge.on('diagnostic', diagnostic);
     bridge.on('clientConnected', connected); bridge.on('clientDisconnected', disconnected);
-    Object.assign(facade, { start: () => bridge.start(), sendInput: event => bridge.sendInput(event),
+    Object.assign(facade, { generation: options.generation,
+      start: () => bridge.start(),
+      sendInput: event => bridge.sendInput(event), resumeOutput: () => outputQueue.resume(),
       async stop() {
-        rejectControls(new CandidateError('CANDIDATE_SESSION_ENDED'));
+        if (activeBridge === facade) { hostEpoch++; hostApproved = false; }
+        closed = true; outputQueue.close(new CandidateError('CANDIDATE_SESSION_ENDED'));
+        rejectOutputs(new CandidateError('CANDIDATE_SESSION_ENDED'));
         bridge.off('output', relayOutput); bridge.off('lcdFrameStarted', saver); bridge.off('diagnostic', diagnostic);
         bridge.off('clientConnected', connected); bridge.off('clientDisconnected', disconnected);
         if (activeBridge === facade) activeBridge = null;
         await bridge.stop();
       },
-      control(payload, pending) {
-        const key = `${options.generation}:${sequence + 1}`;
-        pendingControls.set(key, pending);
-        observations.pendingControls(pendingControls.size);
-        output({ ...payload, type: 'control' });
-      },
+      control: payload => outputQueue.enqueue({ ...payload, type: 'control' }),
     });
     Object.defineProperty(facade, 'ports', { get: () => bridge.ports });
     activeBridge = facade; return facade;
@@ -268,16 +294,19 @@ export function createCandidateRunner(input, dependencies = {}) {
     return recovery;
   };
   session.on('state', status => {
-    if (['stopping', 'stopped', 'failed'].includes(status.state)) { hostApproved = false; rejectControls(new CandidateError('CANDIDATE_SESSION_ENDED')); }
+    if (['stopping', 'stopped', 'failed'].includes(status.state)) { hostApproved = false; rejectOutputs(new CandidateError('CANDIDATE_SESSION_ENDED')); }
+    // Start ACK timers only after the SDK accepts readiness and completes device restoration.
+    if (status.state === 'ready' && !status.lastError && hostApproved && !stopping && !outputFailure &&
+      activeBridge?.generation === status.generation) activeBridge.resumeOutput();
     if (status.state === 'failed' && !stopping && !launching && !recovery) void reconnect(status.lastError).catch(() => {});
   });
   session.on('diagnostic', detail => { count('diagnostics'); record('diagnostic', { code: diagnosticCode(detail), generation: session.generation }); });
   session.on('input', event => { count(event.delivered ? 'inputForwarded' : 'inputNotDelivered'); if (event.delivered) adapter.inputForwarded(); });
   session.on('output', event => {
     const key = `${event.generation}:${event.sequence}`;
-    const pending = pendingControls.get(key);
+    const pending = pendingOutputs.get(key);
     if (pending) {
-      pendingControls.delete(key); clearTimeout(pending.timer);
+      pendingOutputs.delete(key); clearTimeout(pending.timer);
       pending.resolve({ status: event.result.status, verification: event.result.verification === 'simulation' ? 'simulation' : 'unconfirmed' });
     }
   });
@@ -287,7 +316,7 @@ export function createCandidateRunner(input, dependencies = {}) {
       if (stopping || state !== 'idle') return Promise.reject(new CandidateError('CANDIDATE_START_STATE'));
       launching = true; setState('starting');
       startPromise = (async () => {
-        try { await session.start(); if (!stopping) setState('ready'); }
+        try { await session.start(); if (!stopping && !outputFailure) setState('ready'); }
         catch (error) { if (!stopping) await reconnect(error); }
         finally { launching = false; }
         return runner;
@@ -302,12 +331,15 @@ export function createCandidateRunner(input, dependencies = {}) {
       if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['control', 'value'].includes(key)) ||
         ![...SETTINGS, 'sleep', 'wake', 'screensaver', 'showLogo'].includes(value.control)) throw new CandidateError('CANDIDATE_CONTROL_INVALID');
       try { assertControlCommand({ ...value, type: 'control' }); } catch { throw new CandidateError('CANDIDATE_CONTROL_INVALID'); }
-      if (stopping || state !== 'ready' || !activeBridge || !hostApproved) throw new CandidateError('CANDIDATE_CONTROL_NOT_READY');
-      if (pendingControls.size >= 8) throw new CandidateError('CANDIDATE_CONTROL_LIMIT');
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { reject(new CandidateError('CANDIDATE_CONTROL_TIMEOUT')); void runner.stop().catch(() => {}); }, 7000);
-        activeBridge.control(clone(value), { resolve, reject, timer });
-      });
+      if (stopping || outputFailure || state !== 'ready' || !activeBridge || !hostApproved) throw new CandidateError('CANDIDATE_CONTROL_NOT_READY');
+      if (pendingControlCount >= 8) throw new CandidateError('CANDIDATE_CONTROL_LIMIT');
+      pendingControlCount++; observations.pendingControls(pendingControlCount);
+      let timer;
+      try {
+        return await Promise.race([activeBridge.control(clone(value)), new Promise((resolve, reject) => {
+          timer = setTimeout(() => { reject(new CandidateError('CANDIDATE_CONTROL_TIMEOUT')); void runner.stop().catch(() => {}); }, 7000);
+        })]);
+      } finally { clearTimeout(timer); pendingControlCount--; }
     },
     stop() {
       if (stopPromise) return stopPromise;

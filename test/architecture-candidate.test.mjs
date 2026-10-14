@@ -162,6 +162,94 @@ test('product console controls share ordered SDK validation and acknowledged set
   assert.equal(f.runner.getStatus().state, 'ready'); await f.runner.stop();
 });
 
+test('pairing bursts stay bounded during fresh inspection and submit only the latest full surface', async () => {
+  let calls = 0, release;
+  const f = fixture({ readiness: ({ profile }) => {
+    const report = { ready: true, targetId: profile.target.id, profileId: profile.id,
+      host: { pid: 12, creationTime: String(++calls), executableDigest: 'b'.repeat(64) }, preparation: ['streamdeck-plus-ten-key'] };
+    return calls === 1 ? report : new Promise(resolve => { release = () => resolve(report); });
+  } });
+  await f.runner.start();
+  f.bridges[0].emit('clientConnected', { role: 'child' });
+  for (let index = 0; index < 100; index++) {
+    f.bridges[0].output({ type: 'frame', surfaceId: 'key:0', format: 'rgb888', width: 4, height: 4,
+      data: Buffer.alloc(48, index).toString('base64') });
+  }
+  await tick();
+  assert.equal(f.adapter.outputs.length, 0);
+  assert.equal(f.runner.getStatus().state, 'ready');
+  release();
+  await waitUntil(() => f.runner.getStatus().counters.frameWrites === 1);
+  assert.equal(f.adapter.outputs.length, 1);
+  assert.equal(f.adapter.outputs[0].data, Buffer.alloc(48, 99).toString('base64'));
+  assert.equal(f.runner.getStatus().counters.readinessChecks, 2);
+  await f.runner.stop();
+});
+
+test('unmergeable pairing output fails closed and releases the worker instead of dropping controls', async () => {
+  let calls = 0;
+  const f = fixture({ readiness: ({ profile }) => {
+    const report = { ready: true, targetId: profile.target.id, profileId: profile.id,
+      host: { pid: 12, creationTime: String(++calls), executableDigest: 'b'.repeat(64) }, preparation: ['streamdeck-plus-ten-key'] };
+    return calls === 1 ? report : new Promise(() => {});
+  } });
+  await f.runner.start();
+  f.bridges[0].emit('clientConnected', { role: 'child' });
+  for (let index = 0; index < 33; index++) f.bridges[0].output({ type: 'control', control: 'brightness', value: index });
+  await waitUntil(() => f.runner.getStatus().state === 'failed');
+  assert.equal(f.runner.getStatus().code, 'OUTPUT_OVERFLOW');
+  assert.equal(f.runner.getStatus().counters.controlWrites, 0);
+  assert.ok(f.adapter.calls.some(call => call === 'stop'));
+  await f.runner.stop();
+});
+
+test('a superseded host inspection cannot release output belonging to the next child connection', async () => {
+  let calls = 0;
+  const approvals = [];
+  const f = fixture({ readiness: ({ profile }) => {
+    const report = { ready: true, targetId: profile.target.id, profileId: profile.id,
+      host: { pid: 12, creationTime: String(++calls), executableDigest: 'b'.repeat(64) }, preparation: ['streamdeck-plus-ten-key'] };
+    return calls === 1 ? report : new Promise(resolve => { approvals.push(() => resolve(report)); });
+  } });
+  await f.runner.start();
+  f.bridges[0].emit('clientConnected', { role: 'child' });
+  f.bridges[0].output({ type: 'frame', surfaceId: 'key:0', format: 'rgb888', width: 4, height: 4,
+    data: Buffer.alloc(48, 1).toString('base64') });
+  f.bridges[0].emit('clientConnected', { role: 'child' });
+  f.bridges[0].output({ type: 'frame', surfaceId: 'key:0', format: 'rgb888', width: 4, height: 4,
+    data: Buffer.alloc(48, 2).toString('base64') });
+  approvals[0](); await tick();
+  assert.equal(f.adapter.outputs.length, 0);
+  approvals[1]();
+  await waitUntil(() => f.runner.getStatus().counters.frameWrites === 1);
+  assert.equal(f.adapter.outputs.length, 1);
+  assert.equal(f.adapter.outputs[0].data, Buffer.alloc(48, 2).toString('base64'));
+  assert.equal(f.runner.getStatus().counters.readinessChecks, 3);
+  await f.runner.stop();
+});
+
+test('startup output waits for device restoration instead of consuming the submission timeout', async () => {
+  const f = fixture();
+  const open = f.adapter.open.bind(f.adapter);
+  let release;
+  f.adapter.open = async (...args) => {
+    f.bridges[0].emit('clientConnected', { role: 'child' });
+    f.bridges[0].output({ type: 'frame', surfaceId: 'key:0', format: 'rgb888', width: 4, height: 4,
+      data: Buffer.alloc(48, 5).toString('base64') });
+    await new Promise(resolve => { release = resolve; });
+    return open(...args);
+  };
+  const started = f.runner.start();
+  await waitUntil(() => release !== undefined);
+  await new Promise(resolve => setTimeout(resolve, 7100));
+  assert.equal(f.runner.getStatus().state, 'starting');
+  assert.equal(f.adapter.outputs.length, 0);
+  release(); await started;
+  await waitUntil(() => f.runner.getStatus().counters.frameWrites === 1);
+  assert.equal(f.runner.getStatus().state, 'ready');
+  await f.runner.stop();
+});
+
 test('persisted intent keeps normal brightness through idle fades and captures knob follow changes', async () => {
   const f = fixture(); await f.runner.start();
   await f.runner.control({ control: 'brightness', value: 70 });

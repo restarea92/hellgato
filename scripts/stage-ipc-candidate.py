@@ -36,6 +36,9 @@ coexistence is unsupported, even when N4 is unplugged. Do not use two USB engine
 5. Open your existing Stream Deck app when asked, then press Enter in this console.
    Readiness is checked again before connecting and reconnecting. If refused, stop
    and report the displayed reason; this bundle cannot prepare/patch the host.
+   Keep ordinary Hellgato closed. If the N4 profile does not appear, pair the network
+   device at 127.0.0.1, port 5343 in Stream Deck. Check the physical N4 screen and
+   controls, not just whether the PC app opens.
 6. Console commands: status, brightness 50, knob 50, follow on/off, sleep-time 60,
    sleep, wake, saver, logo. Invalid commands are rejected.
    Check ten keys, four dials, touch strip/key/LCD images, both brightness controls,
