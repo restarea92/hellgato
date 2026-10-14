@@ -105,7 +105,7 @@ class LauncherView:
                       'menu.help': ('ui.logs', 'menu.about')}
         self.shortcuts = {'ui.export': 'Ctrl+E', 'ui.import': 'Ctrl+I'}
         window.title('Hellgato Stream Dog')
-        window.iconbitmap(default=str(root / 'app/assets/icons/stream-dog.ico'))
+        window.iconbitmap(default=str(root / 'app/assets/icons/hellgato-app.ico'))
         window.configure(bg=BACKGROUND)
         window.geometry('740x600')
         window.minsize(740, 600)

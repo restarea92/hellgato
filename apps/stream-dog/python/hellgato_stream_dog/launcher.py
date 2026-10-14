@@ -555,7 +555,7 @@ def main():
             logging.exception('Tray unavailable')
             callbacks.put(lambda: messagebox.showerror('Hellgato', translator.text('error.tray'), parent=window))
 
-    tray = pystray.Icon('Hellgato.N4Pro', Image.open(ROOT / 'app/assets/icons/stream-dog-64.png'),
+    tray = pystray.Icon('Hellgato.N4Pro', Image.open(ROOT / 'app/assets/icons/hellgato-app-64.png'),
                         'Hellgato Stream Dog', menu=pystray.Menu(
                             pystray.MenuItem(lambda item: translator.text('tray.open'), lambda: callbacks.put(show), default=True),
                             pystray.Menu.SEPARATOR,

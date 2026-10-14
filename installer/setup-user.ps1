@@ -266,7 +266,7 @@ function Set-StartupShortcut([string]$Destination, [string]$Shortcut, [string]$O
         $link.TargetPath = Join-Path $Destination 'Hellgato.exe'
         $link.Arguments = '--background'
         $link.WorkingDirectory = $Destination
-        $link.IconLocation = Join-Path $Destination '_internal\app\assets\icons\stream-dog.ico'
+        $link.IconLocation = Join-Path $Destination '_internal\app\assets\icons\hellgato-app.ico'
         $link.Save()
     } elseif (Test-OwnedShortcut $Shortcut $Targets $Shell) {
         Remove-Item -LiteralPath $Shortcut
