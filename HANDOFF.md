@@ -26,10 +26,13 @@ The reconnect journal preserves normal frames across streamed overlays.
 Temporary knob brightness previews do not become saved preferences during
 unrelated host brightness updates.
 
-The earlier isolated `2be7b0f` trial had working key actions and touch images but
-black physical key icons. The current user confirmed the installed legacy app
-still displays the same device's key icons normally. Physical confirmation of
-the new integrated build is pending the user's installation/test.
+The installed `7559023` IPC build showed black keys after USB reconnection,
+Stream Deck restart and Hellgato restart. Profile changes did not recover them;
+sleep followed by wake restored icons in every reported case. Full LCD writes
+now finish with a refresh after all key and touch surfaces, including the extra
+clear sent when the SDK opens a session. Previously only initialization and
+wake restoration refreshed that composite. Focused sequence tests pass; the
+replacement installer's physical result is still pending.
 
 Display diagnostics contain fixed per-surface counters and brightness/last-writer
 summaries, never image bytes, raw identities, profile content or credentials.

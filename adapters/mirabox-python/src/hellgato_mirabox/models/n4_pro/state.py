@@ -79,8 +79,6 @@ class DisplayState:
         self.writer.clear_keys(check, 'initialize')
         self.writer.lcd(self.background, check, 'initialize')
         check()
-        self.device.refresh()
-        check()
         self.device.wakeScreen()
         self._screen(self.brightness, check)
         self._led(self.brightness, check)

@@ -354,6 +354,47 @@ class StripPolicyTests(unittest.TestCase):
         self.assertEqual(state.state()['stripMode'], 'frame')
         device.set_seondscreen_image.assert_not_called()
 
+    def test_full_lcd_commits_after_all_keys_and_final_touch_frame_or_panel(self):
+        for mode in ('panels', 'frame'):
+            with self.subTest(mode=mode):
+                device = Mock()
+                writer = DisplayWriter(device, self.temporary.name, mode)
+                writer.lcd(Image.new('RGB', (800, 480), 'black'), lambda: None)
+                names = [call[0] for call in device.mock_calls]
+                self.assertEqual(names[-1], 'refresh')
+                self.assertEqual(names.count('refresh'), 1)
+                self.assertEqual(names.count('set_key_image'), 10)
+                self.assertEqual(names[-2], 'set_seondscreen_image' if mode == 'panels'
+                                 else 'transport.set_background_frame_stream')
+
+    def test_startup_clear_is_refreshed_before_following_action_images_without_sleep_wake(self):
+        device = Mock()
+        state = DisplayState(device, self.temporary.name, strip_mode='frame', lcd_mode='stream-screensaver')
+        state.initialize(lambda: None)
+        self.assertEqual(device.refresh.call_count, 1)
+        device.reset_mock()
+        state.control({'control': 'clear'}, lambda: None)
+        state.output('key:0', Image.new('RGB', (120, 120), 'blue'), None, lambda: None)
+        names = [call[0] for call in device.mock_calls]
+        self.assertEqual(names[-2:], ['refresh', 'set_key_image'])
+        self.assertEqual(device.refresh.call_count, 1)
+        self.assertFalse(state.idle)
+        state.control({'control': 'sleep'}, lambda: None)
+        device.reset_mock()
+        state.output('key:0', Image.new('RGB', (120, 120), 'green'), None, lambda: None)
+        state.output('touch', Image.new('RGB', (20, 10), 'red'), (0, 0, 20, 10), lambda: None)
+        device.refresh.assert_not_called()
+        device.set_key_image.assert_not_called()
+
+    def test_partial_lcd_failure_does_not_refresh_an_incomplete_composite(self):
+        device = Mock()
+        device.set_key_image.side_effect = [0, 0, -1]
+        writer = DisplayWriter(device, self.temporary.name, 'frame')
+        with self.assertRaises(OSError):
+            writer.lcd(Image.new('RGB', (800, 480), 'black'), lambda: None)
+        device.refresh.assert_not_called()
+        self.assertEqual(device.set_key_image.call_count, 3)
+
     def test_cancelled_frame_baseline_is_not_marked_initialized(self):
         device = Mock()
         writer = DisplayWriter(device, self.temporary.name, 'frame')

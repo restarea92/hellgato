@@ -134,3 +134,6 @@ class DisplayWriter:
             self.key(index, image.crop((x, y, x + 120, y + 120)), check, writer_type)
         self.frame_initialized = False
         self.touch(image.crop((0, 380, 800, 480)), (0, 0, 800, 100), check)
+        # Finish composite writes like open and wake restoration, after every surface.
+        check()
+        self.device.refresh()
