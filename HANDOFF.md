@@ -49,8 +49,12 @@ recoverable. Host-presence query errors do not release hardware. In installed
 `bb51866`, the user confirmed quick return to the device's standalone screen on
 Stream Deck exit and immediate automatic reconnection on Stream Deck relaunch.
 The installed manifest was read back as `engine: ipc` with full release SHA
-`bb518665ffa926cd013e0406baba79dc191d8ef7`. Hellgato itself restarting while Stream
-Deck is already open can still require manual pairing; no automatic host restart is used.
+`bb518665ffa926cd013e0406baba79dc191d8ef7`. The user also passed normal button/knob/touch
+actions, profile/page image changes, display/knob brightness and sleep/wake checks.
+Two Hellgato-only lifecycle limits remain: quitting Hellgato leaves the last screen
+visible for tens of seconds before native standby, and relaunching Hellgato while
+Stream Deck stays open requires manual pairing. Icons work after pairing. No
+automatic host restart is used; the complete hardware matrix is still unverified.
 
 Display diagnostics contain fixed per-surface counters and brightness/last-writer
 summaries, never image bytes, raw identities, profile content or credentials.
@@ -82,9 +86,13 @@ Before the app switch, both apps were closed by the user and 66 settings/profile
 files were backed up to ignored `work/before-ipc-app-backup`. Keep that backup
 private. Do not replace saved identities or another PC's profiles.
 
-Ask the user to perform physical/manual checks directly. Initial icons, USB
-reconnection, host-exit standby and host relaunch have passed in `bb51866`; do not
-repeat them without a relevant change. Final requested checks are button/knob/touch
-actions, profile/page image changes, display/knob brightness and sleep/wake, and
-Hellgato-only exit/relaunch. Fix observed failures before claiming app completion;
-automated release work is outside this scope.
+The requested normal-app checks are complete for installed `bb51866`, with the
+two Hellgato-only limitations recorded above. The user's final scope is the program
+icon set. Commit `5d56a31` applies the supplied artwork to the executable, window/taskbar,
+tray and shortcuts while preserving app and installer UI artwork. All ten embedded
+ICO sizes and packaged assets were checked. The final local installer is
+`dist/Hellgato-0.1.2-Setup-5d56a31.exe`; it keeps the verified `bb51866` device behavior.
+Setup already closes Hellgato and Stream Deck; routine upgrades need no separate
+manual-close request. No full functional retest is needed for this icon-only change.
+Do not resume lifecycle fixes or automated release work under this scope. No complete
+hardware matrix or public release is claimed.

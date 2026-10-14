@@ -105,6 +105,8 @@ N4 Pro stores a single static boot/standby logo on the device, separate from PC-
 
 Touch alignment across plugins, extended use and reboot recovery need broader hardware testing. [Report issues](https://github.com/restarea92/hellgato/issues) with your device, Stream Deck version and reproduction steps. Review logs and exported profiles for personal information before sharing.
 
+In installed branch build `bb51866`, quitting only Hellgato leaves the last screen visible for tens of seconds before native standby. Relaunching Hellgato while Stream Deck stays open requires manual network pairing; key icons work after pairing.
+
 ## Documentation and contributing
 
 See the [guide](docs/guide.md) for everyday use, local data, builds and contributing, or the [Node bridge API](packages/core) for device integrations. Bug fixes, hardware reports and [translation feedback](https://github.com/restarea92/hellgato/issues/new?template=translation.yml) are welcome.
@@ -123,9 +125,10 @@ The older [isolated IPC trial](docs/compatibility/ipc-trial.md) remains availabl
 for development; the ordinary installer now includes the worker directly.
 The device owner confirmed initial icons, USB reconnect with automatic pairing,
 native standby after Stream Deck exit, and automatic reconnect after Stream Deck
-restart on installed build `bb51866`. The remaining normal-app checks and complete
-hardware recipe are pending. These branch results do not describe the older public
-`v0.1.1` download linked above.
+restart on installed build `bb51866`, along with button/knob/touch actions,
+profile/page image changes, display/knob brightness and sleep/wake. The complete
+hardware recipe remains unverified. These branch results do not describe the older
+public `v0.1.1` download linked above.
 See the [architecture and staged rollout](docs/architecture/0001-device-neutral-sdk.md),
 [adapter guide](docs/adapters/contributing.md), and
 [evidence requirements](docs/compatibility/architecture-candidate.md).

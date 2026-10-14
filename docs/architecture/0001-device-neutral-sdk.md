@@ -58,10 +58,13 @@ implemented alongside compatibility tests. An isolated, manifest-bound
 supervisor alongside the ordinary installer, which now bundles the same separated
 worker directly. Its frozen self-test uses the fake backend; actual Windows
 artifact checks and the physical recipe remain distinct evidence. The device owner
-confirmed four installed `bb51866` checks: initial icons, USB reconnect with icons
+confirmed installed `bb51866` checks for initial icons, USB reconnect with icons
 and automatic pairing, Stream Deck exit to native standby, and automatic reconnect
-after Stream Deck restart. Core actions, profiles, brightness, sleep/wake and
-Hellgato restart checks remain pending; the complete hardware recipe is not passed.
+after Stream Deck restart, plus normal input/actions, profile/page images,
+display/knob brightness and sleep/wake. Hellgato-only exit leaves the last screen
+visible for tens of seconds before native standby; Hellgato-only relaunch while
+Stream Deck remains open requires manual pairing, after which icons work. The
+complete hardware recipe is not passed, and no public release is claimed.
 
 Separate runtime/CompatibilityTools ZIP publication is phase B and is not offered
 by this candidate. The portable trial is a product test bundle, not that independent

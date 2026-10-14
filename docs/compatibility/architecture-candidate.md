@@ -15,8 +15,11 @@ testing; normal-app checks use the installed GUI and its build manifest.
 For the installed `bb51866` build, the device owner confirmed initial key icons,
 USB reconnect restoring icons and automatic pairing, Stream Deck exit promptly
 returning to native standby, and automatic reconnect after Stream Deck restart.
-These four checks do not establish complete parity. Core actions, profile changes,
-brightness, sleep/wake and Hellgato restart checks remain pending.
+The owner also passed button/knob/touch actions, profile/page image changes,
+display/knob brightness and sleep/wake. Quitting only Hellgato leaves the last
+screen visible for tens of seconds before native standby; relaunching Hellgato
+while Stream Deck remains open requires manual pairing, after which icons work.
+These recorded checks do not establish complete parity.
 
 Evidence categories:
 
@@ -32,5 +35,5 @@ Evidence categories:
 
 The Windows default engine has changed, but the complete checklist in
 `tests/hardware/README.md` remains incomplete. Unknown or untested support is
-experimental; the four installed checks do not broaden device/firmware support or
+experimental; the recorded installed checks do not broaden device/firmware support or
 establish a public release.
