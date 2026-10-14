@@ -252,7 +252,7 @@ class Session:
                 self.status('detail.stopped', 'idle')
 
     def run_bridge(self, host, presence, environment):
-        """Keep one network identity for the entire prepared host lifetime."""
+        """Keep the saved dock listening while prepared host lifetimes change."""
         self.stop_file.unlink(missing_ok=True)
         for signal in (self.listening, self.connected, self.device_ready, self.bridge_ready):
             signal.clear()
@@ -267,6 +267,7 @@ class Session:
             reader.start()
             started, next_ui = time.monotonic(), 0
             notified, native_ui_ready, attempts = False, False, 0
+            observed_host, prepared_host = host, host
             reason = 'worker-exited'
             try:
                 while self.bridge.poll() is None:
@@ -279,13 +280,33 @@ class Session:
                         # A denied or transient snapshot is not evidence of exit.
                         logging.warning('Host observation failed; preserving the current bridge', exc_info=True)
                         continue
-                    if current != host:
-                        reason = 'host-exited' if current is None else 'host-changed'
-                        break
                     now = time.monotonic()
+                    if current != observed_host:
+                        observed_host, prepared_host = current, None
+                        native_ui_ready, attempts, next_ui = False, 0, 0
+                        notified, started = False, now
+                    if current is None:
+                        self.connected.clear()
+                        self.status('detail.host_waiting', 'pairing')
+                        continue
+                    if current.executable.resolve() != default_executable().resolve():
+                        raise RuntimeError('Stream Deck is running from a different installation')
+                    if prepared_host != current:
+                        readiness = read_status(current)
+                        if readiness is None:
+                            self.status('detail.startup_reopen', 'pairing')
+                            continue
+                        if readiness.state in (3, 4):
+                            self.startup_failed(INCOMPATIBLE)
+                            reason = 'host-incompatible'
+                            return False
+                        if not readiness.ready:
+                            self.status('detail.starting', 'starting')
+                            continue
+                        prepared_host = current
                     if self.bridge_ready.is_set() and not native_ui_ready and attempts < 3 and now >= next_ui:
                         attempts += 1
-                        native_ui_ready = self.prepare_native_ui(host.pid, environment, log)
+                        native_ui_ready = self.prepare_native_ui(current.pid, environment, log)
                         next_ui = time.monotonic() + 3
                     if not notified and not self.connected.is_set() and now - started > 15:
                         self.status('detail.first_pairing', 'pairing')

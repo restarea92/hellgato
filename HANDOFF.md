@@ -34,6 +34,13 @@ clear sent when the SDK opens a session. Previously only initialization and
 wake restoration refreshed that composite. Focused sequence tests pass; the
 replacement installer's physical result is still pending.
 
+The product keeps its CORA listener and sockets through USB worker generations,
+releases held inputs, and reapplies pending display output after fresh readiness.
+The desktop launcher also keeps the listener alive while Stream Deck restarts,
+so the host can dial its saved dock during startup. It revalidates the new host
+before loading native controls. Hellgato itself restarting while Stream Deck is
+already open can still require manual pairing; no automatic host restart is used.
+
 Display diagnostics contain fixed per-surface counters and brightness/last-writer
 summaries, never image bytes, raw identities, profile content or credentials.
 

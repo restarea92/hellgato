@@ -64,9 +64,19 @@ function fixture(extra = {}) {
   const runner = createCandidateRunner(value, { selfTest: true, adapter, readiness: extra.readiness ?? readiness,
     bridgeFactory: options => {
       const bridge = new EventEmitter(); bridge.options = options; bridge.inputs = []; bridge.sequence = 0;
+      bridge.startCount = 0; bridge.stopCount = 0; bridge.releaseCount = 0; bridge.heldKeys = new Set();
+      bridge.primaryConnected = false; bridge.childConnected = false;
+      for (const [event, connected] of [['clientConnected', true], ['clientDisconnected', false]]) bridge.on(event, detail => {
+        bridge[detail?.role === 'primary' ? 'primaryConnected' : 'childConnected'] = connected;
+      });
       bridge.ports = { primary: 5343, child: 5344 };
-      bridge.start = async () => {}; bridge.stop = async () => {};
-      bridge.sendInput = event => { bridge.inputs.push(event); return true; };
+      bridge.start = async () => { bridge.startCount++; }; bridge.stop = async () => { bridge.stopCount++; };
+      bridge.releaseInputs = () => { bridge.releaseCount++; bridge.heldKeys.clear(); };
+      bridge.sendInput = event => {
+        bridge.inputs.push(event);
+        if (event.type === 'key') event.state === 'down' ? bridge.heldKeys.add(event.index) : bridge.heldKeys.delete(event.index);
+        return true;
+      };
       bridge.output = payload => bridge.emit('output', { ...payload, deviceId: device.id, sessionId: options.sessionId,
         generation: options.generation, sequence: ++bridge.sequence });
       bridges.push(bridge); return bridge;
@@ -121,6 +131,8 @@ test('ordinary product events require an explicit boolean product mode', async (
   const f = fixture({ config: { productMode: false } });
   try {
     await f.runner.start(); f.bridges[0].emit('clientConnected', { role: 'primary' });
+    f.bridges[0].emit('clientDisconnected', { role: 'primary' });
+    f.adapter.emitInput({ type: 'key', index: 0, state: 'up' }); assert.equal(f.bridges[0].inputs.length, 1);
     await f.runner.control({ control: 'brightness', value: 71 });
     await f.runner.reconnect(); await f.runner.stop();
     assert.deepEqual(f.events, []);
@@ -173,15 +185,15 @@ test('primary and child pairing events remain distinct while fresh child readine
     f.bridges[0].emit('clientConnected', { role: 'primary', detail: ['private-host-details'] });
     f.bridges[0].emit('clientDisconnected', { role: 'primary', detail: ['private-host-details'] });
     f.adapter.emitInput({ type: 'key', index: 0, state: 'up' });
-    assert.equal(f.bridges[0].inputs.length, 1);
+    assert.equal(f.bridges[0].inputs.length, 0);
     f.bridges[0].emit('clientDisconnected', { role: 'child', detail: ['private-host-details'] });
     f.bridges[0].emit('clientConnected', { role: 'child', detail: ['private-host-details'] });
     f.adapter.emitInput({ type: 'key', index: 1, state: 'down' });
-    assert.equal(f.bridges[0].inputs.length, 1);
+    assert.equal(f.bridges[0].inputs.length, 0);
     await assert.rejects(f.runner.control({ control: 'brightness', value: 50 }), { code: 'CANDIDATE_CONTROL_NOT_READY' });
     release(); await tick();
     f.adapter.emitInput({ type: 'key', index: 1, state: 'up' });
-    assert.equal(f.bridges[0].inputs.length, 2); assert.equal(checks, 2);
+    assert.equal(f.bridges[0].inputs.length, 1); assert.equal(checks, 2);
     const paired = f.events.filter(event => event.event.includes('.client'));
     assert.deepEqual(paired.map(event => event.event), ['primary.clientConnected', 'primary.clientDisconnected', 'child.clientDisconnected', 'child.clientConnected']);
     for (const event of paired) { assert.equal(event.schemaVersion, 1); assert.equal(event.generation, 1); }
@@ -205,11 +217,65 @@ test('physical disconnect publishes recovery and restored readiness with a fresh
     assert.equal(lifecycle[3].deviceId, f.adapter.device.id);
     assert.equal((await f.runner.getWorkerState()).brightness, 71);
     assert.equal(f.adapter.outputs.at(-1).data, frame('key:0', 7).data); assert.equal(f.adapter.outputs.at(-1).generation, 2);
-    const before = f.events.length;
+    assert.equal(f.bridges.length, 1); assert.equal(f.bridges[0].startCount, 1); assert.equal(f.bridges[0].stopCount, 0);
     f.bridges[0].emit('clientConnected', { role: 'child' }); await tick();
-    assert.equal(f.events.length, before);
+    assert.equal(f.events.at(-1).event, 'child.clientConnected');
   } finally { await f.runner.stop(); }
+  assert.equal(f.bridges[0].stopCount, 1);
   assert.equal(f.events.at(-1).event, 'stopped'); assert.equal(f.events.at(-1).generation, 2);
+});
+
+test('offline host frames coalesce on the retained bridge and resume with stable input sequence without held replay', async () => {
+  const f = fixture({ config: { reconnect: { maxAttempts: 1, delayMs: 10 } } });
+  let missing = false;
+  const discover = f.adapter.discover.bind(f.adapter);
+  f.adapter.discover = options => missing ? Promise.resolve([]) : discover(options);
+  try {
+    await f.runner.start(); const bridge = f.bridges[0];
+    f.adapter.emitInput({ type: 'key', index: 0, state: 'down' });
+    bridge.output(frame('key:0', 7)); await waitUntil(() => f.runner.getStatus().counters.frameWrites === 1);
+    missing = true; f.adapter.disconnect();
+    await waitUntil(() => f.runner.getStatus().state === 'reconnecting' && bridge.releaseCount > 0);
+    const afterRelease = bridge.inputs.length;
+    assert.equal(bridge.heldKeys.size, 0); assert.deepEqual(bridge.inputs.map(event => event.state), ['down', 'up']);
+    for (let byte = 10; byte < 20; byte++) bridge.output(frame('key:0', byte));
+    await tick();
+    assert.equal(f.runner.getStatus().counters.frameWrites, 1); assert.equal(bridge.stopCount, 0);
+    missing = false;
+    await waitUntil(() => f.runner.getStatus().state === 'ready' && f.runner.getStatus().counters.frameWrites === 2);
+    const generation = f.runner.getStatus().generation;
+    assert.ok(generation >= 2); assert.equal(f.bridges.length, 1); assert.equal(bridge.startCount, 1); assert.equal(bridge.stopCount, 0);
+    assert.equal(f.adapter.outputs.at(-1).data, frame('key:0', 19).data); assert.equal(f.adapter.outputs.at(-1).generation, generation);
+    assert.equal(bridge.inputs.length, afterRelease); assert.equal(bridge.heldKeys.size, 0);
+    f.adapter.emitInput({ type: 'key', index: 1, state: 'down' }); f.adapter.emitInput({ type: 'key', index: 1, state: 'up' });
+    assert.deepEqual(bridge.inputs.map(event => event.sequence), [1, 2, 3, 4]);
+    assert.deepEqual(bridge.inputs.map(event => event.generation), [1, 1, 1, 1]);
+    assert.equal(bridge.inputs.filter(event => event.index === 0 && event.state === 'down').length, 1);
+  } finally { missing = false; await f.runner.stop(); }
+  assert.equal(f.bridges[0].stopCount, 1);
+});
+
+test('primary disconnect gates product input until an already-connected child passes fresh readiness', async () => {
+  let checks = 0, release;
+  const f = fixture({ readiness: ({ profile }) => {
+    const report = { ready: true, targetId: profile.target.id, profileId: profile.id,
+      host: { pid: 12, creationTime: String(++checks), executableDigest: 'b'.repeat(64) }, preparation: ['streamdeck-plus-ten-key'] };
+    return checks <= 2 ? report : new Promise(resolve => { release = () => resolve(report); });
+  } });
+  try {
+    await f.runner.start(); const bridge = f.bridges[0];
+    bridge.emit('clientConnected', { role: 'child' }); await tick();
+    f.adapter.emitInput({ type: 'key', index: 0, state: 'up' }); assert.equal(bridge.inputs.length, 1);
+    bridge.emit('clientDisconnected', { role: 'primary' });
+    f.adapter.emitInput({ type: 'key', index: 0, state: 'down' }); assert.equal(bridge.inputs.length, 1);
+    await assert.rejects(f.runner.control({ control: 'brightness', value: 50 }), { code: 'CANDIDATE_CONTROL_NOT_READY' });
+    bridge.emit('clientConnected', { role: 'primary' });
+    assert.equal(checks, 3); assert.equal(bridge.childConnected, true);
+    f.adapter.emitInput({ type: 'key', index: 1, state: 'down' }); assert.equal(bridge.inputs.length, 1);
+    release(); await tick();
+    f.adapter.emitInput({ type: 'key', index: 1, state: 'up' }); assert.equal(bridge.inputs.length, 2);
+    assert.equal(f.bridges.length, 1); assert.equal(bridge.startCount, 1);
+  } finally { release?.(); await f.runner.stop(); }
 });
 
 test('knob preview submits observed output without changing saved settings or reconnect intent', async () => {

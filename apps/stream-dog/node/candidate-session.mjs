@@ -257,7 +257,7 @@ export function createCandidateRunner(input, dependencies = {}) {
     saveCandidateSettings(config, settings); product('settingsChanged', { settings: { ...settings } });
   }, persistControl: payload => pendingOutputs.get(`${payload.generation}:${payload.sequence}`)?.persist !== false, count, record,
     journal: createDisplayJournal({ lcdMode: config.screensaverMode === 'stream' ? 'stream-screensaver' : 'normal' }), observations });
-  let activeBridge, hostApproved = false, hostEpoch = 0, outputFailure;
+  let activeBridge, retainedNetwork, hostApproved = false, hostEpoch = 0, outputFailure;
   let pendingControlCount = 0;
   const pendingOutputs = new Map();
   const rejectOutputs = error => {
@@ -268,7 +268,13 @@ export function createCandidateRunner(input, dependencies = {}) {
     if (stopping || outputFailure) return;
     outputFailure = error; hostApproved = false;
     count('diagnostics'); record('diagnostic', { code: diagnosticCode(error), generation: session.generation });
-    void session.stop().then(() => terminal(error), () => terminal(new CandidateError('CLEANUP_FAILED')));
+    void session.stop().then(async () => { await closeRetainedNetwork(); terminal(error); })
+      .catch(async () => { await closeRetainedNetwork().catch(() => {}); terminal(new CandidateError('CLEANUP_FAILED')); });
+  };
+  const closeRetainedNetwork = async () => {
+    if (!retainedNetwork) return;
+    const network = retainedNetwork; await network.close();
+    if (retainedNetwork === network) retainedNetwork = null;
   };
   const inspect = dependencies.readiness ?? createCandidateReadiness(config.readiness);
   const readiness = async context => {
@@ -281,12 +287,50 @@ export function createCandidateRunner(input, dependencies = {}) {
     return report;
   };
   const bridgeFactory = async options => {
-    const bridge = await (dependencies.bridgeFactory ?? createDeviceBridge)({ ...options, sleepDuration: controls.sleepDuration ?? 0 });
+    let network = config.productMode ? retainedNetwork : null;
+    if (!network) {
+      const bridge = await (dependencies.bridgeFactory ?? createDeviceBridge)({ ...options, sleepDuration: controls.sleepDuration ?? 0 });
+      // Stream Deck discovers saved docks at launch; USB recovery must retain listeners and sockets.
+      network = { bridge, options, current: null, inputSequence: 0, started: false };
+      network.queue = createCandidateOutputQueue({ submit: payload => network.current.submit(payload), observeFrame: observations.displayFrame });
+      const output = payload => {
+        network.queue.enqueue(payload).catch(error => {
+          if (!stopping && !['CANDIDATE_HOST_DISCONNECTED', 'CANDIDATE_SESSION_ENDED'].includes(error.code)) failOutput(error);
+        });
+      };
+      const relayOutput = payload => { if (config.screensaverMode !== 'native' || payload.surfaceId !== 'lcd') output(payload); };
+      const saver = () => { if (config.screensaverMode === 'native') output({ type: 'control', control: 'screensaver' }); };
+      const relay = event => detail => {
+        const role = detail?.role === 'primary' ? 'primary' : 'child';
+        product(`${role}.${event}`);
+        const primaryLost = config.productMode && role === 'primary' && event === 'clientDisconnected';
+        const primaryReturned = config.productMode && role === 'primary' && event === 'clientConnected' && bridge.childConnected === true;
+        if (role === 'child' || primaryLost || primaryReturned) {
+          hostEpoch++; hostApproved = false;
+          network.queue.pause(); network.queue.reset(new CandidateError('CANDIDATE_HOST_DISCONNECTED'));
+          network.current?.facade.emit(event, role === 'primary' ? { role: 'child' } : detail);
+        } else network.current?.facade.emit(event, detail);
+      };
+      const connected = relay('clientConnected'), disconnected = relay('clientDisconnected');
+      const diagnostic = detail => { count('diagnostics'); record('diagnostic', { code: diagnosticCode(detail), generation: session.generation }); };
+      bridge.on('output', relayOutput); bridge.on('lcdFrameStarted', saver); bridge.on('diagnostic', diagnostic);
+      bridge.on('clientConnected', connected); bridge.on('clientDisconnected', disconnected);
+      network.close = async () => {
+        network.queue.close(new CandidateError('CANDIDATE_SESSION_ENDED'));
+        bridge.off('output', relayOutput); bridge.off('lcdFrameStarted', saver); bridge.off('diagnostic', diagnostic);
+        bridge.off('clientConnected', connected); bridge.off('clientDisconnected', disconnected);
+        bridge.releaseInputs?.(); await bridge.stop(); network.started = false;
+      };
+      if (config.productMode) retainedNetwork = network;
+    } else if (network.options.device.id !== options.device.id || network.options.sessionId !== options.sessionId) {
+      throw new CandidateError('CANDIDATE_CONFIG_INVALID');
+    }
+    const bridge = network.bridge;
     const facade = new EventEmitter();
     let sequence = 0;
     const envelope = { deviceId: options.device.id, sessionId: options.sessionId, generation: options.generation };
     let closed = false;
-    const outputQueue = createCandidateOutputQueue({ submit: payload => new Promise((resolve, reject) => {
+    network.current = { facade, submit: payload => new Promise((resolve, reject) => {
       const { persist, ...value } = payload;
       const stamped = { ...value, ...envelope, sequence: ++sequence };
       const key = `${options.generation}:${stamped.sequence}`;
@@ -298,43 +342,30 @@ export function createCandidateRunner(input, dependencies = {}) {
       pendingOutputs.set(key, { resolve, reject, timer, persist });
       try { facade.emit('output', stamped); }
       catch (error) { pendingOutputs.delete(key); clearTimeout(timer); reject(error); }
-    }), observeFrame: observations.displayFrame });
-    const output = payload => {
-      outputQueue.enqueue(payload).catch(error => {
-        if (!closed && !['CANDIDATE_HOST_DISCONNECTED', 'CANDIDATE_SESSION_ENDED'].includes(error.code)) failOutput(error);
-      });
-    };
-    const relayOutput = payload => { if (config.screensaverMode !== 'native' || payload.surfaceId !== 'lcd') output(payload); };
-    const saver = () => { if (config.screensaverMode === 'native') output({ type: 'control', control: 'screensaver' }); };
-    const relay = event => detail => {
-      const role = detail?.role === 'primary' ? 'primary' : 'child';
-      product(`${role}.${event}`);
-      if (detail?.role !== 'primary') {
-        hostEpoch++; hostApproved = false;
-        outputQueue.pause(); outputQueue.reset(new CandidateError('CANDIDATE_HOST_DISCONNECTED'));
-      }
-      facade.emit(event, detail);
-    };
-    const connected = relay('clientConnected'), disconnected = relay('clientDisconnected');
-    const diagnostic = detail => { count('diagnostics'); record('diagnostic', { code: diagnosticCode(detail), generation: options.generation }); };
-    bridge.on('output', relayOutput); bridge.on('lcdFrameStarted', saver); bridge.on('diagnostic', diagnostic);
-    bridge.on('clientConnected', connected); bridge.on('clientDisconnected', disconnected);
+    }) };
     Object.assign(facade, { generation: options.generation,
       async start() {
-        await bridge.start();
+        if (!network.started) { await bridge.start(); network.started = true; }
         product('bridgeReady'); product('started', { ports: { primary: bridge.ports?.primary ?? null, child: bridge.ports?.child ?? null } });
       },
-      sendInput: event => bridge.sendInput(event), resumeOutput: () => outputQueue.resume(),
+      sendInput: event => bridge.sendInput(config.productMode ? { ...event, generation: network.options.generation,
+        sessionId: network.options.sessionId, sequence: ++network.inputSequence } : event),
+      resumeOutput: () => { if (!closed && network.current?.facade === facade) network.queue.resume(); },
       async stop() {
+        if (closed) return;
         if (activeBridge === facade) { hostEpoch++; hostApproved = false; }
-        closed = true; outputQueue.close(new CandidateError('CANDIDATE_SESSION_ENDED'));
+        closed = true; network.queue.reset(new CandidateError('CANDIDATE_SESSION_ENDED'),
+          { retainPending: config.productMode && !stopping && !outputFailure });
         rejectOutputs(new CandidateError('CANDIDATE_SESSION_ENDED'));
-        bridge.off('output', relayOutput); bridge.off('lcdFrameStarted', saver); bridge.off('diagnostic', diagnostic);
-        bridge.off('clientConnected', connected); bridge.off('clientDisconnected', disconnected);
+        bridge.releaseInputs?.();
+        if (network.current?.facade === facade) network.current = null;
         if (activeBridge === facade) activeBridge = null;
-        await bridge.stop();
+        if (!config.productMode || stopping || outputFailure) {
+          await network.close();
+          if (retainedNetwork === network) retainedNetwork = null;
+        }
       },
-      control: payload => outputQueue.enqueue({ ...payload, type: 'control' }),
+      control: payload => network.queue.enqueue({ ...payload, type: 'control' }),
     });
     Object.defineProperty(facade, 'ports', { get: () => bridge.ports });
     activeBridge = facade; return facade;
@@ -371,7 +402,7 @@ export function createCandidateRunner(input, dependencies = {}) {
       if (!stopping) {
         // A failed final cleanup must still settle the supervisor's completion
         // promise. The Windows job remains responsible for any unreaped process.
-        try { await session.stop(); }
+        try { await session.stop(); await closeRetainedNetwork(); }
         catch { error = new CandidateError('CLEANUP_FAILED'); }
         finally { terminal(error); }
         throw error;
@@ -394,6 +425,7 @@ export function createCandidateRunner(input, dependencies = {}) {
   });
   session.on('adapterState', detail => {
     if (!stopping && ['disconnected', 'failed', 'crashed'].includes(detail.state ?? detail.status) && disconnectedGeneration !== session.generation) {
+      retainedNetwork?.queue.pause();
       disconnectedGeneration = session.generation; product('deviceDisconnected', { code: 'ADAPTER_DISCONNECTED' });
     }
   });
@@ -446,6 +478,7 @@ export function createCandidateRunner(input, dependencies = {}) {
       stopPromise = (async () => {
         try {
           await session.stop();
+          await closeRetainedNetwork();
           if (startPromise) await startPromise.catch(() => {});
           if (recovery) await recovery.catch(() => {});
           if (diagnosticsFailure) throw diagnosticsFailure;

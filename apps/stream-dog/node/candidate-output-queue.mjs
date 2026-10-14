@@ -26,9 +26,11 @@ function queuedPayload(payload) {
 }
 
 function supersedes(next, previous) {
-  return next.type === 'frame' && next.region === undefined && previous.type === 'frame' &&
-    next.surfaceId === previous.surfaceId && next.format === previous.format &&
-    next.width === previous.width && next.height === previous.height;
+  if (next.type !== 'frame' || previous.type !== 'frame' || next.surfaceId !== previous.surfaceId ||
+      next.format !== previous.format || next.width !== previous.width || next.height !== previous.height) return false;
+  const a = next.region ?? { x: 0, y: 0, width: next.width, height: next.height };
+  const b = previous.region ?? { x: 0, y: 0, width: previous.width, height: previous.height };
+  return a.x <= b.x && a.y <= b.y && a.x + a.width >= b.x + b.width && a.y + a.height >= b.y + b.height;
 }
 
 /** Product-only admission and pacing. Pending frames are not acknowledged
@@ -103,8 +105,12 @@ export function createCandidateOutputQueue({ submit, observeFrame = () => {}, ma
     },
     pause() { paused = true; },
     resume() { if (!closed) { paused = false; schedule(); } },
-    reset(reason = new CandidateError('CANDIDATE_HOST_DISCONNECTED')) {
-      epoch++; paused = true; discard(reason);
+    reset(reason = new CandidateError('CANDIDATE_HOST_DISCONNECTED'), { retainPending = false } = {}) {
+      epoch++; paused = true;
+      if (retainPending) {
+        for (const item of pending) item.epoch = epoch;
+        if (active) settle(active, 'reject', reason);
+      } else discard(reason);
     },
     close(reason = new CandidateError('CANDIDATE_SESSION_ENDED')) {
       if (closed) return;

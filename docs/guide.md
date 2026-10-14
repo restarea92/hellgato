@@ -4,7 +4,7 @@
 
 ## Everyday use
 
-- **Connection:** open Stream Deck yourself, connect one N4 Pro over USB and open Hellgato Stream Dog. Startup support prepares the ten-key model during every Stream Deck launch, including launches without USB hardware. Complete Stream Deck's pairing confirmation when prompted. Closing Stream Deck stops the bridge and waits for your next Stream Deck launch. Removing and reconnecting USB reopens the USB handles while the Node bridge stays running. The control changes between Connect, Cancel and Disconnect to match the current state.
+- **Connection:** open Stream Deck yourself, connect one N4 Pro over USB and open Hellgato Stream Dog. Startup support prepares the ten-key model during every Stream Deck launch, including launches without USB hardware. Complete Stream Deck's pairing confirmation when prompted. Once connected, Hellgato keeps the network listener available during USB reconnection and Stream Deck restart. A new Stream Deck process must pass preparation checks before input and display forwarding resume. Restarting Hellgato while Stream Deck stays open can still require manual network pairing. The control changes between Connect, Cancel and Disconnect to match the current state.
 - **File menu:** export this device's profiles into one `.hellgatoProfiles` bundle (`Ctrl+E`), or import a bundle or several `.streamDeckProfile` files (`Ctrl+I`). Close Stream Deck yourself before importing. Imports back up replaced profiles; open Stream Deck again yourself afterward to resume a previously active Hellgato connection.
 - **Tray:** closing the window keeps Hellgato running. Choose Open or Exit from its tray menu.
 - **Startup:** the installer's finish page offers separate checkboxes to launch Hellgato Stream Dog now and at Windows sign-in. Stream Deck keeps its own startup setting. During normal use, Hellgato Stream Dog waits for you to open Stream Deck and does not launch, close or restart it.
@@ -39,7 +39,7 @@ Brightness, idle timeout, full LCD images, full-screen and individual-key color 
 
 Sleep without a screensaver uses N4 Pro's native screen-off command. With a screensaver, the image appears first and dims over 0.3 seconds to the LCD's minimum brightness, while knob lighting turns off immediately. Wake restores action images while dim/off, then fades back to the Stream Deck brightness and restores the selected knob brightness. Display animations do not reset the idle timer. Sleep timing is stored per virtual device and returned to Stream Deck after reconnection. Manual Sleep is recognized early when a recent key release is followed by timeout-disable and brightness-fade commands; when Stream Deck sends only brightness changes, screen-off waits for its zero-brightness command.
 
-Hardware checks confirmed the 5×2 layout when Stream Deck starts without USB hardware, operation of both rightmost keys after connection, USB reconnection while the virtual network device stays connected, and reconnection after manually quitting and reopening Stream Deck. Hellgato leaves a manually closed Stream Deck closed. Native knob brightness controls were also verified. Earlier beta checks covered five-minute idle activation, screensaver dimming and wake behavior.
+Hardware checks of the earlier bridge confirmed the 5×2 layout when Stream Deck starts without USB hardware, both rightmost keys, USB reconnection, Stream Deck relaunch and native knob brightness. The integrated IPC build is undergoing physical regression checks; automated checks alone do not establish the same hardware behavior. Hellgato leaves a manually closed Stream Deck closed. Earlier beta checks covered five-minute idle activation, screensaver dimming and wake behavior.
 
 Automated registry tests cover persistence across restarts, physical-serial matching after USB port changes, USB-path fallback and protection against reusing an assigned identity for another device. Physical identity recording and LCD button images were also verified after the Program Files migration. The image worker uses the writable user-data directory for SDK temporary images.
 
@@ -56,7 +56,7 @@ Mirabox StreamDock accepts 800×480 JPG/PNG images for the stored logo. Hellgato
 
 Elgato firmware updates do not apply to N4 Pro. Update controls and firmware-label actions are disabled for the selected virtual N4 Pro; genuine Elgato controls keep their normal behavior. The CORA bridge also rejects unsupported write operations before a success acknowledgement, logs the unsupported operation and closes that connection without a success reply. Firmware-version and discovery reads continue to work. The virtual device's reported compatibility version is separate from the N4 Pro's actual firmware.
 
-Closing Stream Deck stops the USB and CORA workers; Hellgato waits for the next user-initiated Stream Deck launch. Exiting or disconnecting Hellgato stops its workers. USB removal alone closes the USB handles and waits to reopen the device while preserving the Node CORA process. Pending hardware controls are cancelled during USB teardown, the heartbeat wait is interrupted, and the device is notified after display writers stop and before reader teardown when the transport is still available. Native disconnect and transport errors are logged. The last LCD image can remain until the device returns to its stored logo; hardware transition timing still needs measurement.
+Closing Stream Deck leaves Hellgato's network listener available for the next user-initiated Stream Deck launch. Exiting or disconnecting Hellgato stops its workers. USB removal closes the physical device handles while preserving the virtual network connection. Held inputs are released and are never replayed. Cached display state is restored when the USB worker reconnects. The last LCD image can remain until the device returns to its stored logo; hardware transition timing still needs measurement.
 
 ## How it works
 
@@ -68,11 +68,11 @@ Hellgato presents N4 Pro as a network-connected Stream Deck. The official app ru
   <img src="visuals/hellgato-network.gif" alt="N4 Pro exchanges input and display updates with the Python USB worker, Node.js CORA bridge and Stream Deck app." width="800">
 </p>
 
-Blue carries input toward Stream Deck; orange carries display updates toward N4 Pro. The virtual device is the identity exposed by CORA. The Python worker sends input over `stdin` and reads display events and images from local files. CORA uses `127.0.0.1:5343` for pairing and `127.0.0.1:5344` for device traffic. Screensavers use the original asset saved by Stream Deck, bypassing its per-frame display transport.
+Blue carries input toward Stream Deck; orange carries display updates toward N4 Pro. The virtual device is the identity exposed by CORA. The desktop supervisor starts a Node SDK session and a separate USB worker; correlated IPC messages carry controls, display frames and input. CORA uses `127.0.0.1:5343` for pairing and `127.0.0.1:5344` for device traffic. When available, screensavers use the original asset saved by Stream Deck.
 
 The device preferences extension uses Stream Deck's loaded public Qt APIs and matches the selected virtual device's exact serial. It sends authenticated requests to a local control endpoint; the USB worker applies them on its own thread. Each connection refreshes the endpoint token without adding duplicate preference rows. If the expected Qt layout or serial cannot be verified, the extension leaves the host UI unchanged. See [the native extension](../native/hellgato-ui) for its build and integration checks.
 
-DisplayMirror combines repeated updates to each key or touch region within a batch. The default frame mode sends only the changed touch-strip region after its initial frame.
+The SDK output queue combines replaceable updates to each display surface. The default frame mode sends only the changed touch-strip region after its initial frame. Full LCD writes finish with a hardware refresh after the key and touch surfaces have been submitted.
 
 ## Local data
 

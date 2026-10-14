@@ -20,6 +20,19 @@ test('stalled host admission compacts a repeated full-frame burst before any sub
   queue.close();
 });
 
+test('offline animation replaces covered partial regions without crossing a control barrier', async () => {
+  const submitted = [], queue = createCandidateOutputQueue({ submit: async payload => { submitted.push(payload); return { status: 'submitted' }; } });
+  const region = { x: 0, y: 0, width: 2, height: 4 };
+  const first = queue.enqueue(frame('touch', 'before', { region })), barrier = queue.enqueue(control(50));
+  const updates = Array.from({ length: 100 }, (_, index) => queue.enqueue(frame('touch', String(index), { region })));
+  assert.equal(queue.getStatus().retainedCount, 3); assert.equal(queue.getStatus().closed, false);
+  queue.resume();
+  const results = await Promise.all([first, barrier, ...updates]);
+  assert.equal(results.filter(result => result.status === 'superseded').length, 99);
+  assert.deepEqual(submitted, [frame('touch', 'before', { region }), control(50), frame('touch', '99', { region })]);
+  queue.close();
+});
+
 test('partial regions and controls keep their order; full frames supersede only matching suffix history', async () => {
   const submitted = [], queue = createCandidateOutputQueue({ submit: async payload => { submitted.push(payload); return { status: 'submitted' }; } });
   const left = frame('key:0', 'left', { region: { x: 0, y: 0, width: 2, height: 4 } });
@@ -107,6 +120,22 @@ test('reset cancels old callers while retaining in-flight credit and ignores a s
   ack.reject(new Error('stale submission failure'));
   assert.deepEqual(await next, { status: 'submitted' });
   assert.deepEqual(submitted.map(payload => payload.data), ['old', 'new']); assert.equal(queue.getStatus().closed, false); queue.close();
+});
+
+test('USB reset retains pending host intent while cancelling the old in-flight submission', async () => {
+  const ack = deferred(), submitted = [], queue = createCandidateOutputQueue({ submit: payload => {
+    submitted.push(payload); return submitted.length === 1 ? ack.promise : { status: 'submitted' };
+  } });
+  const active = observe(queue.enqueue(frame('key:0', 'old'))), pending = queue.enqueue(frame('key:1', 'pending'));
+  queue.resume(); await tick();
+  queue.reset(Object.assign(new Error('USB lost'), { code: 'CANDIDATE_SESSION_ENDED' }), { retainPending: true });
+  assert.equal((await active).error.code, 'CANDIDATE_SESSION_ENDED');
+  assert.equal(queue.getStatus().pendingCount, 1); assert.equal(queue.getStatus().paused, true);
+  const offline = queue.enqueue(frame('key:0', 'offline'));
+  queue.resume(); ack.reject(new Error('stale worker failure'));
+  await Promise.all([pending, offline]);
+  assert.deepEqual(submitted.map(payload => payload.data), ['old', 'pending', 'offline']);
+  assert.equal(queue.getStatus().closed, false); queue.close();
 });
 
 test('close cancels callers immediately and never submits pending output after a late ACK', async () => {
