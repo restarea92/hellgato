@@ -196,3 +196,16 @@ test('npm finalization API is blocked before creating package tags or GitHub rel
   await assert.rejects(blockedFinalizeNpm({ api: async () => { calls++; } }), /hard-disabled/);
   assert.equal(calls, 0);
 });
+
+
+test('clean-checkout CI builds public core exports before facade tests and type checks', async () => {
+  for (const file of ['checks.yml', 'release.yml']) {
+    const yaml = await readFile(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8');
+    const block = file === 'release.yml' ? yaml.slice(yaml.indexOf('  npm-build:\n'), yaml.indexOf('  verified:\n')) : yaml;
+    const build = block.indexOf('pnpm run build:npm');
+    const tests = block.indexOf('pnpm test');
+    const types = block.indexOf('pnpm run typecheck');
+    assert.ok(build >= 0 && tests > build && types > build, `${file} must generate packages/core/dist before resolving public package exports`);
+    assert.match(block, /pnpm run prepare:cora\n\s+pnpm run build:npm\n\s+pnpm run typecheck\n\s+pnpm test/);
+  }
+});

@@ -135,9 +135,9 @@ jobs:
           npm install --global npm@11.9.0 --ignore-scripts
           pnpm run release:metadata:check
           pnpm run prepare:cora
-          pnpm test
           pnpm run build:npm
           pnpm run typecheck
+          pnpm test
           node scripts/pack-npm.mjs --destination dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
           node scripts/verify-npm.mjs --artifacts dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
       - id: identity

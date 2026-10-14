@@ -150,8 +150,9 @@ pnpm install --frozen-lockfile
 pnpm run release:metadata:check
 pnpm run release:impact --base <base-sha>
 pnpm run prepare:cora
-pnpm test
 pnpm run build:npm
+pnpm run typecheck
+pnpm test
 node scripts/pack-npm.mjs --destination dist/npm
 node scripts/verify-npm.mjs --artifacts dist/npm
 python -m unittest discover -s test -p 'test_windows_release.py' -v

@@ -63,9 +63,9 @@ jobs:
         run: |
           node --input-type=module -e "import { assertNpmVersion } from './scripts/npm-release.mjs'; assertNpmVersion();"
           pnpm run prepare:cora
-          pnpm test
           pnpm run build:npm
           pnpm run typecheck
+          pnpm test
           node scripts/pack-npm.mjs --destination dist/npm
           node scripts/verify-npm.mjs --artifacts dist/npm
       - name: Install Python test dependencies

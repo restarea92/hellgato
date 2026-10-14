@@ -159,7 +159,7 @@ Open an issue or submit a pull request with a focused change. Run both test suit
 
 ### npm bridge packages
 
-`hellgato` re-exports `@hellgato/core`. Both are built from `app/cora/bridge.mjs`, which the Windows app also uses. See [the core API](../packages/core) for usage and supported scope.
+`hellgato` composes explicit adapters and sessions around `@hellgato/core`. The canonical core source is `packages/core/src`; Stream Dog consumes the verified package artifacts. See [the core API](../packages/core) for usage and supported scope.
 
 Use Node 24 and the exact pnpm version in the root `packageManager` field:
 
@@ -167,9 +167,13 @@ Use Node 24 and the exact pnpm version in the root `packageManager` field:
 pnpm install --frozen-lockfile
 pnpm run prepare:cora
 pnpm run build:npm
+pnpm run typecheck
+pnpm test
 node scripts/pack-npm.mjs --destination dist/npm
 node scripts/verify-npm.mjs --artifacts dist/npm
 ```
+
+Build before running tests or type checks: facade imports resolve the public core exports in generated `packages/core/dist`, which is absent in a clean checkout.
 
 Changesets keeps the two npm versions fixed together. The source facade uses `workspace:*`; pnpm pack converts that to the exact core version inside the tarball. Both tarballs are inspected and installed into an isolated consumer for import and lifecycle checks. The root and Windows metadata workspaces stay private. Packages include the prepared DeckBridge runtime and license, so consumers need no Git checkout or build step.
 
