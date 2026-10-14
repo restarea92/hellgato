@@ -34,7 +34,7 @@ Windows or npm release was published while implementing the automation.
 | 10 | Bot PR required CI at exact head | Both version and download-docs workflows explicitly dispatch head-bound checks. Actual check attachment and configured branch protection must be verified after setup. |
 | 11 | Ordinary events cannot publish | Approval tests reject wrong PR, author, branch, owner, source and event; unchanged/no plan is a no-op. |
 | 12 | Stale plan/main advance | First-parent/base and reviewed-tree guards; stale/recomputed-tamper tests; exact-SHA checkout throughout. |
-| 13 | Frozen install/pack on Windows+Linux | Linux real pack/consumer passed; Checks matrix performs both platforms, with Windows CLI resolution regression fixtures. |
+| 13 | Frozen install/pack on Windows+Linux | Actual Linux and Windows pack/consumer checks passed on the implementation PR, with Windows CLI resolution and canonical provenance regression fixtures. |
 | 14 | All selected builds before writes | Read-only barrier requires every selected successful build and re-verifies all selected downloaded artifacts, including recovery, before either publisher. |
 | 15 | Tag/artifact/hash tampering blocked | Tag movement, raw ZIP SHA-256, safe exact ZIP members, tarball inventory and source/plan digest tests. |
 | 16 | npm partial success resumes | Core-present/facade-missing fixture skips identical core and completes facade only; both remote states preflight before writes. |
@@ -59,3 +59,25 @@ The draft implementation PR's final GitHub checks are the authority for actual
 Windows build status. A Linux test run is not a Windows installer test. Physical
 hardware/UI verification and npm trusted-publisher authentication remain separate
 from build and unit-test success. See [setup and activation](release-setup.md).
+
+
+## Action runtime migration
+
+The workflow action runtimes are distinct from the application's pinned Node
+24.19.0 toolchain. The [GitHub Node 20 retirement notice](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/)
+requires Node 24-native action metadata rather than warning-suppression variables.
+
+- `pnpm/action-setup` uses the exact [v5.0.0 commit](https://github.com/pnpm/action-setup/releases/tag/v5.0.0),
+  which declares Node 24 and retains the previously verified Windows installation
+  layout. The application still uses pnpm 11.10.0. The newer v6 installer changes
+  that layout, so adopting v6 requires separate Windows resolver verification.
+- [upload-artifact v7.0.2](https://github.com/actions/upload-artifact/releases/tag/v7.0.2)
+  explicitly keeps `archive: true` and `overwrite: false`; the artifact digest
+  remains the original ZIP SHA-256, not the executable or tarball hash.
+- [download-artifact v8.0.2](https://github.com/actions/download-artifact/releases/tag/v8.0.2)
+  explicitly keeps extraction enabled and fails digest mismatches. Original
+  artifact IDs, run IDs and unique run-attempt names remain required. Independent
+  exact ZIP/member/byte verification still runs before publication.
+
+Hosted runners observed during validation use runner 2.337.0, above the Node 24
+minimum 2.327.1. No forced-runtime environment workaround is used.
