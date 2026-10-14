@@ -184,9 +184,15 @@ test('handoff rejects symlink records and source-controlled release input aliase
 
 test('handoff rejects unrelated main ancestry and avoids writing any artifact', async t => {
   const f = await fixture(t);
+  const dependencyPath = resolve(ROOT, 'node_modules/@changesets/cli/bin.js');
+  const dependencyBytes = await readFile(dependencyPath);
   git(f.root, 'checkout', '--quiet', '--orphan', 'unrelated-main'); git(f.root, 'rm', '-rf', '--quiet', '.');
+  // Git traverses Windows junctions unless the orphan snapshot keeps its ignore policy.
+  await put(f.root, '.gitignore', 'node_modules\n');
   await put(f.root, 'README.md', 'unrelated main history\n'); const unrelated = commit(f.root);
+  assert.equal(git(f.root, 'ls-tree', '-r', '--name-only', unrelated, '--', 'node_modules').trim(), '');
   point(f.root, 'main', unrelated); git(f.root, 'checkout', '--quiet', CHANNEL_HANDOFF_BRANCH);
+  assert.deepEqual(await readFile(dependencyPath), dependencyBytes);
   await assert.rejects(generateChannelHandoff({ ...f, baseSha: unrelated, reason }));
   await assert.rejects(readFile(resolve(f.root, CHANNEL_HANDOFF_PATH)), /ENOENT/);
 });

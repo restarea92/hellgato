@@ -10,6 +10,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCT = ROOT / 'apps/stream-dog/python'
@@ -73,7 +74,7 @@ assert canonical.Message is importlib.import_module('i18n').Message
 ''', str(ROOT)])
 
     def test_both_entrypoints_read_same_version_away_from_checkout(self):
-        expected = json.loads((ROOT / 'app/release.json').read_text())['version']
+        expected = json.loads((ROOT / 'app/release.json').read_text(encoding='utf-8'))['version']
         for entry in ('app/hellgato.py', 'apps/stream-dog/python/stream-dog.py'):
             with self.subTest(entry=entry):
                 result = self.run_python([str(ROOT / entry), '--version'])
@@ -90,7 +91,7 @@ from hellgato_stream_dog.launcher import read_release_metadata
 fixture = Path.cwd() / 'metadata'
 (fixture / 'app').mkdir(parents=True)
 def check(value, accepted):
-    (fixture / 'app/release.json').write_text(json.dumps(value))
+    (fixture / 'app/release.json').write_text(json.dumps(value), encoding='utf-8')
     try:
         actual = read_release_metadata(fixture)
     except ValueError:
@@ -155,10 +156,9 @@ assert i18n.Translator(sys.argv[2], 'en').text('app.subtitle')
 ''', str(root), str(Path(temporary) / 'state')])
 
     def test_frozen_root_does_not_evaluate_source_parent_depth(self):
-        from unittest.mock import patch
         namespace = {'__file__': str(Path(Path.cwd().anchor) / 'paths.py')}
         with patch.object(sys, '_MEIPASS', str(ROOT), create=True):
-            exec(compile((CANONICAL / 'paths.py').read_text(), '<frozen paths>', 'exec'), namespace)
+            exec(compile((CANONICAL / 'paths.py').read_text(encoding='utf-8'), '<frozen paths>', 'exec'), namespace)
         self.assertEqual(namespace['ROOT'], ROOT)
 
     def test_legacy_device_engine_imports_canonical_product_state(self):
@@ -177,7 +177,7 @@ assert bridge.root == root
 ''', str(ROOT)])
 
     def test_installer_collects_canonical_product_and_legacy_alias_helper(self):
-        spec = (ROOT / 'installer/hellgato.spec').read_text()
+        spec = (ROOT / 'installer/hellgato.spec').read_text(encoding='utf-8')
         self.assertIn("Analysis([str(root / 'apps/stream-dog/python/stream-dog.py')]", spec)
         self.assertIn("include_tree('apps/stream-dog/python/hellgato_stream_dog', {'.py'})", spec)
         self.assertIn("(str(root / 'app/_product_compat.py'), 'app')", spec)
@@ -185,31 +185,39 @@ assert bridge.root == root
         self.assertIn("str(root / 'host-integrations/streamdeck/windows/python')", spec)
 
     def test_frozen_worker_inventories_policy_and_requires_pinned_windows_vendor(self):
-        spec = (ROOT / 'installer/mirabox-worker.spec').read_text()
+        spec = (ROOT / 'installer/mirabox-worker.spec').read_text(encoding='utf-8')
         self.assertIn("'hellgato_mirabox/models/n4_pro/firmware-policy.json'", spec)
         self.assertIn("if sys.platform == 'win32':", spec)
         self.assertIn("prepare['prepare_sdk'](root / 'work/references/mirabox', offline=True)", spec)
-        stage = (ROOT / 'scripts/stage-ipc-candidate.py').read_text()
+        stage = (ROOT / 'scripts/stage-ipc-candidate.py').read_text(encoding='utf-8')
         self.assertIn("digest(worker / '_internal' / firmware_policy)", stage)
 
     def test_wrapper_sources_do_not_duplicate_product_implementation(self):
         for relative in ('app/hellgato.py', 'app/ui.py', 'app/i18n.py',
                          'app/n4/settings.py', 'app/n4/device_registry.py', 'app/n4/profile_transfer.py'):
             with self.subTest(path=relative):
-                tree = ast.parse((ROOT / relative).read_text())
+                tree = ast.parse((ROOT / relative).read_text(encoding='utf-8'))
                 self.assertFalse(any(isinstance(node, (ast.FunctionDef, ast.ClassDef)) for node in ast.walk(tree)))
         for name in ALIASES.values():
-            tree = ast.parse((CANONICAL / f'{name}.py').read_text())
+            tree = ast.parse((CANONICAL / f'{name}.py').read_text(encoding='utf-8'))
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and node.module in ALIASES:
                     self.assertEqual(node.level, 1, f'{name}: product import must use its own package')
         self.assertTrue((ROOT / 'app/n4/bridge.py').is_file(), 'Compatibility runtime remains until hardware approval')
 
+    def test_source_boundaries_read_utf8_with_windows_locale_defaults(self):
+        read_text = Path.read_text
+        for default_encoding in ('cp949', 'cp1252'):
+            def locale_read(path, encoding=None, errors=None, newline=None):
+                return read_text(path, encoding=encoding or default_encoding, errors=errors, newline=newline)
+            with self.subTest(encoding=default_encoding), patch.object(Path, 'read_text', locale_read):
+                self.test_wrapper_sources_do_not_duplicate_product_implementation()
+
 
 class PythonLockTest(unittest.TestCase):
     def setUp(self):
-        self.project = tomllib.loads((ROOT / 'pyproject.toml').read_text())
-        self.lock = tomllib.loads((ROOT / 'uv.lock').read_text())
+        self.project = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
+        self.lock = tomllib.loads((ROOT / 'uv.lock').read_text(encoding='utf-8'))
 
     def test_environment_is_private_python_313_and_has_no_release_owner(self):
         self.assertEqual(self.project['project']['requires-python'], '>=3.13,<3.14')
@@ -229,7 +237,7 @@ class PythonLockTest(unittest.TestCase):
             self.assertEqual(packages[name]['version'], version)
 
     def test_all_registry_artifacts_are_content_pinned_and_export_is_derived(self):
-        requirements = (ROOT / 'installer/requirements-build.txt').read_text()
+        requirements = (ROOT / 'installer/requirements-build.txt').read_text(encoding='utf-8')
         self.assertIn('autogenerated by uv', requirements)
         self.assertIn('uv export --locked --only-group build --no-emit-workspace', requirements)
         self.assertNotIn('-e ', requirements)

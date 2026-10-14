@@ -4,6 +4,7 @@ import ast
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -17,11 +18,11 @@ spec.loader.exec_module(quality)
 
 class PythonQualityTests(unittest.TestCase):
     def test_quality_tools_are_pinned_and_part_of_locked_default_environment(self):
-        project = tomllib.loads((ROOT / 'pyproject.toml').read_text())
+        project = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
         self.assertEqual(set(project['dependency-groups']['check']), {'mypy==1.18.2', 'ruff==0.14.0'})
         self.assertIn('check', project['tool']['uv']['default-groups'])
         self.assertEqual(project['tool']['ruff']['required-version'], '==0.14.0')
-        lock = tomllib.loads((ROOT / 'uv.lock').read_text())
+        lock = tomllib.loads((ROOT / 'uv.lock').read_text(encoding='utf-8'))
         packages = {package['name']: package for package in lock['package']}
         for requirement in project['dependency-groups']['check']:
             name, version = requirement.split('==')
@@ -30,7 +31,7 @@ class PythonQualityTests(unittest.TestCase):
         self.assertEqual(project['tool']['uv']['required-version'], '==0.12.23')
 
     def test_strict_types_cover_real_boundary_code_without_blanket_exceptions(self):
-        project = tomllib.loads((ROOT / 'pyproject.toml').read_text())
+        project = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
         settings = project['tool']['mypy']
         self.assertTrue(settings['strict'])
         self.assertFalse(settings.get('ignore_errors', False))
@@ -48,7 +49,7 @@ class PythonQualityTests(unittest.TestCase):
             self.assertEqual(codes, ['E402'], 'Only documented entrypoint bootstrap ordering may be excluded')
 
     def test_workflow_runs_locked_quality_checks_on_both_operating_systems(self):
-        workflow = (ROOT / '.github/workflows/checks.yml').read_text()
+        workflow = (ROOT / '.github/workflows/checks.yml').read_text(encoding='utf-8')
         self.assertIn('os: [ubuntu-24.04, windows-2022]', workflow)
         install = workflow.split('- name: Install locked Python quality and test dependencies')[1].split('- name:')[0]
         self.assertNotIn('if:', install)
@@ -103,6 +104,31 @@ class PythonQualityRunnerTests(unittest.TestCase):
         self.root_patch.start()
         self.addCleanup(self.root_patch.stop)
 
+    def windows_short_path(self, path):
+        import ctypes
+        from ctypes import wintypes
+
+        api = ctypes.WinDLL('kernel32', use_last_error=True).GetShortPathNameW
+        api.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        api.restype = wintypes.DWORD
+        buffer = ctypes.create_unicode_buffer(32768)
+        if not api(str(path), buffer, len(buffer)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        alias = Path(buffer.value)
+        if alias == path.resolve():
+            self.skipTest('This Windows volume does not provide a distinct short path alias')
+        self.assertEqual(alias.resolve(), path.resolve())
+        return alias
+
+    def lint_sources(self):
+        paths = [self.root / tree / 'boundary.py' for tree in quality.SOURCE_TREES]
+        paths.extend(self.root / name for name in (
+            'scripts/check-python.py', 'test/test_python_quality.py', 'test/typechecks/python_boundaries.py'))
+        for path in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('pass\n', encoding='utf-8')
+        return paths
+
     def run_consumer(self, *, code=1, first='arg-type', extra='', repeats=1):
         def result(command, **kwargs):
             path = command[-1]
@@ -114,6 +140,16 @@ class PythonQualityRunnerTests(unittest.TestCase):
 
     def test_negative_fixture_accepts_exact_expected_errors(self):
         self.run_consumer()
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows short path aliases')
+    def test_negative_fixture_accepts_short_alias_for_the_same_diagnostic_file(self):
+        def result(command, **kwargs):
+            alias = self.windows_short_path(Path(command[-1]))
+            output = (f'{alias}:1: error: Bad call  [arg-type]\n'
+                      + f'{alias}:2: error: Bad assignment  [assignment]\n')
+            return subprocess.CompletedProcess(command, 1, stdout=output, stderr='')
+        with patch.object(quality.subprocess, 'run', side_effect=result):
+            quality.check_rejected_consumers()
 
     def test_negative_fixture_rejects_false_success_or_wrong_error(self):
         for arguments in ({'code': 0}, {'code': 2}, {'first': 'name-defined'}, {'repeats': 2}):
@@ -136,6 +172,17 @@ class PythonQualityRunnerTests(unittest.TestCase):
             (directory / 'boundary.py').write_text('pass\n', encoding='utf-8')
         result = subprocess.CompletedProcess([], 0, stdout='', stderr='')
         with patch.object(quality.subprocess, 'run', return_value=result), self.assertRaises(RuntimeError):
+            quality.check_lint_coverage()
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows short path aliases')
+    def test_lint_short_root_still_reports_an_omitted_canonical_module(self):
+        paths = self.lint_sources()
+        omitted = paths[1]
+        output = '\n'.join(str(path.resolve()) for path in paths if path != omitted)
+        result = subprocess.CompletedProcess([], 0, stdout=output, stderr='')
+        with patch.object(quality, 'ROOT', self.windows_short_path(self.root)), \
+                patch.object(quality.subprocess, 'run', return_value=result), \
+                self.assertRaisesRegex(RuntimeError, 'apps[/\\\\]stream-dog[/\\\\]python[/\\\\]boundary.py'):
             quality.check_lint_coverage()
 
     def test_lint_cannot_silently_check_an_empty_source_tree(self):

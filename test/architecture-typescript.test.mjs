@@ -8,7 +8,7 @@ import { buildTypeScript, SDK_OUTPUTS } from '../scripts/build-typescript.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const config = ts.parseJsonConfigFileContent(ts.readConfigFile(resolve(root, 'tsconfig.sdk.json'), ts.sys.readFile).config, ts.sys, root);
-const implementations = config.fileNames.filter(path => /\.(?:ts|mts)$/.test(path) && !/\.d\.(?:ts|mts)$/.test(path));
+const implementations = config.fileNames.filter(path => /\.(?:ts|mts)$/.test(path) && !/\.d\.(?:ts|mts)$/.test(path)).map(path => resolve(path));
 
 test('owned SDK implementations are strict TS without any or suppression escape hatches', () => {
   assert.equal(config.options.strict, true);

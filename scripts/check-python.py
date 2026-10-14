@@ -35,18 +35,19 @@ def check_tool_versions() -> None:
 
 def check_lint_coverage() -> None:
     """Fail closed if include/exclude changes silently omit a canonical module."""
+    root = ROOT.resolve()
     result = subprocess.run([sys.executable, '-m', 'ruff', 'check', '--show-files'],
-                            cwd=ROOT, check=True, capture_output=True, text=True, timeout=120)
-    actual = {Path(name).resolve() for name in result.stdout.splitlines()}
+                            cwd=root, check=True, capture_output=True, text=True, timeout=120)
+    actual = {(root / name).resolve() for name in result.stdout.splitlines()}
     required: set[Path] = set()
     for tree in SOURCE_TREES:
-        sources = {source.resolve() for source in (ROOT / tree).rglob('*.py')}
+        sources = {source.resolve() for source in (root / tree).rglob('*.py')}
         if not sources:
             raise RuntimeError('Canonical Python source tree is missing or empty: ' + tree)
         required.update(sources)
-    required.update((ROOT / name).resolve() for name in (
+    required.update((root / name).resolve() for name in (
         'scripts/check-python.py', 'test/test_python_quality.py', 'test/typechecks/python_boundaries.py'))
-    missing = sorted(str(name.relative_to(ROOT)) for name in required - actual)
+    missing = sorted(str(name.relative_to(root)) for name in required - actual)
     if missing:
         raise RuntimeError('Canonical Python modules escaped lint coverage: ' + ', '.join(missing))
     print(f'Canonical Python lint coverage: {len(required)} files', flush=True)
@@ -68,23 +69,25 @@ def check_rejected_lint() -> None:
 
 def check_rejected_consumers() -> None:
     """A green checker must reject bad consumers at each real boundary."""
-    fixture = ROOT / 'test/typechecks/python_boundaries_invalid.py.txt'
+    root = ROOT.resolve()
+    fixture = root / 'test/typechecks/python_boundaries_invalid.py.txt'
     source = fixture.read_text(encoding='utf-8')
     expected = {(line, match.group(1)) for line, text in enumerate(source.splitlines(), 1)
                 if (match := re.search(r'# expect: ([a-z-]+)', text))}
     if not expected:
         raise ValueError('Negative boundary fixture must contain expected type errors')
     with tempfile.TemporaryDirectory(prefix='hellgato-type-boundary-') as directory:
-        path = Path(directory) / 'invalid_consumer.py'
+        path = (Path(directory) / 'invalid_consumer.py').resolve()
         path.write_text(source, encoding='utf-8')
         result = subprocess.run([sys.executable, '-m', 'mypy', '--config-file', 'pyproject.toml',
-                                 '--no-pretty', '--no-color-output', str(path)], cwd=ROOT,
+                                 '--no-pretty', '--no-color-output', str(path)], cwd=root,
                                 capture_output=True, text=True, timeout=120)
         # Count every diagnostic, including unexpected errors in imported source.
         diagnostics = re.findall(r'^(.+):(\d+): error: .*?\[([a-z-]+)\]$',
                                  result.stdout, re.MULTILINE)
-        actual = {(int(line), code) for name, line, code in diagnostics if Path(name) == path}
-        unexpected = any(Path(name) != path for name, _, _ in diagnostics)
+        resolved = [((root / name).resolve(), int(line), code) for name, line, code in diagnostics]
+        actual = {(line, code) for name, line, code in resolved if name == path}
+        unexpected = any(name != path for name, _, _ in resolved)
     if (result.returncode != 1 or actual != expected or unexpected
             or len(diagnostics) != len(expected)):
         raise RuntimeError('Type checker did not reject exactly the expected invalid boundary consumers:\n'
