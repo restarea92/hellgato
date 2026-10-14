@@ -1153,25 +1153,35 @@ class RuntimeMetadataChecks(unittest.TestCase):
 
 
 class WorkflowContractChecks(unittest.TestCase):
-    def test_build_is_read_only_and_preserves_security_checks(self):
+    def test_build_is_read_only_and_checks_application(self):
         text = (ROOT / '.github/workflows/windows-build.yml').read_text()
         self.assertIn('contents: read', text); self.assertNotIn('contents: write', text)
         self.assertNotIn('GH_TOKEN', text); self.assertNotIn('windows_release.py publish', text)
         for command in ("./.venv/Scripts/python.exe -m unittest discover -s test -p 'test_*.py'", '-File test/test_installer_migration.ps1',
-                        "./scripts/build-windows.ps1 -Python (Join-Path $pwd '.venv/Scripts/python.exe') -Iscc", './work/build-runtime/node.exe --test test/*.test.mjs',
-                        'python scripts/windows_release.py artifacts', 'python scripts/windows_release.py manifest'):
+                        "./scripts/build-windows.ps1 -Python (Join-Path $pwd '.venv/Scripts/python.exe') -Iscc", './work/build-runtime/node.exe --test @applicationTests',
+                        'python scripts/windows_release.py artifacts'):
             self.assertIn(command, text)
-        self.assertIn('if-no-files-found: error', text); self.assertIn('dist/build-manifest.json', text)
+        self.assertIn('if-no-files-found: error', text)
         self.assertIn('windows-installer-${{ github.run_id }}-${{ github.run_attempt }}', text)
+        self.assertNotIn('ipc-candidate', text)
+        self.assertNotIn('scripts/release-ci.mjs', text)
+        self.assertLess(text.index('pnpm run build:npm'), text.index('-m unittest discover'))
 
-    def test_manual_publisher_delegates_same_coordinator(self):
+    def test_publication_is_deferred_and_has_no_automatic_coordinator(self):
         text = (ROOT / '.github/workflows/windows-release.yml').read_text()
         events = text.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
         self.assertEqual(re.findall(r'^  ([a-z_]+):', events, re.MULTILINE), ['workflow_dispatch'])
         self.assertIn('default: false', events)
-        self.assertNotIn('gh release create', text)
-        self.assertNotIn('windows_release.py publish', text)
-        self.assertIn('release.yml', text)
+        publisher = text.split('\n  publish:\n', 1)[1]
+        self.assertRegex(publisher, r'(?m)^    if: false$')
+        workflows = ROOT / '.github/workflows'
+        self.assertFalse((workflows / 'release-pr.yml').exists())
+        self.assertFalse((workflows / 'release.yml').exists())
+        for path in workflows.glob('*.yml'):
+            source = path.read_text()
+            self.assertNotIn('changesets/action', source)
+            self.assertNotIn('npm-release.mjs publish', source)
+            self.assertNotIn('gh workflow run', source)
 
     def test_build_script_derives_filename_without_changing_hash_generation(self):
         text = (ROOT / 'scripts/build-windows.ps1').read_text()

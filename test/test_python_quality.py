@@ -48,14 +48,16 @@ class PythonQualityTests(unittest.TestCase):
         for codes in project['tool']['ruff']['lint']['per-file-ignores'].values():
             self.assertEqual(codes, ['E402'], 'Only documented entrypoint bootstrap ordering may be excluded')
 
-    def test_workflow_runs_locked_quality_checks_on_both_operating_systems(self):
+    def test_workflow_runs_locked_quality_checks_on_windows(self):
         workflow = (ROOT / '.github/workflows/checks.yml').read_text(encoding='utf-8')
-        self.assertIn('os: [ubuntu-24.04, windows-2022]', workflow)
-        install = workflow.split('- name: Install locked Python quality and test dependencies')[1].split('- name:')[0]
+        self.assertIn('runs-on: windows-latest', workflow)
+        install = workflow.split('- name: Prepare dependencies')[1].split('- name:')[0]
         self.assertNotIn('if:', install)
         self.assertIn('uv==0.12.23', install)
         self.assertIn('uv sync --locked --no-install-workspace --python python', install)
-        gate = workflow.split('- name: Canonical Python lint and strict boundary types')[1].split('- name:')[0]
+        self.assertIn('pnpm install --frozen-lockfile', install)
+        self.assertIn('pnpm run build:npm', install)
+        gate = workflow.split('- name: Python quality')[1].split('- name:')[0]
         self.assertNotIn('if:', gate)
         self.assertIn('uv run --frozen --no-sync python scripts/check-python.py', gate)
 

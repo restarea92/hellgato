@@ -1,49 +1,79 @@
-name: Windows release recovery
-# This compatibility entry point delegates to the single serialized publisher.
+name: Windows release
+
 on:
   workflow_dispatch:
     inputs:
-      release_sha:
-        description: Exact previously approved release merge SHA
-        required: true
-        type: string
-      source_run_id:
-        description: Original verified release build run ID
-        required: true
-        type: string
-      source_run_attempt:
-        description: Original verified build attempt
-        required: true
-        type: string
-      windows_artifact_id:
-        description: Original immutable Windows artifact ID
+      tag:
+        description: 'Existing stable tag at this main commit (vMAJOR.MINOR.PATCH)'
         required: true
         type: string
       confirm:
-        description: Resume this previously approved Windows-only release
+        description: 'Prepare this explicitly selected stable version'
         required: true
         type: boolean
         default: false
+
 permissions:
   contents: read
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
 jobs:
-  dispatch:
-    if: github.repository == 'restarea92/hellgato' && github.ref == 'refs/heads/main' && inputs.confirm
-    runs-on: ubuntu-24.04
+  preflight:
+    if: github.repository == 'restarea92/hellgato' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.7'
+      - name: Validate the selected version without publishing
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version=$(python scripts/windows_release.py version)
+          test "$RELEASE_TAG" = "v$version"
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$(git rev-parse HEAD)"
+
+  build:
+    needs: preflight
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows-build.yml
+
+  publish:
+    # Publication is deferred until application integration is complete.
+    if: false
+    needs: [preflight, build]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      actions: write
+      contents: write
     steps:
-      - name: Dispatch the common release recovery entry point
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.7'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          skip-decompress: false
+          digest-mismatch: error
+          name: windows-installer-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist
+      - name: Publish the explicitly selected installer
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_SHA: ${{ inputs.release_sha }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
-          WINDOWS_ARTIFACT_ID: ${{ inputs.windows_artifact_id }}
-        run: |
-          gh workflow run release.yml --repo "$GH_REPO" --ref main \
-            -f release_sha="$RELEASE_SHA" -f source_run_id="$SOURCE_RUN_ID" \
-            -f source_run_attempt="$SOURCE_RUN_ATTEMPT" -f windows_artifact_id="$WINDOWS_ARTIFACT_ID" \
-            -f confirm=true
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_CONFIRM: ${{ inputs.confirm }}
+        run: python scripts/windows_release.py publish

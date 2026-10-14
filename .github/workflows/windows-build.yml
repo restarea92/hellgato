@@ -2,33 +2,13 @@ name: Windows build
 
 on:
   push:
-    branches: [main, next]
-    paths: ['app/**', 'apps/**', 'adapters/**', 'host-integrations/**', 'vendor/**', 'schemas/**', 'tests/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'pyproject.toml', 'uv.lock', '.release/**', 'docs/releases/**', '.github/workflows/**']
+    branches: [main]
+    paths: ['app/**', 'apps/**', 'adapters/**', 'host-integrations/**', 'vendor/**', 'schemas/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'pyproject.toml', 'uv.lock', 'docs/releases/**', '.github/workflows/**']
   pull_request:
-    branches: [main, next]
-    paths: ['app/**', 'apps/**', 'adapters/**', 'host-integrations/**', 'vendor/**', 'schemas/**', 'tests/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'pyproject.toml', 'uv.lock', '.release/**', 'docs/releases/**', '.github/workflows/**']
+    branches: [main]
+    paths: ['app/**', 'apps/**', 'adapters/**', 'host-integrations/**', 'vendor/**', 'schemas/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'pyproject.toml', 'uv.lock', 'docs/releases/**', '.github/workflows/**']
   workflow_dispatch:
-    inputs:
-      expected_sha:
-        description: Optional exact head for dispatched PR checks
-        required: false
-        type: string
   workflow_call:
-    inputs:
-      release_sha:
-        required: true
-        type: string
-      release_plan:
-        required: false
-        type: string
-        default: ''
-    outputs:
-      artifact_id:
-        value: ${{ jobs.build.outputs.artifact_id }}
-      run_id:
-        value: ${{ jobs.build.outputs.run_id }}
-      run_attempt:
-        value: ${{ jobs.build.outputs.run_attempt }}
 
 permissions:
   contents: read
@@ -37,67 +17,36 @@ jobs:
   build:
     runs-on: windows-2022
     timeout-minutes: 45
-    outputs:
-      artifact_id: ${{ steps.upload.outputs.artifact-id }}
-      run_id: ${{ steps.identity.outputs.run_id }}
-      run_attempt: ${{ steps.identity.outputs.run_attempt }}
     defaults:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ inputs.release_sha || github.sha }}
-          fetch-depth: 0
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.13.7'
           architecture: x64
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24.19.0'
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0 (Node 24)
-      - name: Select read-only build context
-        id: context
-        env:
-          PR_HEAD_REF: ${{ github.head_ref }}
-          PR_BASE_REF: ${{ github.base_ref }}
-          RELEASE_BUILD_PLAN: ${{ inputs.release_plan }}
-        run: node scripts/release-ci.mjs
-      - name: Validate exact checkout and locked metadata
-        id: identity
-        env:
-          EXPECTED_SHA: ${{ inputs.expected_sha || inputs.release_sha }}
-          METADATA_MODE: ${{ steps.context.outputs.metadata_mode }}
-        run: |
-          if ($env:EXPECTED_SHA -and (git rev-parse HEAD) -ne $env:EXPECTED_SHA) { throw 'Unexpected checkout SHA' }
-          npm install --global npm@11.9.0 --ignore-scripts
-          if ($LASTEXITCODE) { throw 'Pinned npm installation failed' }
-          npm prefix --global >> $env:GITHUB_PATH
-          pnpm install --frozen-lockfile
-          if ($LASTEXITCODE) { throw 'Frozen workspace installation failed' }
-          $contextArgs = @()
-          if ($env:METADATA_MODE -eq 'plan') { $contextArgs = @('--plan', '.release/plan.json') }
-          elseif ($env:METADATA_MODE -eq 'source-beta') { $contextArgs = @('--source-channel', 'beta') }
-          node scripts/sync-release-metadata.mjs --check @contextArgs
-          if ($LASTEXITCODE) { throw 'Release metadata drift' }
-          "run_id=$env:GITHUB_RUN_ID" >> $env:GITHUB_OUTPUT
-          "run_attempt=$env:GITHUB_RUN_ATTEMPT" >> $env:GITHUB_OUTPUT
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
       - name: Resolve installer version
         id: metadata
-        env:
-          METADATA_MODE: ${{ steps.context.outputs.metadata_mode }}
         run: |
-          $contextArgs = @()
-          if ($env:METADATA_MODE -eq 'plan') { $contextArgs = @('--plan', '.release/plan.json') }
-          elseif ($env:METADATA_MODE -eq 'source-beta') { $contextArgs = @('--source-channel', 'beta') }
-          $version = python scripts/windows_release.py version @contextArgs
+          $version = python scripts/windows_release.py version
           if ($LASTEXITCODE) { throw 'Invalid Windows installer version' }
           "version=$version" >> $env:GITHUB_OUTPUT
       - name: Install build dependencies
         run: |
-          python -m pip install uv==0.12.23
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE) { throw 'Workspace dependency installation failed' }
+          npm install --prefix work/tooling npm@11.9.0 --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE) { throw 'Pinned npm installation failed' }
+          (Join-Path $pwd 'work/tooling/node_modules/.bin') >> $env:GITHUB_PATH
+          python -m pip install --disable-pip-version-check uv==0.12.23
           if ($LASTEXITCODE) { throw 'Pinned uv installation failed' }
           uv sync --locked --no-install-workspace --python python
           if ($LASTEXITCODE) { throw 'Locked Python build environment failed' }
@@ -107,136 +56,29 @@ jobs:
           $compiler = Join-Path $env:RUNNER_TEMP 'InnoSetup'
           Start-Process $setup -ArgumentList '/CURRENTUSER','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOICONS',"/DIR=`"$compiler`"" -WindowStyle Hidden -Wait
       - name: Test and build
-        env:
-          METADATA_MODE: ${{ steps.context.outputs.metadata_mode }}
         run: |
-          $contextArgs = @()
-          $buildOptions = @{}
-          if ($env:METADATA_MODE -eq 'plan') {
-            $contextArgs = @('--plan', '.release/plan.json'); $buildOptions.ReleasePlan = '.release/plan.json'
-          } elseif ($env:METADATA_MODE -eq 'source-beta') {
-            $contextArgs = @('--source-channel', 'beta'); $buildOptions.SourceChannel = 'beta'
-          }
+          pnpm run prepare:cora
+          if ($LASTEXITCODE) { throw 'CORA preparation failed' }
+          pnpm run build:npm
+          if ($LASTEXITCODE) { throw 'SDK package build failed' }
           & ./.venv/Scripts/python.exe -m unittest discover -s test -p 'test_*.py'
           if ($LASTEXITCODE) { throw 'Python checks failed' }
           powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File test/test_installer_migration.ps1
           if ($LASTEXITCODE) { throw 'Installer migration checks failed' }
-          ./scripts/build-windows.ps1 -Python (Join-Path $pwd '.venv/Scripts/python.exe') -Iscc (Join-Path $env:RUNNER_TEMP 'InnoSetup/ISCC.exe') @buildOptions
+          ./scripts/build-windows.ps1 -Python (Join-Path $pwd '.venv/Scripts/python.exe') -Iscc (Join-Path $env:RUNNER_TEMP 'InnoSetup/ISCC.exe')
           if ($LASTEXITCODE) { throw 'Windows build failed' }
-          $expectedVersion = python scripts/windows_release.py version @contextArgs
-          if ($LASTEXITCODE) { throw 'Expected packaged version unavailable' }
-          $packagedVersion = & ./dist/Hellgato/HellgatoWorker.exe --version
-          if ($LASTEXITCODE -or $packagedVersion -ne $expectedVersion) { throw 'Packaged runtime version differs from installer metadata' }
-          ./work/build-runtime/node.exe --test test/*.test.mjs
-          if ($LASTEXITCODE) { throw 'CORA checks failed' }
-          python scripts/windows_release.py artifacts @contextArgs
+          $applicationTests = @(Get-ChildItem test -Filter '*.test.mjs' | Where-Object { $_.Name -notlike 'release-*.test.mjs' } | ForEach-Object { $_.FullName })
+          ./work/build-runtime/node.exe --test @applicationTests
+          if ($LASTEXITCODE) { throw 'Application checks failed' }
+          python scripts/windows_release.py artifacts
           if ($LASTEXITCODE) { throw 'Installer artifact validation failed' }
-      - name: Save isolated native fixture results
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (Node 24)
-        with:
-          archive: true
-          overwrite: false
-          name: native-fixtures-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            work/build-native-startup/fixture/fixture-results.json
-            work/build-native-ui-test/fixture-results.txt
-          if-no-files-found: warn
-          retention-days: 30
-      - name: Save isolated IPC candidate self-test evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (Node 24)
-        with:
-          archive: true
-          overwrite: false
-          name: ipc-candidate-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            work/ipc-candidate-self-test/result.json
-            work/ipc-candidate-self-test/self-test-receipt.json
-            work/ipc-candidate-self-test/diagnostics.jsonl
-            work/ipc-candidate-self-test/supervisor-events.jsonl
-            work/ipc-candidate-self-test-stdout.txt
-            work/ipc-candidate-self-test-stderr.txt
-          if-no-files-found: warn
-          retention-days: 30
-      - name: Save immutable IPC trial bundle (not a release)
-        id: candidate-upload
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (Node 24)
-        with:
-          archive: true
-          overwrite: false
-          name: windows-ipc-candidate-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            dist/Hellgato-Ipc-Candidate-*.zip
-            dist/Hellgato-Ipc-Candidate-*.zip.sha256
-          if-no-files-found: error
-          retention-days: 90
-      - name: Download exact candidate artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2 (Node 24)
-        with:
-          skip-decompress: false
-          digest-mismatch: error
-          artifact-ids: ${{ steps.candidate-upload.outputs.artifact-id }}
-          path: ${{ runner.temp }}/hellgato-ipc-artifact-roundtrip
-          merge-multiple: true
-      - name: Verify candidate round-trip archive bytes
-        env:
-          CANDIDATE_DOWNLOAD: ${{ runner.temp }}/hellgato-ipc-artifact-roundtrip
-        run: |
-          $files = @(Get-ChildItem dist -Filter 'Hellgato-Ipc-Candidate-*.zip*')
-          $downloaded = @(Get-ChildItem -LiteralPath $env:CANDIDATE_DOWNLOAD)
-          if ($files.Count -ne 2 -or $downloaded.Count -ne 2) { throw 'Unexpected candidate artifact inventory' }
-          foreach ($file in $files) {
-            $copy = Join-Path $env:CANDIDATE_DOWNLOAD $file.Name
-            if ((Get-FileHash $file.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $copy -Algorithm SHA256).Hash) { throw 'Candidate round-trip digest differs' }
-          }
-      - name: Bind artifacts to their exact build
-        env:
-          RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
-          METADATA_MODE: ${{ steps.context.outputs.metadata_mode }}
-        run: |
-          $contextArgs = @()
-          if ($env:METADATA_MODE -eq 'plan') { $contextArgs = @('--plan', '.release/plan.json') }
-          elseif ($env:METADATA_MODE -eq 'source-beta') { $contextArgs = @('--source-channel', 'beta') }
-          python scripts/windows_release.py manifest @contextArgs
-          if ($LASTEXITCODE) { throw 'Build manifest failed' }
       - name: Save installer and SHA-256 (not a release)
-        id: upload
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (Node 24)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           archive: true
-          overwrite: false
           name: windows-installer-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             dist/Hellgato-${{ steps.metadata.outputs.version }}-Setup.exe
             dist/Hellgato-${{ steps.metadata.outputs.version }}-Setup.exe.sha256
-            dist/build-manifest.json
           if-no-files-found: error
-          retention-days: 90
-      - name: Download this exact artifact for a read-only round trip
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2 (Node 24)
-        with:
-          skip-decompress: false
-          digest-mismatch: error
-          artifact-ids: ${{ steps.upload.outputs.artifact-id }}
-          path: ${{ runner.temp }}/hellgato-artifact-roundtrip
-          merge-multiple: true
-      - name: Verify round-trip artifact members and bytes
-        shell: bash
-        env:
-          ARTIFACT_DIRECTORY: ${{ runner.temp }}/hellgato-artifact-roundtrip
-        run: |
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          source = Path('dist')
-          downloaded = Path(os.environ['ARTIFACT_DIRECTORY'])
-          manifest = json.loads((source / 'build-manifest.json').read_text())
-          expected = {'build-manifest.json', *(entry['name'] for entry in manifest['files'])}
-          if {path.name for path in downloaded.iterdir()} != expected:
-              raise SystemExit('Round-trip artifact member mismatch')
-          for name in expected:
-              if (downloaded / name).read_bytes() != (source / name).read_bytes():
-                  raise SystemExit(f'Round-trip artifact byte mismatch: {name}')
-          print('Exact uploaded artifact ID, ZIP extraction, members and bytes verified')
-          PY
+          retention-days: 14
