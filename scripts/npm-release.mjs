@@ -5,6 +5,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, resolve, win32 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
+import { CANDIDATE_SCHEMA, CHANNEL_PLAN_SCHEMA, releaseChannel, channelPolicy, compareReleaseVersions, validateNpmBaseline, validatePrereleaseState } from './release-policy.mjs';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const REPOSITORY = 'restarea92/hellgato';
@@ -40,9 +41,11 @@ export const PACKAGE_LAYOUT = {
       "dist/bridge.mjs",
       "dist/bridge.d.mts",
       "dist/bridge/device-bridge.mjs",
+      "dist/bridge/device-bridge.d.mts",
       "dist/contracts/index.mjs",
       "dist/contracts/index.d.mts",
       "dist/hosts/streamdeck/target.mjs",
+      "dist/hosts/streamdeck/target.d.mts",
       "dist/hosts/streamdeck/display-server.mjs",
       "dist/hosts/streamdeck/firmware-policy.mjs",
       "dist/legacy/bridge.mjs",
@@ -79,11 +82,13 @@ export const PACKAGE_LAYOUT = {
       "index.mjs",
       "index.d.ts",
       "src/session/index.mjs",
+      "src/session/index.d.mts",
       "src/testing/index.mjs",
       "src/testing/index.d.ts",
       "src/adapters/mirabox-n4-pro/index.mjs",
       "src/adapters/mirabox-n4-pro/index.d.ts",
-      "src/sidecar/index.mjs"
+      "src/sidecar/index.mjs",
+      "src/sidecar/index.d.mts"
     ]
   }
 };
@@ -143,26 +148,54 @@ export function assertNpmVersion(run = runTool) {
   invariant(actual === NPM_VERSION, `Expected npm ${NPM_VERSION}, found ${actual}`);
   return actual;
 }
-export function assertSources(root = ROOT) {
+export function assertSources(root = ROOT, { channel = 'stable' } = {}) {
   const [core, facade] = PACKAGES.map(pkg => json(resolve(root, 'packages', pkg.directory, 'package.json')));
   invariant(core.name === '@hellgato/core' && facade.name === 'hellgato', 'Unexpected npm package names');
-  invariant(STABLE.test(core.version) && core.version === facade.version, 'Both npm packages must use the same stable version');
+  invariant(releaseChannel(core.version) === channel && core.version === facade.version, 'Both npm packages must use the same stable version');
   invariant(facade.dependencies?.['@hellgato/core'] === 'workspace:*', 'Source facade must depend on @hellgato/core using workspace:*');
   return [core, facade];
 }
-export function selectedNpm(plan) {
-  invariant(plan?.schemaVersion === 1 && plan.repository === REPOSITORY, 'Invalid release plan repository/schema');
+export function selectedNpm(plan, { candidate = false, channel = 'stable' } = {}) {
+  invariant((candidate ? plan?.schemaVersion === CANDIDATE_SCHEMA : [1, CHANNEL_PLAN_SCHEMA].includes(plan?.schemaVersion)) && (!candidate || plan.candidateOnly === true && plan.branch === 'next' && JSON.stringify(plan.policy) === JSON.stringify(channelPolicy(plan.channel))) && (plan?.schemaVersion !== CHANNEL_PLAN_SCHEMA || plan.candidateOnly === false && plan.branch === channelPolicy(plan.channel).branch && JSON.stringify(plan.policy) === JSON.stringify(channelPolicy(plan.channel))) && plan.repository === REPOSITORY, 'Invalid release plan repository/schema');
   invariant(Array.isArray(plan.components), 'Release plan must explicitly select components');
   const selected = plan.components.filter(component => component.component === 'npm');
   invariant(selected.length === 1, 'Release plan does not select npm exactly once; Windows-only plans cannot publish npm');
   const component = selected[0];
-  invariant(STABLE.test(component.version) && component.channel === 'stable' && component.tag === `hellgato@${component.version}`, 'Invalid npm release version/channel/tag');
+  invariant(releaseChannel(component.version) === component.channel && (candidate ? component.channel === plan.channel : component.channel === channel) && component.tag === `hellgato@${component.version}`, 'Invalid npm release version/channel/tag');
   invariant(Array.isArray(component.packages) && component.packages.length === 2, 'The npm fixed group must select both packages');
   for (const pkg of PACKAGES) {
     const entries = component.packages.filter(entry => entry.name === pkg.name);
     invariant(entries.length === 1 && entries[0].version === component.version && entries[0].tag === `${pkg.name}@${component.version}`, `Invalid selected ${pkg.name} version/tag`);
   }
   return component;
+}
+
+export function sourceCiSdk(root = ROOT) {
+  validatePrereleaseState(json(resolve(root, '.changeset/pre.json')));
+  const version = json(resolve(root, 'packages/core/package.json')).version;
+  const channel = releaseChannel(version);
+  assertSources(root, { channel });
+  return { version, channel };
+}
+
+// Windows-only plans may consume the exact checkout SDK without selecting npm
+// publication. These artifacts are private consumers, never public npm intents.
+export function consumerSdkSource(planPath, releaseSha) {
+  const root = resolve(dirname(planPath), '..');
+  invariant(resolve(planPath) === resolve(root, '.release/plan.json'), 'Consumer SDK requires the checkout public plan');
+  const plan = json(planPath);
+  invariant([1, CHANNEL_PLAN_SCHEMA].includes(plan.schemaVersion) && plan.repository === REPOSITORY && Array.isArray(plan.components) && plan.components.length === 1 && plan.components[0].component === 'windows', 'Consumer SDK requires a Windows-only reviewed plan');
+  if (plan.schemaVersion === CHANNEL_PLAN_SCHEMA) invariant(plan.candidateOnly === false && plan.branch === channelPolicy(plan.channel).branch, 'Consumer SDK requires public channel intent');
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  invariant(SHA.test(head) && (!releaseSha || releaseSha === head), 'Consumer SDK checkout differs from artifact source');
+  const version = json(resolve(root, 'packages/core/package.json')).version;
+  const channel = releaseChannel(version);
+  assertSources(root, { channel });
+  for (const pkg of PACKAGES) {
+    const committed = JSON.parse(execFileSync('git', ['show', `${head}:packages/${pkg.directory}/package.json`], { cwd: root, encoding: 'utf8' }));
+    invariant(committed.version === version, 'Consumer SDK version differs from the exact committed source');
+  }
+  return { root, version, channel, releaseSha: head, plan };
 }
 
 // Inspect bytes in memory, never extract an untrusted archive. Reject links, duplicate
@@ -204,7 +237,7 @@ export function readTarball(bytes) {
   invariant(ended && files.size > 0 && files.size < 1000, 'Incomplete or excessive tar contents');
   return files;
 }
-function packageMetadata(files, expectedName, expectedVersion) {
+function packageMetadata(files, expectedName, expectedVersion, { channel = 'stable' } = {}) {
   const layout = PACKAGE_LAYOUT[expectedName];
   invariant(layout, `Unexpected package: ${expectedName}`);
   const required = [...layout.files, ...(expectedName === '@hellgato/core' ? VENDOR_MODULES.map(source => `dist/vendor/${source.replace(/\.ts$/, '.js')}`) : [])];
@@ -221,7 +254,7 @@ function packageMetadata(files, expectedName, expectedVersion) {
   invariant(manifest.types === layout.types, `Invalid type declaration entry: ${expectedName}`);
   invariant(!manifest.scripts || Object.keys(manifest.scripts).length === 0, 'Published packages must not contain lifecycle scripts');
   invariant(!manifest.bin && !manifest.bundleDependencies && !manifest.bundledDependencies, 'Unexpected executable or bundled dependencies');
-  invariant(manifest.publishConfig?.access === 'public' && manifest.publishConfig?.registry === REGISTRY && manifest.publishConfig?.tag === 'latest' && manifest.publishConfig?.provenance !== false, 'Unsafe publishConfig');
+  invariant(manifest.publishConfig?.access === 'public' && manifest.publishConfig?.registry === REGISTRY && manifest.publishConfig?.tag === channelPolicy(channel).distTag && manifest.publishConfig?.provenance !== false, 'Unsafe publishConfig');
   for (const section of ['dependencies', 'optionalDependencies', 'devDependencies', 'peerDependencies']) {
     for (const [name, version] of Object.entries(manifest[section] ?? {})) {
       invariant(typeof version === 'string' && !/(?:workspace:|link:|file:|^\.?\.?\/|^[A-Za-z]:[\\/]|^\/)/i.test(version), `Local dependency is forbidden: ${name}=${version}`);
@@ -244,34 +277,43 @@ function packageMetadata(files, expectedName, expectedVersion) {
   }
   return manifest;
 }
-export function inspectArchive(path, name, version) {
-  invariant(STABLE.test(version), 'Expected a stable package version');
+export function inspectArchive(path, name, version, { channel = 'stable' } = {}) {
+  invariant(releaseChannel(version) === channel, 'Package version differs from the explicit artifact channel');
   invariant(lstatSync(path).isFile() && !lstatSync(path).isSymbolicLink(), 'Tarball must be a regular file');
   const bytes = readFileSync(path);
   const files = readTarball(bytes);
-  packageMetadata(files, name, version);
+  packageMetadata(files, name, version, { channel });
   return { name, version, filename: basename(path), size: bytes.length, sha256: digest(bytes), integrity: `sha512-${digest(bytes, 'sha512', 'base64')}`, files: [...files].map(([path, bytes]) => ({ path, size: bytes.length, sha256: digest(bytes) })).sort((a, b) => a.path.localeCompare(b.path, 'en')) };
 }
-export function verifyArtifacts({ artifactDir = resolve(ROOT, 'dist/npm'), planPath, releaseSha, repository = REPOSITORY, runId, runAttempt, approvalPath, requireConsumerSmoke = false } = {}) {
+export function verifyArtifacts({ artifactDir = resolve(ROOT, 'dist/npm'), candidatePlanPath, consumerPlanPath, sourceChannel, planPath, releaseSha, repository = REPOSITORY, runId, runAttempt, approvalPath, requireConsumerSmoke = false } = {}) {
+  invariant([candidatePlanPath, consumerPlanPath, sourceChannel, planPath].filter(Boolean).length <= 1 && (!(candidatePlanPath || consumerPlanPath || sourceChannel) || !approvalPath), 'Candidate artifacts cannot accept a public plan or approval');
+  invariant(sourceChannel === undefined || sourceChannel === 'beta', 'Source CI supports only explicit beta context');
+  const sourceCi = sourceChannel === 'beta';
+  const candidate = Boolean(candidatePlanPath);
+  const consumer = Boolean(consumerPlanPath);
+  const consumerSource = consumer ? consumerSdkSource(consumerPlanPath, releaseSha) : null;
+  if (candidate || consumer) planPath = candidatePlanPath || consumerPlanPath;
+  const plan = planPath ? json(planPath) : null;
+  const channel = sourceCi ? null : consumer ? consumerSource.channel : candidate || plan?.schemaVersion === CHANNEL_PLAN_SCHEMA ? plan.channel : 'stable';
   const manifestPath = resolve(artifactDir, MANIFEST);
   invariant(lstatSync(manifestPath).isFile() && !lstatSync(manifestPath).isSymbolicLink(), 'Artifact manifest must be a regular file');
   const manifest = json(manifestPath);
-  invariant(manifest.schemaVersion === 1 && manifest.component === 'npm' && manifest.repository === repository && repository === REPOSITORY, 'Invalid artifact schema/component/repository');
+  invariant(manifest.schemaVersion === (candidate || consumer || sourceCi ? CANDIDATE_SCHEMA : 1) && (!(candidate || consumer || sourceCi) || manifest.candidateOnly === true) && (sourceCi ? manifest.consumer === 'source-ci' && manifest.planSha256 === null : consumer ? manifest.consumer === 'windows' && manifest.releaseSha === consumerSource.releaseSha && manifest.version === consumerSource.version : manifest.consumer === undefined) && manifest.component === 'npm' && manifest.repository === repository && repository === REPOSITORY, 'Invalid artifact schema/component/repository');
   invariant(SHA.test(manifest.releaseSha) && (!releaseSha || manifest.releaseSha === releaseSha), 'Artifact release SHA mismatch');
-  invariant(STABLE.test(manifest.version) && manifest.channel === 'stable', 'Invalid artifact version/channel');
+  invariant(releaseChannel(manifest.version) === manifest.channel && (sourceCi || manifest.channel === channel), 'Invalid artifact version/channel');
   invariant(manifest.source && (runId === undefined || String(manifest.source.runId) === String(runId)) && (runAttempt === undefined || String(manifest.source.runAttempt) === String(runAttempt)), 'Artifact source run/attempt mismatch');
   invariant(manifest.tools?.npm === NPM_VERSION && /^24\./.test(manifest.tools?.node ?? '') && manifest.tools?.pnpm === '11.10.0', 'Unapproved build tool versions');
   invariant(JSON.stringify(manifest.upstream) === JSON.stringify(UPSTREAM), 'Artifact upstream mismatch');
   if (planPath) {
     const bytes = readFileSync(planPath);
-    const component = selectedNpm(JSON.parse(bytes));
-    invariant(manifest.planSha256 === digest(bytes) && component.version === manifest.version, 'Artifact plan digest/version mismatch');
+    const component = consumer ? consumerSource : selectedNpm(JSON.parse(bytes), { candidate, channel });
+    invariant(manifest.planSha256 === digest(bytes) && component.version === manifest.version && component.channel === manifest.channel, 'Artifact plan digest/version mismatch');
   } else invariant(manifest.planSha256 === null || HEX256.test(manifest.planSha256), 'Invalid plan digest');
   if (approvalPath) {
     invariant(planPath && releaseSha, 'Approval verification requires a plan and exact release SHA');
     const approval = json(approvalPath);
     invariant(approval.schemaVersion === 1 && approval.repository === repository && approval.releaseSha === releaseSha && approval.planSha256 === manifest.planSha256, 'Release approval differs from artifact identity');
-    invariant(JSON.stringify(selectedNpm(approval)) === JSON.stringify(selectedNpm(json(planPath))), 'Approved npm component differs from plan');
+    invariant(JSON.stringify(selectedNpm(approval, { channel })) === JSON.stringify(selectedNpm(json(planPath), { channel })), 'Approved npm component differs from plan');
   }
   invariant(Array.isArray(manifest.packages) && manifest.packages.length === 2, 'Artifact must include exactly two npm packages');
   const actualFiles = readdirSync(artifactDir).sort();
@@ -281,7 +323,7 @@ export function verifyArtifacts({ artifactDir = resolve(ROOT, 'dist/npm'), planP
     const expected = manifest.packages[index];
     const pkg = PACKAGES[index];
     invariant(expected?.name === pkg.name && expected.version === manifest.version && expected.filename === archiveName(pkg.name, manifest.version), 'Artifact fixed-group order/name/version/filename mismatch');
-    const actual = inspectArchive(resolve(artifactDir, expected.filename), expected.name, expected.version);
+    const actual = inspectArchive(resolve(artifactDir, expected.filename), expected.name, expected.version, { channel: manifest.channel });
     invariant(JSON.stringify(actual) === JSON.stringify(expected), `Artifact bytes/file inventory changed: ${expected.name}`);
   }
   if (requireConsumerSmoke) invariant(manifest.verification?.consumerSmoke === 'passed' && manifest.verification?.packagesSha256 === digest(JSON.stringify(manifest.packages)), 'Missing isolated consumer verification for these tarballs');
@@ -289,17 +331,35 @@ export function verifyArtifacts({ artifactDir = resolve(ROOT, 'dist/npm'), planP
 }
 
 export async function readRegistryVersion(name, version, { fetchImpl = fetch } = {}) {
-  invariant(PACKAGES.some(pkg => pkg.name === name) && STABLE.test(version), 'Unexpected registry query');
+  invariant(PACKAGES.some(pkg => pkg.name === name) && ['stable', 'beta'].includes(releaseChannel(version)), 'Unexpected registry query');
   const response = await fetchImpl(`${REGISTRY}${encodeURIComponent(name)}`, { headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30000), redirect: 'error' });
   let data;
   try { data = await response.json(); } catch { throw new Error(`Malformed npm registry response: HTTP ${response.status}`); }
   if (response.status === 404) { invariant(data?.error === 'Not found', 'Unrecognized registry 404; refusing to infer absence'); return null; }
   invariant(response.ok, `npm registry ${name}: HTTP ${response.status}`);
   invariant(data?.name === name && data.versions && typeof data.versions === 'object' && !Array.isArray(data.versions) && data['dist-tags'] && typeof data['dist-tags'] === 'object', 'Malformed npm registry packument');
+  const tags = { registryLatest: data['dist-tags'].latest ?? null, registryBeta: data['dist-tags'].beta ?? null, registryLatestIntegrity: data.versions[data['dist-tags'].latest]?.dist?.integrity ?? null, registryBetaIntegrity: data.versions[data['dist-tags'].beta]?.dist?.integrity ?? null };
   const existing = data.versions[version];
-  if (!existing) return { name, version, missing: true, registryLatest: data['dist-tags'].latest ?? null };
+  if (!existing) return { name, version, missing: true, ...tags };
   invariant(existing.name === name && existing.version === version && /^sha512-[A-Za-z0-9+/]{86}==$/.test(existing.dist?.integrity ?? ''), 'Missing or invalid npm registry integrity');
-  return { ...existing, registryLatest: data['dist-tags'].latest ?? null };
+  const tarball = new URL(existing.dist.tarball);
+  invariant(tarball.origin === REGISTRY.slice(0, -1) && !tarball.username && !tarball.password && !tarball.search && !tarball.hash && decodeURIComponent(tarball.pathname) === `/${name}/-/${name.split('/').at(-1)}-${version}.tgz`, 'Unexpected npm tarball URL; official exact-version registry bytes are required');
+  const archive = await fetchImpl(tarball.href, { headers: { Accept: 'application/octet-stream', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30000), redirect: 'error' });
+  invariant(archive.ok && archive.body, `npm tarball ${name}: HTTP ${archive.status}`);
+  const limit = 32 * 1024 * 1024;
+  const length = archive.headers.get('content-length');
+  invariant(length === null || /^(0|[1-9]\d*)$/.test(length) && Number(length) > 0 && Number(length) <= limit, 'Invalid registry tarball size');
+  const hashes = { sha256: createHash('sha256'), sha512: createHash('sha512') };
+  let size = 0;
+  for await (const chunk of archive.body) {
+    size += chunk.byteLength;
+    invariant(size <= limit, 'Registry tarball exceeds the byte limit');
+    hashes.sha256.update(chunk); hashes.sha512.update(chunk);
+  }
+  invariant(size > 0 && (length === null || size === Number(length)), 'Registry tarball is empty or truncated');
+  const verifiedTarball = { size, sha256: hashes.sha256.digest('hex'), integrity: `sha512-${hashes.sha512.digest('base64')}` };
+  invariant(verifiedTarball.integrity === existing.dist.integrity, 'Downloaded registry tarball integrity conflict');
+  return { ...existing, ...tags, verifiedTarball };
 }
 const isMissing = value => value === null || value.missing === true;
 export function compareStable(left, right) {
@@ -308,7 +368,24 @@ export function compareStable(left, right) {
   for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1;
   return 0;
 }
+function channelBaselineMatches(plan, existing, pkg) {
+  const component = selectedNpm(plan, { channel: plan.channel });
+  const baseline = validateNpmBaseline(component.publicBaseline, component.oldVersion, component.version, plan.channel);
+  const expected = baseline.packages.find(p => p.name === pkg.name);
+  const selectedTag = channelPolicy(plan.channel).distTag;
+  for (const tag of ['latest', 'beta']) {
+    const version = existing?.[tag === 'latest' ? 'registryLatest' : 'registryBeta'] ?? null;
+    const integrity = existing?.[tag === 'latest' ? 'registryLatestIntegrity' : 'registryBetaIntegrity'] ?? null;
+    if (tag === selectedTag && !isMissing(existing)) {
+      invariant(typeof version === 'string' && releaseChannel(version) === plan.channel && compareReleaseVersions(version, pkg.version) >= 0, `Confirmed ${tag} must include the selected version: ${pkg.name}`);
+      if (version === pkg.version) invariant(integrity === pkg.integrity, `Registry ${tag} integrity conflict: ${pkg.name}`);
+    } else {
+      invariant(version === (expected[tag]?.version ?? null) && integrity === (expected[tag]?.integrity ?? null), `Reviewed npm ${tag} baseline changed: ${pkg.name}; channel releases never move the other tag`);
+    }
+  }
+}
 function assertPublicationBaseline(plan, existing, pkg) {
+  if (plan.schemaVersion === CHANNEL_PLAN_SCHEMA) return channelBaselineMatches(plan, existing, pkg);
   // Identical target bytes may already have been published by this approved plan.
   // A missing target must instead advance exactly the reviewed public baseline.
   if (!isMissing(existing)) return;
@@ -333,19 +410,27 @@ function assertLatestCanAdvance(existing, pkg) {
 }
 function registryMatches(existing, pkg) {
   invariant(!isMissing(existing) && existing.dist?.integrity === pkg.integrity, `Registry integrity conflict: ${pkg.name}@${pkg.version}; never overwrite or unpublish`);
+  invariant(existing.verifiedTarball?.integrity === pkg.integrity && existing.verifiedTarball.sha256 === pkg.sha256 && existing.verifiedTarball.size === pkg.size, `Registry tarball bytes were not verified against the approved artifact: ${pkg.name}@${pkg.version}`);
 }
-export async function confirmPublished(manifest, { lookup = readRegistryVersion } = {}) {
+export async function confirmPublished(manifest, { lookup = readRegistryVersion, plan } = {}) {
   const result = [];
   for (const pkg of manifest.packages) {
     const existing = await lookup(pkg.name, pkg.version);
     registryMatches(existing, pkg);
+    if (plan?.schemaVersion === CHANNEL_PLAN_SCHEMA) {
+      channelBaselineMatches(plan, existing, pkg);
+      result.push({ name: pkg.name, version: pkg.version, integrity: pkg.integrity, tag: channelPolicy(plan.channel).distTag, status: 'confirmed' });
+      continue;
+    }
     invariant(STABLE.test(existing.registryLatest ?? '') && compareStable(existing.registryLatest, pkg.version) >= 0, `Registry latest does not include the confirmed stable release: ${pkg.name}`);
     result.push({ name: pkg.name, version: pkg.version, integrity: pkg.integrity, latest: existing.registryLatest, status: 'confirmed' });
   }
   return result;
 }
-export async function publishArtifacts() {
+export async function publishArtifacts(options = {}) {
+  // All real transport wiring lives behind this unconditional source-level hold.
   assertNpmPublicationEnabled();
+  return executePublication(options, { environment: process.env, lookup: readRegistryVersion, run: runTool, delay: ms => new Promise(resolve => setTimeout(resolve, ms)) });
 }
 
 // Preserve publisher safety regression coverage without a live publication path.
@@ -353,15 +438,22 @@ export async function publishArtifacts() {
 // credential environment, real registry client, or package-manager default here.
 const missingSimulation = () => { throw new Error('Publication simulation requires explicit fake I/O'); };
 export async function simulatePublication(options = {}, { environment = {}, lookup = missingSimulation, run = missingSimulation, delay = async () => {} } = {}) {
+  return executePublication(options, { environment, lookup, run, delay });
+}
+
+// One engine for the held live entry point and fully isolated regression tests.
+async function executePublication(options, { environment, lookup, run, delay }) {
   options = { artifactDir: resolve(ROOT, 'dist/npm'), ...options };
   invariant(environment.RELEASE_ENABLED === 'true', 'Publication is disabled until setup and first release are approved');
-  invariant(environment.GITHUB_ACTIONS === 'true' && environment.GITHUB_REPOSITORY === REPOSITORY && environment.GITHUB_REF === 'refs/heads/main', 'Publish only from the original repository main on GitHub Actions');
+  const plan = options.planPath ? json(options.planPath) : null;
+  const channel = plan?.schemaVersion === CHANNEL_PLAN_SCHEMA ? plan.channel : 'stable';
+  const policy = channelPolicy(channel);
+  invariant(environment.GITHUB_ACTIONS === 'true' && environment.GITHUB_REPOSITORY === REPOSITORY && environment.GITHUB_REF === `refs/heads/${policy.branch}`, 'Publish only from the original repository main on GitHub Actions');
   invariant(environment.ACTIONS_ID_TOKEN_REQUEST_URL && environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN, 'GitHub OIDC id-token: write is required');
   invariant(!environment.NODE_AUTH_TOKEN && !environment.NPM_TOKEN && !environment.NPM_CONFIG_TOKEN, 'Token fallback is forbidden; use the configured trusted publisher');
   invariant(options.planPath && options.approvalPath && SHA.test(options.releaseSha ?? ''), 'Publish requires the selected plan, approval, and exact release SHA');
   for (const [key, value] of Object.entries({ runId: options.runId, runAttempt: options.runAttempt, artifactId: options.artifactId })) invariant(/^[1-9]\d*$/.test(String(value)), `Publish requires the original build ${key}`);
   const manifest = verifyArtifacts({ ...options, requireConsumerSmoke: true });
-  const plan = json(options.planPath);
   assertNpmVersion(run);
   const previous = [];
   // Validate both registry states before the first write, avoiding known partial failure.
@@ -369,7 +461,7 @@ export async function simulatePublication(options = {}, { environment = {}, look
     const existing = await lookup(pkg.name, pkg.version);
     assertPublicationBaseline(plan, existing, pkg);
     if (!isMissing(existing)) registryMatches(existing, pkg);
-    else assertLatestCanAdvance(existing, pkg);
+    else if (plan.schemaVersion !== CHANNEL_PLAN_SCHEMA) assertLatestCanAdvance(existing, pkg);
     previous.push(existing);
   }
   const result = [];
@@ -380,22 +472,22 @@ export async function simulatePublication(options = {}, { environment = {}, look
     const current = await lookup(pkg.name, pkg.version);
     assertPublicationBaseline(plan, current, pkg);
     if (!isMissing(current)) { registryMatches(current, pkg); result.push({ name: pkg.name, version: pkg.version, status: 'already-published' }); continue; }
-    assertLatestCanAdvance(current, pkg);
+    if (plan.schemaVersion !== CHANNEL_PLAN_SCHEMA) assertLatestCanAdvance(current, pkg);
     // Rehash immediately before passing the exact tarball path to the pinned CLI.
     verifyArtifacts({ ...options, requireConsumerSmoke: true });
     // npm 11.9.0 provenance reads GITHUB_SHA. Recovery dispatch HEAD may be newer
     // than the approved checkout, so attest the reverified artifact's source SHA.
-    run('npm', ['publish', resolve(options.artifactDir, pkg.filename), '--access', 'public', '--tag', 'latest', '--registry', REGISTRY, '--ignore-scripts', '--provenance'], { cwd: options.artifactDir, stdio: 'inherit', env: { ...environment, GITHUB_SHA: manifest.releaseSha } });
+    run('npm', ['publish', resolve(options.artifactDir, pkg.filename), '--access', 'public', '--tag', policy.distTag, '--registry', REGISTRY, '--ignore-scripts', '--provenance'], { cwd: options.artifactDir, stdio: 'inherit', env: { ...environment, GITHUB_SHA: manifest.releaseSha } });
     let confirmed = false;
     for (let attempt = 0; attempt < 5; attempt++) {
       const existing = await lookup(pkg.name, pkg.version);
-      if (!isMissing(existing)) { registryMatches(existing, pkg); confirmed = true; break; }
+      if (!isMissing(existing)) { registryMatches(existing, pkg); if (plan.schemaVersion === CHANNEL_PLAN_SCHEMA) channelBaselineMatches(plan, existing, pkg); confirmed = true; break; }
       if (attempt < 4) await delay(1000 * 2 ** attempt);
     }
     invariant(confirmed, `Registry did not confirm ${pkg.name}@${pkg.version}; retain these artifacts and retry after inspection`);
     result.push({ name: pkg.name, version: pkg.version, status: 'published' });
   }
-  await confirmPublished(manifest, { lookup });
+  await confirmPublished(manifest, { lookup, plan });
   return result;
 }
 export function parseArgs(args) {
@@ -409,7 +501,7 @@ export function parseArgs(args) {
   return options;
 }
 export function artifactOptions(flags, environment = process.env) {
-  return { artifactDir: resolve(flags['artifact-dir'] || flags.artifacts || flags.destination || 'dist/npm'), planPath: flags.plan ? resolve(flags.plan) : undefined, approvalPath: flags.approval || environment.RELEASE_APPROVAL_FILE, releaseSha: flags['release-sha'] || environment.RELEASE_SHA, repository: flags.repository || environment.GITHUB_REPOSITORY || REPOSITORY, runId: flags['run-id'] || environment.NPM_BUILD_RUN_ID || environment.GITHUB_RUN_ID, runAttempt: flags['run-attempt'] || environment.NPM_BUILD_RUN_ATTEMPT || environment.GITHUB_RUN_ATTEMPT, artifactId: flags['artifact-id'] || environment.NPM_ARTIFACT_ID };
+  return { artifactDir: resolve(flags['artifact-dir'] || flags.artifacts || flags.destination || 'dist/npm'), planPath: flags.plan ? resolve(flags.plan) : undefined, candidatePlanPath: flags['candidate-plan'] ? resolve(flags['candidate-plan']) : undefined, consumerPlanPath: flags['consumer-plan'] ? resolve(flags['consumer-plan']) : undefined, sourceChannel: flags['source-channel'], approvalPath: flags.approval || environment.RELEASE_APPROVAL_FILE, releaseSha: flags['release-sha'] || environment.RELEASE_SHA, repository: flags.repository || environment.GITHUB_REPOSITORY || REPOSITORY, runId: flags['run-id'] || environment.NPM_BUILD_RUN_ID || environment.GITHUB_RUN_ID, runAttempt: flags['run-attempt'] || environment.NPM_BUILD_RUN_ATTEMPT || environment.GITHUB_RUN_ATTEMPT, artifactId: flags['artifact-id'] || environment.NPM_ARTIFACT_ID };
 }
 async function main() {
   const [command, ...args] = process.argv.slice(2);
@@ -417,7 +509,7 @@ async function main() {
   const options = artifactOptions(flags);
   if (command === 'publish') console.log(JSON.stringify(await publishArtifacts(options), null, 2));
   else if (command === 'verify') console.log(JSON.stringify(verifyArtifacts({ ...options, requireConsumerSmoke: true }), null, 2));
-  else if (command === 'confirm') console.log(JSON.stringify(await confirmPublished(verifyArtifacts({ ...options, requireConsumerSmoke: true })), null, 2));
+  else if (command === 'confirm') console.log(JSON.stringify(await confirmPublished(verifyArtifacts({ ...options, requireConsumerSmoke: true }), { plan: options.planPath ? json(options.planPath) : undefined }), null, 2));
   else throw new Error('Expected publish, verify, or confirm');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main().catch(error => { console.error(`npm release refused: ${error.message}`); process.exitCode = 1; });

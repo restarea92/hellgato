@@ -73,6 +73,22 @@ test('real Node-Python handshake, explicit discovery/open, concurrent start and 
   assert.equal(value.pid, null); assert.equal(value.status, 'stopped');
 });
 
+test('worker snapshots normalize typed adapter state while retaining backend diagnostics', async () => {
+  const value = adapter(); const device = await open(value);
+  const connected = await value.getState();
+  assert.equal(connected.state, 'connected');
+  assert.equal(connected.deviceId, device.id);
+  assert.equal(connected.generation, value.generation);
+  assert.equal(connected.writeCount, 0);
+  assert.deepEqual(connected.frames, {});
+  await value.close();
+  const disconnected = await value.getState();
+  assert.equal(disconnected.state, 'disconnected');
+  assert.equal(disconnected.deviceId, undefined);
+  assert.equal(disconnected.connected, false);
+  await value.stop();
+});
+
 test('ordered input notifications preserve all key down/up transitions', async () => {
   const value = adapter({}, ['--fake-input-count', '20']); const input = [];
   value.onInput(event => input.push(event));
@@ -215,4 +231,88 @@ test('facade session composes with the real standalone Python worker and control
     assert.equal((await value.getState()).brightness, 42);
   } finally { await session.stop(); }
   assert.equal(value.pid, null);
+});
+
+test('stopped sidecar can be owned by a new facade session with its own generation', async () => {
+  const { EventEmitter } = await import('node:events');
+  const { createSession } = await import('../packages/hellgato/src/session/index.mjs');
+  const { createSimulatorProfile } = await import('../packages/hellgato/src/testing/index.mjs');
+  const value = adapter({ descriptor: { id: 'hellgato.fake-sidecar', version: '0.0.0-dev', modelIds: ['buttons-dial'],
+    platforms: ['any'], architectures: ['any'], apiVersion: 1, protocol: { major: 1, minor: 0 } } });
+  await value.start(); const [device] = await value.discover();
+  const bridgeFactory = () => {
+    const bridge = new EventEmitter();
+    return Object.assign(bridge, { ports: { primary: null, child: null }, start: async () => {}, stop: async () => {}, sendInput: () => true });
+  };
+  for (let index = 0; index < 2; index++) {
+    const session = createSession({ adapter: value, deviceId: device.id, profile: createSimulatorProfile(device), bridgeFactory });
+    try { await session.start(); assert.equal(session.state, 'ready'); assert.equal(session.generation, 1); }
+    finally { await session.stop(); }
+    assert.equal(value.pid, null);
+  }
+});
+
+test('concurrent close is idempotent and cannot clear a subsequently opened device', async () => {
+  const body = `let pending=''; let closes=0;
+process.stdin.on('data', c => { pending+=c; let i; while((i=pending.indexOf('\\n'))>=0) {
+const q=JSON.parse(pending.slice(0,i)); pending=pending.slice(i+1);
+const reply=result=>console.log(JSON.stringify({jsonrpc:'2.0',id:q.id,result}));
+if(q.method==='hello') reply({protocol:{major:1,minor:0},implementationVersion:'test',buildId:'integration-test',features:['deadlines','generation','base64-frames'],maxMessageBytes:1500000,maxFrameBytes:1048576});
+else if(q.method==='close' && ++closes===2) setTimeout(()=>reply({status:'closed'}),30);
+else reply({status:q.method==='open'?'open':q.method==='close'?'closed':'applied'});
+}});`;
+  const value = adapter({ command: process.execPath, args: ['-e', body] });
+  await value.start(); await value.open('fixture');
+  const first = value.close(); const second = value.close();
+  await first; await value.open('fixture'); await second;
+  assert.equal((await value.setControl({ type: 'control', control: 'sleep' })).status, 'applied');
+  await value.stop();
+});
+
+function protocolWorker(handler = '', helloOverrides = {}) {
+  const greeting = { protocol: { major: 1, minor: 0 }, implementationVersion: 'test', buildId: 'integration-test',
+    features: ['deadlines', 'generation', 'base64-frames'], maxMessageBytes: 1500000, maxFrameBytes: 1048576, ...helloOverrides };
+  return `let pending=''; let count=0; process.stdin.on('data', c => { pending+=c; let i;
+while((i=pending.indexOf('\\n'))>=0) {
+const q=JSON.parse(pending.slice(0,i)); pending=pending.slice(i+1);
+const reply=result=>console.log(JSON.stringify({jsonrpc:'2.0',id:q.id,result}));
+const fail=()=>console.log(JSON.stringify({jsonrpc:'2.0',id:q.id,error:{code:-32000,message:'Close failed',data:{code:'ERR_CLOSE_FAILED'}}}));
+if(q.method==='hello') { const greeting=${JSON.stringify(greeting)}; ${handler.includes('DELAY_HELLO') ? 'setTimeout(()=>reply(greeting),80)' : 'reply(greeting)'}; }
+else { ${handler.replace('DELAY_HELLO', '')} reply({status:q.method==='close'?'closed':q.method==='open'?'open':'applied'}); }
+}});`;
+}
+
+test('failed close retains ownership and permits a cleanup retry', async () => {
+  const value = adapter({ command: process.execPath, args: ['-e', protocolWorker("if(q.method==='close' && count++===0) { fail(); continue; }")] });
+  await value.start(); await value.open('fixture');
+  await assert.rejects(value.close(), { code: 'ERR_CLOSE_FAILED' });
+  await assert.rejects(value.open('fixture'), { code: 'ERR_DEVICE_BUSY' });
+  assert.equal((await value.close()).status, 'closed');
+  await value.open('fixture'); await value.stop();
+});
+
+test('open cannot reach a worker before the hello handshake is verified', async () => {
+  const value = adapter({ command: process.execPath, args: ['-e', protocolWorker('DELAY_HELLO')] });
+  const starting = value.start();
+  const deadline = Date.now() + 2000;
+  while (!value.pid && Date.now() < deadline) await delay(1);
+  assert.ok(value.pid); assert.equal(value.status, 'starting');
+  await assert.rejects(value.open('fixture'), { code: 'ERR_WORKER_OFFLINE' });
+  await starting; await value.open('fixture'); await value.stop();
+});
+
+test('negotiated worker frame limit is enforced before transmitting output', async () => {
+  const value = adapter({ command: process.execPath, args: ['-e', protocolWorker('', { maxFrameBytes: 3 })] });
+  await value.start(); await value.open('fixture');
+  assert.throws(() => value.setOutput(frame()), { code: 'ERR_FRAME_TOO_LARGE' });
+  assert.equal((await value.setOutput(frame([1, 2, 3], 1, { x: 0, y: 0, width: 1, height: 1 }))).status, 'applied');
+  await value.stop();
+});
+
+test('expected build override cannot contradict a verified manifest identity', async () => {
+  const executableSha256 = createHash('sha256').update(await readFile(process.execPath)).digest('hex');
+  const value = adapter({ command: process.execPath, args: ['-e', protocolWorker()],
+    manifest: { schemaVersion: 1, buildId: 'different-manifest-build', platform: process.platform, arch: process.arch, executableSha256 } });
+  await assert.rejects(value.start(), { code: 'ERR_WORKER_BUILD_ID' });
+  assert.equal(value.pid, null); await value.stop();
 });

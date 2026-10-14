@@ -1,7 +1,7 @@
 name: Checks
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -53,32 +53,55 @@ jobs:
           npm install --global npm@11.9.0 --ignore-scripts
           # Windows global npm installs outside setup-node's first PATH entry.
           npm prefix --global >> "$GITHUB_PATH"
+      - name: Select read-only source or reviewed release build context
+        id: release-context
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: node scripts/release-ci.mjs
       - name: Release metadata and full-diff impact
         env:
           IMPACT_BASE: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
+          METADATA_MODE: ${{ steps.release-context.outputs.metadata_mode }}
+          IMPACT_TARGET_BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
         run: |
-          pnpm run release:metadata:check
-          node scripts/check-release-impact.mjs --base "$IMPACT_BASE"
+          case "$METADATA_MODE" in
+            plan) node scripts/sync-release-metadata.mjs --check --plan .release/plan.json ;;
+            source-beta) node scripts/sync-release-metadata.mjs --check --source-channel beta ;;
+            stable) pnpm run release:metadata:check ;;
+            *) exit 1 ;;
+          esac
+          node scripts/check-release-impact.mjs --base "$IMPACT_BASE" --target-branch "$IMPACT_TARGET_BRANCH"
       - name: Prepare CORA and run JavaScript checks
+        env:
+          SDK_MODE: ${{ steps.release-context.outputs.sdk_mode }}
         run: |
           node --input-type=module -e "import { assertNpmVersion } from './scripts/npm-release.mjs'; assertNpmVersion();"
+          args=()
+          case "$SDK_MODE" in
+            plan) args=(--plan .release/plan.json) ;;
+            consumer) args=(--consumer-plan .release/plan.json) ;;
+            source-beta) args=(--source-channel beta) ;;
+            stable) ;;
+            *) exit 1 ;;
+          esac
           pnpm run prepare:cora
-          pnpm run build:npm
+          node scripts/build-npm.mjs "${args[@]}"
           pnpm run typecheck
           pnpm test
-          node scripts/pack-npm.mjs --destination dist/npm
-          node scripts/verify-npm.mjs --artifacts dist/npm
-      - name: Install Python test dependencies
-        if: runner.os == 'Windows'
-        shell: pwsh
+          node scripts/pack-npm.mjs --destination dist/npm "${args[@]}"
+          node scripts/verify-npm.mjs --artifacts dist/npm "${args[@]}"
+      - name: Install locked Python quality and test dependencies
         run: |
-          python -m pip install -r installer/requirements-build.txt
-          if ($LASTEXITCODE) { throw 'Dependency installation failed' }
+          python -m pip install --disable-pip-version-check uv==0.12.23
+          uv sync --locked --no-install-workspace --python python
+      - name: Canonical Python lint and strict boundary types
+        run: uv run --frozen --no-sync python scripts/check-python.py
       - name: Python and installer migration checks
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          python -m unittest discover -s test -p 'test_*.py'
+          & ./.venv/Scripts/python.exe -m unittest discover -s test -p 'test_*.py'
           if ($LASTEXITCODE) { throw 'Python checks failed' }
           powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File test/test_installer_migration.ps1
           if ($LASTEXITCODE) { throw 'Installer migration checks failed' }

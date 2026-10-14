@@ -4,7 +4,7 @@ import sys
 
 root = Path(SPECPATH).parent
 icon = root / 'app/assets/icons/stream-dog.ico'
-datas = []
+datas = [(str(root / 'app/_product_compat.py'), 'app')]
 
 def include_tree(relative, suffixes):
     for source in (root / relative).rglob('*'):
@@ -12,6 +12,8 @@ def include_tree(relative, suffixes):
             datas.append((str(source), str(source.parent.relative_to(root))))
 
 include_tree('app/n4', {'.py'})
+include_tree('apps/stream-dog/python/hellgato_stream_dog', {'.py'})
+include_tree('host-integrations/streamdeck/windows/python', {'.py'})
 # Only the compatibility launcher remains here; package runtime is packed below.
 datas.append((str(root / 'app/cora/server.mjs'), 'app/cora'))
 include_tree('app/locales', {'.json'})
@@ -46,7 +48,7 @@ datas += [
     (str(importlib.metadata.distribution('six').locate_file('six-1.17.0.dist-info/LICENSE')), 'licenses/six'),
     (str(root / 'installer/THIRD-PARTY-NOTICES.txt'), '.'),
 ]
-a = Analysis([str(root / 'app/hellgato.py')], pathex=[str(root / 'app/n4')],
+a = Analysis([str(root / 'apps/stream-dog/python/stream-dog.py')], pathex=[str(root / 'apps/stream-dog/python'), str(root / 'app/n4'), str(root / 'host-integrations/streamdeck/windows/python')],
              datas=datas, binaries=[],
              module_collection_mode={'pystray': 'py'},
              hiddenimports=['PIL.Image', 'PIL.ImageSequence', 'PIL.ImageOps', 'bisect', 'urllib.parse', 'winreg',

@@ -71,6 +71,45 @@
         "control": "brightness",
         "value": 42
       }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "knobBrightness",
+        "value": 0
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "knobBrightness",
+        "value": 100
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "followDisplayBrightness",
+        "value": true
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "followDisplayBrightness",
+        "value": false
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "screensaver"
+      }
     }
   ],
   "invalid": [
@@ -209,6 +248,68 @@
         "type": "control",
         "control": "brightness",
         "value": 101
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "knobBrightness",
+        "value": true
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "knobBrightness",
+        "value": 101
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "knobBrightness",
+        "value": -1
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "followDisplayBrightness",
+        "value": 1
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "screensaver",
+        "value": true
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "screensaver",
+        "path": "C:/arbitrary.png"
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "firmwareWrite"
+      }
+    },
+    {
+      "contract": "ControlCommand",
+      "value": {
+        "type": "control",
+        "control": "bootLogo"
       }
     }
   ]

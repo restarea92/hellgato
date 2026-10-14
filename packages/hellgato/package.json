@@ -20,7 +20,14 @@
   "files": [
     "index.mjs",
     "index.d.ts",
-    "src",
+    "src/session/index.mjs",
+    "src/session/index.d.mts",
+    "src/sidecar/index.mjs",
+    "src/sidecar/index.d.mts",
+    "src/testing/index.mjs",
+    "src/testing/index.d.ts",
+    "src/adapters/mirabox-n4-pro/index.mjs",
+    "src/adapters/mirabox-n4-pro/index.d.ts",
     "LICENSE",
     "README.md"
   ],

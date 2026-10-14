@@ -152,7 +152,7 @@ test('schema evaluator rejects unsupported keywords, types and references at imp
   const source = readFileSync(new URL('../packages/core/src/contracts/index.mjs', import.meta.url), 'utf8');
   for (const [field, value, message] of [['minProperties', 1, /Unsupported contract schema keyword/], ['type', 'number', /Unsupported contract schema type/], ['$ref', '#/$defs/Missing', /Unknown contract schema reference/]]) {
     const copy = structuredClone(schema); copy.$defs.Capability[field] = value;
-    const altered = source.replace(/^import schema[^\n]+/, `const schema = ${JSON.stringify(copy)};`);
+    const altered = source.replace(/^import (\w+) from ['"][^'"]+contracts\.schema\.json['"][^\n]+/m, (_, binding) => `const ${binding} = ${JSON.stringify(copy)};`);
     await assert.rejects(import(`data:text/javascript;base64,${Buffer.from(altered).toString('base64')}`), message);
   }
 });

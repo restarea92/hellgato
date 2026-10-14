@@ -2,204 +2,1048 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/restarea92/hellgato/blob/main/.release/plan.schema.json",
   "title": "Reviewed Hellgato release intent, generated only by release-version.mjs",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "repository",
-    "baseSha",
-    "bootstrap",
-    "changesets",
-    "components",
-    "generatedFiles"
-  ],
-  "properties": {
-    "schemaVersion": {
-      "const": 1
-    },
-    "repository": {
-      "const": "restarea92/hellgato"
-    },
-    "baseSha": {
+  "$defs": {
+    "version": {
       "type": "string",
-      "pattern": "^[a-f0-9]{40}$"
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-beta\\.(0|[1-9][0-9]*))?$"
     },
-    "bootstrap": {
-      "type": "boolean"
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
     },
-    "changesets": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "sha256",
-          "content",
-          "releases",
-          "summary"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9-]*$"
-          },
-          "sha256": {
-            "$ref": "#/$defs/digest"
-          },
-          "content": {
-            "type": "string"
-          },
-          "summary": {
-            "type": "string",
-            "minLength": 10
-          },
-          "releases": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "name",
-                "type"
-              ],
-              "properties": {
-                "name": {
-                  "enum": [
-                    "@hellgato/core",
-                    "hellgato",
-                    "@hellgato/windows-release"
-                  ]
-                },
-                "type": {
-                  "enum": [
-                    "patch",
-                    "minor",
-                    "major"
-                  ]
+    "windowsBaseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "component",
+        "channel",
+        "sourceVersion",
+        "version",
+        "tag",
+        "releaseId",
+        "releaseSha",
+        "installerSha256",
+        "manifestSha256",
+        "reason"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "component": {
+          "const": "windows"
+        },
+        "channel": {
+          "enum": [
+            "stable",
+            "beta"
+          ]
+        },
+        "sourceVersion": {
+          "$ref": "#/$defs/version"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-beta\\.(0|[1-9][0-9]*))?$"
+        },
+        "releaseId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "releaseSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "installerSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "manifestSha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 30
+        }
+      }
+    },
+    "npmBaseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "component",
+        "sourceVersion",
+        "packages",
+        "reason"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "component": {
+          "const": "npm"
+        },
+        "sourceVersion": {
+          "$ref": "#/$defs/version"
+        },
+        "packages": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "latest",
+              "beta"
+            ],
+            "properties": {
+              "name": {
+                "enum": [
+                  "@hellgato/core",
+                  "hellgato"
+                ]
+              },
+              "latest": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "version",
+                      "integrity"
+                    ],
+                    "properties": {
+                      "version": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/$defs/version"
+                          },
+                          {
+                            "const": "0.0.1-beta"
+                          }
+                        ]
+                      },
+                      "integrity": {
+                        "type": "string",
+                        "pattern": "^sha512-[A-Za-z0-9+/]{86}==$"
+                      }
+                    }
+                  }
+                ]
+              },
+              "beta": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "version",
+                      "integrity"
+                    ],
+                    "properties": {
+                      "version": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/$defs/version"
+                          },
+                          {
+                            "const": "0.0.1-beta"
+                          }
+                        ]
+                      },
+                      "integrity": {
+                        "type": "string",
+                        "pattern": "^sha512-[A-Za-z0-9+/]{86}==$"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 30
+        }
+      }
+    },
+    "channelPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "repository",
+        "candidateOnly",
+        "branch",
+        "baseSha",
+        "channel",
+        "transition",
+        "policy",
+        "changesets",
+        "archivedBefore",
+        "archivedAfter",
+        "preBefore",
+        "preAfter",
+        "components",
+        "generatedFiles"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "enum": [
+            2,
+            3
+          ]
+        },
+        "repository": {
+          "const": "restarea92/hellgato"
+        },
+        "candidateOnly": {
+          "type": "boolean"
+        },
+        "branch": {
+          "enum": [
+            "main",
+            "next"
+          ]
+        },
+        "baseSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "channel": {
+          "enum": [
+            "stable",
+            "beta"
+          ]
+        },
+        "transition": {
+          "enum": [
+            "enter",
+            "advance",
+            "exit"
+          ]
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "branch",
+            "releaseBranch",
+            "distTag",
+            "prerelease"
+          ],
+          "properties": {
+            "branch": {
+              "enum": [
+                "main",
+                "next"
+              ]
+            },
+            "releaseBranch": {
+              "enum": [
+                "changeset-release/main",
+                "changeset-release/next"
+              ]
+            },
+            "distTag": {
+              "enum": [
+                "latest",
+                "beta"
+              ]
+            },
+            "prerelease": {
+              "type": "boolean"
+            }
+          }
+        },
+        "changesets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "sha256",
+              "content",
+              "releases",
+              "summary"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$"
+              },
+              "sha256": {
+                "$ref": "#/$defs/digest"
+              },
+              "content": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 10
+              },
+              "releases": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "type"
+                  ],
+                  "properties": {
+                    "name": {
+                      "enum": [
+                        "@hellgato/core",
+                        "hellgato",
+                        "@hellgato/windows-release"
+                      ]
+                    },
+                    "type": {
+                      "enum": [
+                        "patch",
+                        "minor",
+                        "major"
+                      ]
+                    }
+                  }
                 }
               }
             }
           }
-        }
-      }
-    },
-    "components": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 2,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "component",
-          "oldVersion",
-          "version",
-          "channel",
-          "tag",
-          "notes"
-        ],
-        "properties": {
-          "component": {
-            "enum": [
-              "windows",
-              "npm"
-            ]
-          },
-          "oldVersion": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/version"
+        },
+        "archivedBefore": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "sha256",
+              "content",
+              "releases",
+              "summary"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$"
               },
-              {
-                "const": "0.0.1-beta"
+              "sha256": {
+                "$ref": "#/$defs/digest"
+              },
+              "content": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 10
+              },
+              "releases": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "type"
+                  ],
+                  "properties": {
+                    "name": {
+                      "enum": [
+                        "@hellgato/core",
+                        "hellgato",
+                        "@hellgato/windows-release"
+                      ]
+                    },
+                    "type": {
+                      "enum": [
+                        "patch",
+                        "minor",
+                        "major"
+                      ]
+                    }
+                  }
+                }
               }
-            ]
-          },
-          "version": {
-            "$ref": "#/$defs/version"
-          },
-          "channel": {
-            "const": "stable"
-          },
-          "tag": {
-            "type": "string"
-          },
-          "notes": {
-            "type": "string",
-            "pattern": "^docs/releases/[a-z0-9.-]+\\.md$"
-          },
-          "packages": {
-            "type": "array",
-            "minItems": 2,
-            "maxItems": 2,
-            "items": {
+            }
+          }
+        },
+        "archivedAfter": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "sha256",
+              "content",
+              "releases",
+              "summary"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$"
+              },
+              "sha256": {
+                "$ref": "#/$defs/digest"
+              },
+              "content": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 10
+              },
+              "releases": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "type"
+                  ],
+                  "properties": {
+                    "name": {
+                      "enum": [
+                        "@hellgato/core",
+                        "hellgato",
+                        "@hellgato/windows-release"
+                      ]
+                    },
+                    "type": {
+                      "enum": [
+                        "patch",
+                        "minor",
+                        "major"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "preBefore": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "name",
-                "oldVersion",
-                "version",
+                "mode",
                 "tag"
               ],
               "properties": {
-                "name": {
-                  "enum": [
-                    "@hellgato/core",
-                    "hellgato"
-                  ]
-                },
-                "oldVersion": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/version"
-                    },
-                    {
-                      "const": "0.0.1-beta"
-                    }
-                  ]
-                },
-                "version": {
-                  "$ref": "#/$defs/version"
+                "mode": {
+                  "const": "pre"
                 },
                 "tag": {
-                  "type": "string"
+                  "const": "beta"
+                }
+              }
+            }
+          ]
+        },
+        "preAfter": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "tag"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "pre"
+                },
+                "tag": {
+                  "const": "beta"
+                }
+              }
+            }
+          ]
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "component",
+              "oldVersion",
+              "version",
+              "channel",
+              "tag",
+              "notes"
+            ],
+            "properties": {
+              "component": {
+                "enum": [
+                  "windows",
+                  "npm"
+                ]
+              },
+              "oldVersion": {
+                "$ref": "#/$defs/version"
+              },
+              "version": {
+                "$ref": "#/$defs/version"
+              },
+              "channel": {
+                "enum": [
+                  "stable",
+                  "beta"
+                ]
+              },
+              "tag": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string",
+                "pattern": "^docs/releases/[a-z0-9.-]+\\.md$"
+              },
+              "packages": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "oldVersion",
+                    "version",
+                    "tag"
+                  ],
+                  "properties": {
+                    "name": {
+                      "enum": [
+                        "@hellgato/core",
+                        "hellgato"
+                      ]
+                    },
+                    "oldVersion": {
+                      "$ref": "#/$defs/version"
+                    },
+                    "version": {
+                      "$ref": "#/$defs/version"
+                    },
+                    "tag": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "publicBaseline": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/windowsBaseline"
+                  },
+                  {
+                    "$ref": "#/$defs/npmBaseline"
+                  }
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "component": {
+                      "const": "windows"
+                    }
+                  }
+                },
+                "then": {
+                  "not": {
+                    "required": [
+                      "packages"
+                    ]
+                  },
+                  "properties": {
+                    "publicBaseline": {
+                      "$ref": "#/$defs/windowsBaseline"
+                    }
+                  }
+                },
+                "else": {
+                  "required": [
+                    "packages"
+                  ],
+                  "properties": {
+                    "publicBaseline": {
+                      "$ref": "#/$defs/npmBaseline"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "generatedFiles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "channel": {
+                "const": "beta"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "transition": {
+                "enum": [
+                  "enter",
+                  "advance"
+                ]
+              },
+              "policy": {
+                "const": {
+                  "branch": "next",
+                  "releaseBranch": "changeset-release/next",
+                  "distTag": "beta",
+                  "prerelease": true
+                }
+              },
+              "preAfter": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mode",
+                  "tag"
+                ],
+                "properties": {
+                  "mode": {
+                    "const": "pre"
+                  },
+                  "tag": {
+                    "const": "beta"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "transition": {
+                "const": "exit"
+              },
+              "policy": {
+                "const": {
+                  "branch": "main",
+                  "releaseBranch": "changeset-release/main",
+                  "distTag": "latest",
+                  "prerelease": false
+                }
+              },
+              "preAfter": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "publicPlan": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/channelPlan"
+        },
+        {
+          "properties": {
+            "schemaVersion": {
+              "const": 3
+            },
+            "candidateOnly": {
+              "const": false
+            },
+            "components": {
+              "items": {
+                "required": [
+                  "publicBaseline"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "channel": {
+                "const": "beta"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "branch": {
+                "const": "next"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "branch": {
+                "const": "main"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "candidatePlan": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/channelPlan"
+        },
+        {
+          "properties": {
+            "schemaVersion": {
+              "const": 2
+            },
+            "candidateOnly": {
+              "const": true
+            },
+            "branch": {
+              "const": "next"
+            },
+            "components": {
+              "items": {
+                "not": {
+                  "required": [
+                    "publicBaseline"
+                  ]
                 }
               }
             }
           }
         }
+      ]
+    },
+    "stableVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "stablePublicBaseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "component",
+        "channel",
+        "sourceVersion",
+        "version",
+        "tag",
+        "releaseId",
+        "releaseSha",
+        "installerSha256",
+        "manifestSha256",
+        "reason"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "component": {
+          "const": "windows"
+        },
+        "channel": {
+          "const": "stable"
+        },
+        "sourceVersion": {
+          "$ref": "#/$defs/stableVersion"
+        },
+        "version": {
+          "$ref": "#/$defs/stableVersion"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "releaseId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "releaseSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "installerSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "manifestSha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 30
+        }
       }
     },
-    "generatedFiles": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "path",
-          "sha256"
-        ],
-        "properties": {
-          "path": {
-            "type": "string"
-          },
-          "sha256": {
-            "$ref": "#/$defs/digest"
+    "stablePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "repository",
+        "baseSha",
+        "bootstrap",
+        "changesets",
+        "components",
+        "generatedFiles"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "repository": {
+          "const": "restarea92/hellgato"
+        },
+        "baseSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "bootstrap": {
+          "type": "boolean"
+        },
+        "changesets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "sha256",
+              "content",
+              "releases",
+              "summary"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$"
+              },
+              "sha256": {
+                "$ref": "#/$defs/digest"
+              },
+              "content": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 10
+              },
+              "releases": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "type"
+                  ],
+                  "properties": {
+                    "name": {
+                      "enum": [
+                        "@hellgato/core",
+                        "hellgato",
+                        "@hellgato/windows-release"
+                      ]
+                    },
+                    "type": {
+                      "enum": [
+                        "patch",
+                        "minor",
+                        "major"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "component",
+              "oldVersion",
+              "version",
+              "channel",
+              "tag",
+              "notes"
+            ],
+            "properties": {
+              "component": {
+                "enum": [
+                  "windows",
+                  "npm"
+                ]
+              },
+              "oldVersion": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/stableVersion"
+                  },
+                  {
+                    "const": "0.0.1-beta"
+                  }
+                ]
+              },
+              "version": {
+                "$ref": "#/$defs/stableVersion"
+              },
+              "channel": {
+                "const": "stable"
+              },
+              "tag": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string",
+                "pattern": "^docs/releases/[a-z0-9.-]+\\.md$"
+              },
+              "packages": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "oldVersion",
+                    "version",
+                    "tag"
+                  ],
+                  "properties": {
+                    "name": {
+                      "enum": [
+                        "@hellgato/core",
+                        "hellgato"
+                      ]
+                    },
+                    "oldVersion": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/stableVersion"
+                        },
+                        {
+                          "const": "0.0.1-beta"
+                        }
+                      ]
+                    },
+                    "version": {
+                      "$ref": "#/$defs/stableVersion"
+                    },
+                    "tag": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "publicBaseline": {
+                "$ref": "#/$defs/stablePublicBaseline"
+              }
+            }
+          }
+        },
+        "generatedFiles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "$ref": "#/$defs/digest"
+              }
+            }
           }
         }
       }
     }
   },
-  "$defs": {
-    "version": {
-      "type": "string",
-      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+  "oneOf": [
+    {
+      "$ref": "#/$defs/stablePlan"
     },
-    "digest": {
-      "type": "string",
-      "pattern": "^[a-f0-9]{64}$"
+    {
+      "$ref": "#/$defs/publicPlan"
     }
-  }
+  ]
 }

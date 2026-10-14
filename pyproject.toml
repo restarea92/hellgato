@@ -1,0 +1,74 @@
+[project]
+name = "hellgato-development"
+version = "0.0.0"
+description = "Private development and Windows build environment, not a release component"
+requires-python = ">=3.13,<3.14"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = []
+
+[dependency-groups]
+build = [
+    "PyInstaller==6.16.0",
+    "Pillow==12.0.0",
+    "pefile==2023.2.7",
+    "pystray==0.19.5",
+    "six==1.17.0",
+    "unicorn==2.1.4",
+]
+
+check = ["mypy==1.18.2", "ruff==0.14.0"]
+
+[tool.uv]
+required-version = "==0.12.23"
+package = false
+default-groups = ["build", "check"]
+
+[tool.uv.workspace]
+members = ["adapters/mirabox-python"]
+
+[tool.ruff]
+required-version = "==0.14.0"
+target-version = "py313"
+# Canonical source trees only. The legacy compatibility engine and vendor SDK
+# keep their current behavior; they remain covered by regression/hardware tests.
+include = [
+    "adapters/mirabox-python/src/hellgato_mirabox/**/*.py",
+    "apps/stream-dog/python/**/*.py",
+    "host-integrations/streamdeck/windows/python/**/*.py",
+    "scripts/check-python.py",
+    "test/typechecks/*.py",
+    "test/test_python_quality.py",
+]
+cache-dir = "work/ruff-cache"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B006"]
+
+[tool.ruff.lint.per-file-ignores]
+# Entrypoints must resolve source/frozen roots and --version before importing
+# product/host modules. This is an intentional bootstrap ordering exception.
+"apps/stream-dog/python/candidate.py" = ["E402"]
+"apps/stream-dog/python/hellgato_stream_dog/launcher.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.13"
+platform = "win32"
+strict = true
+show_error_codes = true
+warn_unreachable = true
+cache_dir = "work/mypy-cache"
+mypy_path = [
+    "$MYPY_CONFIG_FILE_DIR/adapters/mirabox-python/src",
+    "$MYPY_CONFIG_FILE_DIR/apps/stream-dog/python",
+    "$MYPY_CONFIG_FILE_DIR/host-integrations/streamdeck/windows/python",
+]
+# Strictly check the actual serialization/transaction/readiness boundary code.
+# Legacy Tk callbacks, native ctypes internals and vendor transport code are
+# explicitly outside this first strict slice, but remain Ruff-checked above.
+files = [
+    "adapters/mirabox-python/src/hellgato_mirabox/protocol.py",
+    "apps/stream-dog/python/hellgato_candidate/files.py",
+    "host-integrations/streamdeck/windows/python/hellgato_host/startup_status.py",
+    "test/typechecks/python_boundaries.py",
+    "scripts/check-python.py",
+]

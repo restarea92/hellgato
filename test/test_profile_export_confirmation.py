@@ -21,7 +21,7 @@ from profile_transfer import ProfileError, device_uuid, export_profiles
 def launcher_transfer(namespace):
     # Compile the actual nested callback with its closure dependencies injected.
     # This avoids executing main's Windows mutex, tray, and device setup.
-    source = ast.parse((ROOT / 'app/hellgato.py').read_text(encoding='utf-8'))
+    source = ast.parse((ROOT / 'apps/stream-dog/python/hellgato_stream_dog/launcher.py').read_text(encoding='utf-8'))
     main = next(node for node in source.body if isinstance(node, ast.FunctionDef) and node.name == 'main')
     transfer = next(node for node in main.body if isinstance(node, ast.FunctionDef) and node.name == 'transfer')
     wrapper = ast.parse('''
@@ -33,7 +33,7 @@ def make_transfer():
     return transfer, state
 ''')
     wrapper.body[0].body.insert(2, transfer)
-    exec(compile(ast.fix_missing_locations(wrapper), str(ROOT / 'app/hellgato.py'), 'exec'), namespace)
+    exec(compile(ast.fix_missing_locations(wrapper), str(ROOT / 'apps/stream-dog/python/hellgato_stream_dog/launcher.py'), 'exec'), namespace)
     return namespace['make_transfer']()
 
 

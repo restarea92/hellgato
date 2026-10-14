@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { releaseChannel, validatePrereleaseState } from './release-policy.mjs';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const SHA = /^[a-f0-9]{40}$/;
@@ -53,7 +54,9 @@ export function parseWorkspacePackages(source) {
   invariant(new Set(members).size === members.length, 'Unsupported workspace YAML: duplicate member');
   return members.sort();
 }
-export async function configuration(root) {
+export async function configuration(root, { channel = 'stable' } = {}) {
+  invariant(['stable', 'beta'].includes(channel), 'Unknown configuration channel');
+  if (channel === 'stable') invariant(!existsSync(resolve(root, '.changeset/pre.json')), 'Prerelease mode is not supported by the stable release pipeline');
   const config = await readJson(resolve(root, '.release/components.json'));
   invariant(config.schemaVersion === 1 && config.repository === 'restarea92/hellgato', 'Unsupported component configuration');
   invariant(config.components.length === 2 && config.components[0].component === 'windows' && config.components[1].component === 'npm', 'Expected explicit Windows/npm components');
@@ -70,7 +73,7 @@ export async function configuration(root) {
   const packages = [];
   for (const p of declared) {
     const manifest = await readJson(resolve(root, p.path, 'package.json'));
-    invariant(manifest.name === p.name && VERSION.test(manifest.version), `Invalid stable package metadata: ${p.path}`);
+    invariant(manifest.name === p.name && (channel === 'stable' ? VERSION.test(manifest.version) : ['stable', 'beta'].includes(releaseChannel(manifest.version))), `Invalid stable package metadata: ${p.path}`);
     invariant(p.name === '@hellgato/windows-release' ? manifest.private === true : manifest.private !== true, 'Windows metadata must remain private and npm workspaces publishable');
     packages.push({ ...p, version: manifest.version, manifest });
   }
@@ -79,7 +82,7 @@ export async function configuration(root) {
   invariant(core.version === facade.version && facade.manifest.dependencies?.['@hellgato/core'] === 'workspace:*', 'npm packages must keep equal source versions and workspace:* dependency');
   const changesets = await readJson(resolve(root, '.changeset/config.json'));
   invariant(JSON.stringify(changesets.fixed) === JSON.stringify([['@hellgato/core', 'hellgato']]) && changesets.privatePackages?.version === true && changesets.privatePackages?.tag === false && changesets.ignore?.length === 0 && changesets.changelog === '@changesets/cli/changelog' && changesets.commit === false && changesets.baseBranch === 'main', 'Changesets fixed/private policy changed');
-  invariant(!existsSync(resolve(root, '.changeset/pre.json')), 'Prerelease mode is not supported by the stable release pipeline');
+  if (channel === 'beta' && existsSync(resolve(root, '.changeset/pre.json'))) validatePrereleaseState(await readJson(resolve(root, '.changeset/pre.json')));
   return { ...config, packages };
 }
 export function parseChangeset(content, id) {

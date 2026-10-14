@@ -6,18 +6,29 @@ def scalar(value):
     return value.value if isinstance(value, Enum) else value
 
 
-def descriptor(device_id, firmware=''):
+def descriptor(device_id, firmware='', *, knob_supported=False, logo_supported=False):
+    features = {
+        name: {'status': 'native', 'limitations': ['Mechanism implemented; candidate IPC physical parity unverified']}
+        for name in ('brightness', 'clear', 'fill', 'sleep', 'wake')}
+    features.update({name: {'status': 'emulated', 'limitations': [
+        'Worker-owned idle/saved-file playback; physical parity unverified',
+        'Without an explicit saved source, idle uses true sleep']}
+        for name in ('sleepDuration', 'screensaver')})
+    features.update({name: {'status': 'native' if knob_supported else 'unsupported', 'limitations': [
+        'Requires checked LED transport symbol; physical parity unverified']}
+        for name in ('knobBrightness', 'followDisplayBrightness')})
+    features['showLogo'] = {'status': 'emulated' if logo_supported else 'unsupported', 'limitations': [
+        'Explicit software PNG overlay only; no boot-logo write']}
+    features.update({name: {'status': 'unverified', 'limitations': [limitation]} for name, limitation in (
+        ('display', 'Exact bundled experimental firmware admission only; new IPC path requires N4 hardware parity verification'),
+        ('touch', 'Existing 112-to-100 calibration; new worker unverified'),
+        ('reconnect', 'Explicit close/open and caller-owned state replay required'))})
     return {'id': device_id, 'adapterId': 'mirabox-n4-pro', 'modelId': 'n4-pro', 'firmware': firmware,
             'capabilities': {'keys': 10, 'dials': 4, 'touch': {'width': 800, 'height': 100},
             'displays': [*({'id': f'key:{index}', 'width': 120, 'height': 120, 'format': 'jpeg', 'partial': False} for index in range(10)),
                          {'id': 'touch', 'width': 800, 'height': 100, 'format': 'jpeg', 'partial': True},
                          {'id': 'lcd', 'width': 800, 'height': 480, 'format': 'jpeg', 'partial': False}],
-            'dialPress': 'pulse', 'dialRelease': 'unavailable',
-            'features': {**{name: {'status': 'native', 'limitations': ['Mechanism implemented; candidate IPC physical parity unverified']} for name in ('brightness', 'clear', 'fill', 'sleep', 'wake')}, **{name: {'status': 'unverified', 'limitations': [limitation]} for name, limitation in (
-                ('display', 'New IPC path requires N4 hardware parity verification'),
-                ('touch', 'Existing 112-to-100 calibration; new worker unverified'),
-                ('reconnect', 'Explicit close/open required; automatic display restoration not yet verified'),
-                ('screensaver', 'Saved animation playback remains on legacy product engine'))}}}}
+            'dialPress': 'pulse', 'dialRelease': 'unavailable', 'features': features}}
 
 
 def input_event(event):

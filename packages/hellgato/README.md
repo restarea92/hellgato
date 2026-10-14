@@ -133,3 +133,12 @@ Conformance exercises discovery, normalized payloads when provided, explicit dev
 ## Compatibility
 
 Existing root `createBridge()` and `createN4ProProfile()` imports remain available and deprecated for the transition. Their N4 defaults belong to the bounded core legacy module. New `createSession` calls require an explicit adapter, device ID and mapping. `@hellgato/core` is a Stream Deck bridge, not a USB driver, and this facade never imports product installation paths.
+
+## TypeScript source and emitted API
+
+The facade, session coordinator, bounded sidecar transport, N4 binding and testing
+helpers are strict TypeScript implementations. Their checked `.ts` / `.mts` sources
+emit the existing public ESM paths and TypeScript declarations with TypeScript
+5.9.3. `pnpm build:types` regenerates them; `pnpm typecheck` checks implementation
+bodies, consumer types and generated-output drift. npm archives contain only the
+reviewed runtime and declaration files, with no TypeScript implementation source.

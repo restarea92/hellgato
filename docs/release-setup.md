@@ -90,10 +90,12 @@ npm publication; the historical npm activation checklist above is deferred until
 a separate reviewed code change restores publication and the owner approves the
 specific release. This change creates no credentials or persistent permissions.
 
-The public publisher remains stable-only and fails closed on prerelease metadata.
-Migration candidates are CI artifacts only; beta publication and independent
-worker/CompatibilityTools assets require their own reviewed channel policy. A
-successful artifact build is not a beta/stable release or hardware validation.
+Stable remains the default. Reviewed schema-3 channel plans support beta on
+`next` and stable promotion on `main`, with exact public observations and replay.
+Windows retains its existing approval/RELEASE_ENABLED gate for both channels;
+npm real transports are implemented behind the unconditional hold and tested
+with explicit fake I/O. Candidate/source-CI artifacts cannot authorize release.
+A successful build is not a public release or physical hardware validation.
 
 ### Prepared versus published Windows baseline
 
@@ -113,11 +115,21 @@ Windows-only bootstrap on that prepared baseline is the existing supported way
 to establish it. Do not publish an unverified architecture candidate merely to
 prime that baseline.
 
-If the prepared `0.1.2` is intentionally skipped or version-bump changesets have
-already entered main, keep candidates as CI artifacts. A separate narrowly
-reviewed release-policy change must distinguish the source version from the
-confirmed public baseline, bind the intended transition to the approved plan,
-and retain deterministic replay, monotonic versions, exact artifacts and owner
-approval. Do not edit `oldVersion`, pretend an unpublished version exists, or
-relax the current baseline check. npm does not need to be enabled for that
-Windows-only follow-on.
+If the prepared `0.1.2` is intentionally skipped, the explicitly reviewed
+`.release/windows-public-baseline.json` policy now supports a normal Changesets
+transition without pretending that source `0.1.2` was published. The record must
+already exist in the exact committed versioning base. It binds source version,
+public version, release ID, dereferenced tag SHA, installer digest, raw manifest
+digest (or null for the two legacy versions), and a reviewable reason. The
+version PR copies it into the canonical component and full replay verifies it.
+`oldVersion` stays the actual source version. Public verification rechecks all
+identities and bytes, including immediately before finalization. Missing/stale
+records and changed public state fail closed. Bootstrap cannot use this record.
+No baseline record or release intent is added by the implementation PR.
+
+See [release channels and public baselines](release-channels.md) for reviewed
+channel plans, private candidates, ordinary next source CI, Windows-only SDK
+consumers, exact npm tag observations and registry-byte readback. Actual
+installation/upgrade and physical-device evidence remain release prerequisites
+where applicable. No baseline record or public release approval is inferred from
+the implementation tests.

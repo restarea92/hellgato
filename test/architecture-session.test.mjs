@@ -323,3 +323,29 @@ test('touch mapping cannot target a disabled host surface', async () => {
   const f = fixture({ adapter, profile }); await assert.rejects(f.session.start(), { code: 'UNSUPPORTED_MAPPING' });
   assert.equal(f.bridges.length, 0);
 });
+
+for (const terminal of ['disconnected', 'failed', 'crashed']) test(`adapter ${terminal} during open rejects startup and cleans all resources`, async () => {
+  const adapter = createButtonSimulator(); const open = adapter.open; let reportState;
+  const subscribe = adapter.onState;
+  adapter.onState = callback => { reportState = callback; return subscribe(callback); };
+  adapter.open = async (...args) => {
+    await open(...args);
+    reportState({ state: terminal, deviceId: adapter.device.id, generation: args[1].generation });
+  };
+  const f = fixture({ adapter });
+  await assert.rejects(f.session.start(), { code: 'ADAPTER_DISCONNECTED' });
+  assert.equal(f.session.state, 'failed');
+  assert.deepEqual(f.calls, ['bridgeFactory', 'bridge.start', 'bridge.stop']);
+  assert.ok(adapter.calls.includes('close')); assert.ok(adapter.calls.includes('stop'));
+});
+
+test('host output received after disconnect cannot replay on the next connection', async () => {
+  const f = fixture(); await f.session.start(); const bridge = f.bridges[0];
+  bridge.emit('clientDisconnected');
+  bridge.emit('output', { ...envelope(f.session), type: 'control', control: 'brightness', value: 17 });
+  bridge.emit('clientConnected'); await tick();
+  assert.deepEqual(f.adapter.controls, []);
+  bridge.emit('output', { ...envelope(f.session), sequence: 2, type: 'control', control: 'brightness', value: 42 });
+  await tick(); assert.deepEqual(f.adapter.controls.map(output => output.value), [42]);
+  await f.session.stop();
+});

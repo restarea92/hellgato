@@ -1,16 +1,16 @@
 name: Prepare release PR
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: release-pr-main
+  group: release-pr-${{ github.ref_name }}
   cancel-in-progress: false
 jobs:
   version:
-    if: github.repository == 'restarea92/hellgato' && github.ref == 'refs/heads/main'
+    if: github.repository == 'restarea92/hellgato' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/next')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -32,21 +32,22 @@ jobs:
         id: pending
         run: |
           node --input-type=module <<'JS'
-          import { appendFileSync } from 'node:fs';
+          import { appendFileSync, existsSync } from 'node:fs';
           import { pendingChangesets, ROOT } from './scripts/release-lib.mjs';
           const pending = (await pendingChangesets(ROOT)).some(change => change.releases.length > 0);
-          appendFileSync(process.env.GITHUB_OUTPUT, `pending=${pending}\n`);
+          const channel = process.env.GITHUB_REF_NAME === 'next' ? 'beta' : existsSync('.changeset/pre.json') ? 'stable' : '';
+          appendFileSync(process.env.GITHUB_OUTPUT, `pending=${pending || channel === 'stable'}\nchannel=${channel}\n`);
           JS
       - id: version
         if: steps.pending.outputs.pending == 'true'
         uses: changesets/action/version@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          script: pnpm run release:version
+          script: node scripts/release-version.mjs ${{ steps.pending.outputs.channel != '' && format('--channel {0}', steps.pending.outputs.channel) || '' }}
           github-token: ${{ github.token }}
           commit-message: 'chore(release): version selected components'
           pr-title: 'chore(release): publish selected components'
           pr-draft: always
-          pr-base-branch: main
+          pr-base-branch: ${{ github.ref_name }}
   checks:
     needs: version
     if: needs.version.outputs.pr_number != ''
@@ -68,6 +69,8 @@ jobs:
           head=$(jq -er '.head.sha' <<< "$pr")
           branch=$(jq -er '.head.ref' <<< "$pr")
           base=$(jq -er '.base.sha' <<< "$pr")
-          test "$branch" = 'changeset-release/main'
+          base_branch=$(jq -er '.base.ref' <<< "$pr")
+          [[ "$base_branch" == main || "$base_branch" == next ]]
+          test "$branch" = "changeset-release/$base_branch"
           gh workflow run checks.yml --repo "$GH_REPO" --ref "$branch" -f expected_sha="$head" -f base_sha="$base"
           gh workflow run windows-build.yml --repo "$GH_REPO" --ref "$branch" -f expected_sha="$head"

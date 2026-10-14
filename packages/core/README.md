@@ -134,7 +134,12 @@ hardware evidence do not verify the new architecture on real USB hardware.
 
 ## Source and license
 
-`packages/core/src` is the sole authored core source. `app/cora` contains development
+`packages/core/src` is the sole authored core source. Contracts, device bridge and
+Stream Deck target glue are strict `.mts` implementations. `pnpm build:types`
+compiles their ESM and declarations; `pnpm typecheck` rejects source errors and
+stale generated output. Edit TypeScript rather than the adjacent generated files.
+The retained protocol extensions and pinned vendor runtime use explicit typed
+compatibility boundaries; they are not claimed as strictly converted sources. `app/cora` contains development
 compatibility wrappers; packaging copies no application source and rewrites no
 application imports. The pinned DeckBridge runtime is reproducibly prepared into
 `src/vendor` (ignored generated content) and copied verbatim to `dist/vendor`.

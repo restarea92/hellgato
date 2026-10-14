@@ -118,6 +118,9 @@ validation continue. Existing Windows release approval gates remain in force.
 
 The new Python sidecar is experimental. The installed product retains its existing
 N4 compatibility engine until candidate-specific hardware parity is recorded.
+The separate [Windows IPC trial bundle](docs/compatibility/ipc-trial.md) exercises
+the new worker with explicit selection, local backups and a return path to the
+existing engine. Its frozen fake-backend tests do not establish physical parity.
 See the [architecture and staged rollout](docs/architecture/0001-device-neutral-sdk.md),
 [adapter guide](docs/adapters/contributing.md), and
 [evidence requirements](docs/compatibility/architecture-candidate.md).

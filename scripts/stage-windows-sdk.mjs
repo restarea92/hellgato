@@ -46,20 +46,37 @@ export function verifyWindowsSdkStage(directory, { releaseSha, version } = {}) {
   return manifest;
 }
 
-export function stageWindowsSdk({ root = ROOT, artifactDir, destination = resolve(root, 'work/stream-dog-sdk') } = {}) {
+export function stagingPlanOptions(root, planPath, { validate = true } = {}) {
+  if (!planPath) return {};
+  planPath = resolve(planPath);
+  invariant(planPath === resolve(root, '.release/plan.json'), 'Windows SDK staging requires the checkout release plan');
+  const plan = json(planPath);
+  invariant([1, 3].includes(plan.schemaVersion) && plan.repository === 'restarea92/hellgato' && Array.isArray(plan.components), 'Invalid Windows SDK release intent');
+  invariant(plan.components.some(component => component.component === 'windows'), 'Windows staging requires selected Windows release intent');
+  if (validate) {
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    execFileSync(process.execPath, [resolve(root, 'scripts/release-version.mjs'), '--check-plan', '--head', head], { cwd: root, stdio: 'inherit' });
+  }
+  return plan.components.some(component => component.component === 'npm') ? { planPath } : { consumerPlanPath: planPath };
+}
+
+export function stageWindowsSdk({ root = ROOT, artifactDir, planPath, sourceChannel, destination = resolve(root, 'work/stream-dog-sdk') } = {}) {
   const work = resolve(root, 'work');
   mkdirSync(work, { recursive: true });
   const scratch = mkdtempSync(resolve(work, 'sdk-stage-'));
   const consumerCache = mkdtempSync(resolve(tmpdir(), 'hellgato-stage-cache-'));
   try {
+    invariant(!sourceChannel || sourceChannel === 'beta' && !planPath, 'Source channel and public plan are mutually exclusive');
+    const planOptions = sourceChannel ? { sourceChannel } : stagingPlanOptions(root, planPath);
+    const planArgs = sourceChannel ? ['--source-channel', sourceChannel] : planOptions.consumerPlanPath ? ['--consumer-plan', planOptions.consumerPlanPath] : planOptions.planPath ? ['--plan', planOptions.planPath] : [];
     if (!artifactDir) {
-      execFileSync(process.execPath, [resolve(root, 'scripts/build-npm.mjs')], { cwd: root, stdio: 'inherit' });
+      execFileSync(process.execPath, [resolve(root, 'scripts/build-npm.mjs'), ...planArgs], { cwd: root, stdio: 'inherit' });
       artifactDir = resolve(scratch, 'artifacts');
-      packArtifacts({ root, artifactDir });
-      verifyConsumerArtifacts({ artifactDir });
+      packArtifacts({ root, artifactDir, ...planOptions });
+      verifyConsumerArtifacts({ artifactDir, ...planOptions });
     }
     const releaseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-    const artifacts = verifyArtifacts({ artifactDir, releaseSha, requireConsumerSmoke: true });
+    const artifacts = verifyArtifacts({ artifactDir, releaseSha, ...planOptions, requireConsumerSmoke: true });
     const stage = resolve(scratch, 'runtime');
     mkdirSync(stage);
     writeFileSync(resolve(stage, 'package.json'), JSON.stringify({ name: 'stream-dog-runtime', private: true, type: 'module' }) + '\n');
@@ -90,7 +107,7 @@ export function stageWindowsSdk({ root = ROOT, artifactDir, destination = resolv
     const manifest = {
       schemaVersion: 1, component: 'stream-dog-sdk', engine: 'legacy-compatibility',
       productVersion: json(resolve(root, 'packages/windows-release/package.json')).version,
-      releaseSha, sdk: artifacts.packages.map(({ name, version, sha256, integrity }) => ({ name, version, sha256, integrity })),
+      releaseSha, sdkChannel: artifacts.channel, releasePlanSha256: artifacts.planSha256, sdk: artifacts.packages.map(({ name, version, sha256, integrity }) => ({ name, version, sha256, integrity })),
       files: stageInventory(stage),
     };
     writeFileSync(resolve(stage, 'product-build-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
@@ -108,8 +125,8 @@ export function stageWindowsSdk({ root = ROOT, artifactDir, destination = resolv
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    invariant(process.argv.length === 2 || (process.argv.length === 4 && process.argv[2] === '--verify'), 'Use stage-windows-sdk.mjs [--verify directory]');
-    const result = process.argv[2] === '--verify' ? verifyWindowsSdkStage(resolve(process.argv[3])) : stageWindowsSdk();
+    invariant(process.argv.length === 2 || (process.argv.length === 4 && ['--verify', '--plan', '--source-channel'].includes(process.argv[2])), 'Use stage-windows-sdk.mjs [--verify directory | --plan .release/plan.json | --source-channel beta]');
+    const result = process.argv[2] === '--verify' ? verifyWindowsSdkStage(resolve(process.argv[3])) : stageWindowsSdk({ planPath: process.argv[2] === '--plan' ? resolve(process.argv[3]) : undefined, sourceChannel: process.argv[2] === '--source-channel' ? process.argv[3] : undefined });
     console.log(`Verified Windows SDK staging: ${result.sdk.map(pkg => `${pkg.name}@${pkg.version}`).join(', ')}`);
   } catch (error) { console.error(`Windows SDK staging refused: ${error.message}`); process.exitCode = 1; }
 }

@@ -6,6 +6,14 @@ The existing product engine remains the default until the new path passes the N4
 hardware, reconnect, display, screensaver, Windows shutdown and endurance gates.
 Passing the fake backend is **not** physical-device support evidence.
 
+The bundled experimental firmware policy currently admits only the exact string
+`V4.N4 Pro E.02.010`, based on the historical product baseline. This is permission
+to run the isolated trial, not candidate hardware verification. Missing, unknown
+or different firmware is rejected before display initialization; no runtime
+override is provided. Discovery may briefly open only the native transport to
+read firmware, then closes it before returning the candidate descriptor. It does
+not initialize the screen or forward inputs. Open checks the firmware again.
+
 Source-development entry point (from an installed wheel, no repository imports):
 
     hellgato-mirabox-worker --sdk-path C:\absolute\prepared-sdk\src --build-id <manifest-build-id>
@@ -64,7 +72,7 @@ physical stop/input latency under a display flood still require hardware tests.
 
 The N4 binding retains the existing physical key-number fix, dial direction and
 pulse semantics, 112-to-100 touch calibration, 180° framebuffer rotation,
-10-key LCD crop grid, four secondary-screen panel writes, and safe shutdown
+10-key LCD crop grid, saved framebuffer/panel strip policy, and safe shutdown
 helper. Vendor path-only image APIs use private bounded temporary files removed
 after each call. Frames never travel between processes using disk files.
 
@@ -72,12 +80,93 @@ Native commands report `submitted` / `unconfirmed`, never an invented physical
 acknowledgement. The fake backend reports `applied` / `simulation`. N4 dials report
 `pulse`, with physical release `unavailable`.
 
-The candidate currently supports key/touch/LCD output and brightness, fill,
-clear, sleep and wake. `sleepDuration`, `showLogo`, saved native screensaver
-playback, knob brightness, firmware writes and boot-logo operations are not
-available through this worker. USB disappearance is reported; reconnect requires
+The physical worker isolates the pinned SDK's relative temporary image files in
+its own temporary working directory. Normal shutdown and Python exceptions restore
+the original directory and remove those files. Forced process/OS termination can
+leave an OS-temporary directory behind; it must not be included in diagnostics.
+
+The candidate supports key/touch/LCD output, brightness, fill, clear, sleep/wake,
+software `sleepDuration`, saved screensaver playback, and optional checked knob
+brightness. `showLogo` is an optional software display overlay. Firmware writes
+and boot-logo operations remain unavailable. USB disappearance is reported; reconnect requires
 an explicit close/open with a new generation. Product parity and automatic state
 restoration are release gates; the legacy product path remains available.
+
+## Explicit assets and state semantics
+
+Physical startup accepts `--strip-mode frame|panels` (standalone default: panels).
+The product must pass its saved `stripMode`; frame mode preserves the legacy
+rotated 800×130 initial strip with a 20px offset and inverted partial-update
+coordinates. Full LCD output and wake restore reinitialize that baseline. Panel
+mode writes only intersecting secondary-screen panels.
+
+Physical startup may add `--screensaver-path C:\absolute\saved-animation.webp`
+and `--logo-path C:\absolute\hellgato-front-64.png`. These are caller-selected,
+read-only local files; neither paths nor arbitrary file reads are accepted over
+IPC. The worker never reads Stream Deck settings, registry or user preferences.
+Assets are loaded once per open and must be supplied again on restart. Invalid
+assets fail open and close the device instead of silently changing the source.
+
+Saved PNG/JPEG/GIF/WEBP/BMP preparation retains the legacy centered 800×480 canvas,
+alpha compositing, 180° rotation and frame timing. Bounds: 64 MiB source, 4 million
+pixels per frame, 256 million total transformed pixels, 1,000 frames and 128 MiB
+encoded playback bytes. Cancellation is checked during preparation and before
+individual native writes. The software logo accepts one PNG, at most 1 MiB and
+800×480 pixels. Neither asset is written to firmware or persistent device storage.
+
+Controls added to the canonical schema:
+- `sleepDuration`, integer seconds 0–2,147,483,647; zero disables the local idle timer
+- `screensaver`, enter idle and play the configured saved source, or truly sleep
+  when no saved source exists
+- `knobBrightness`, integer 0–100; requires the prepared SDK's checked LED symbol
+- `followDisplayBrightness`, boolean; independent knob brightness still fades and
+  switches off during idle/sleep
+- `showLogo`, existing command, available only with the explicit software PNG
+
+`brightness: 0` keeps the remembered normal brightness and enters idle, matching
+legacy behavior. Remaining descending host brightness fade commands do not wake
+an idle saver. `sleep` always turns the screen off; `wake` and physical input
+restore cached surfaces while dim, then fade to the normal brightness. The known
+key-release / disabled sleep timer / descending brightness manual-sleep sequence
+is preserved. These are N4 behaviors, not generic SDK assumptions.
+
+Normal frames received during idle update bounded in-memory surfaces without
+waking. A complete LCD frame is normal display content under the generic frame
+contract; host-specific saved-saver selection/suppression belongs to the product
+bridge. No worker disk trace or frame-file IPC is introduced. The saved source
+must not be confused with streamed host LCD frames when restoring normal content.
+
+`getState` reports submitted intent, not hardware readback: `brightness` is the
+remembered normal level; `screenBrightness` is the last submitted screen level
+(or null before a write); `sleeping`, `idle`, `sleepDuration`,
+`screensaverReady`, `screensaverActive`, `logoActive`, `knobBrightness`,
+`followDisplayBrightness` and `knobBrightnessLevel` describe worker state.
+Physical `stateVerification` is `unconfirmed`; fake is `simulation`.
+Successful control responses also include bounded `idle`, `sleeping`,
+`screensaverActive` and `logoActive` hints. Clear/fill responses describe their
+normal-cache effect with `normalStateEffect`: `background-only` for the special
+legacy idle/wake clear preserving key/strip caches, `replace-all` for ordinary
+full-surface replacement, or `surface` for a scoped key/touch update. These hints
+allow an owner to journal the actual restore semantics without image snapshots;
+they are not physical acknowledgements. Fake global clears always replace all.
+Reconnect resets volatile preferences and surfaces. The caller must replay
+reviewed settings/content in its new generation. No identity or preference files
+are created or changed by the worker.
+
+Input callbacks only publish input and mark activity; USB wake/restore is serviced
+by the serialized writer. Idle/animation polling also runs while output is queued,
+so a display flood cannot indefinitely suppress timer or input-wake processing.
+Actual native calls cannot be interrupted; bounded process termination remains
+the owner's final shutdown guarantee.
+
+On Windows the physical process holds the exact legacy
+`Local\Hellgato.N4Pro.Bridge` lifetime mutex before SDK import/discovery. It
+rejects another active engine, retains ownership across device close/reopen and
+releases only after confirmed shutdown. Device IDs use the byte-identical legacy
+registry fingerprint without exposing raw serials or importing product code.
+The fake backend never obtains this physical lock. Dynamic vendor imports disable
+Python bytecode writes before importing the prepared SDK, preserving the frozen
+worker dependency inventory instead of adding `__pycache__` files.
 
 Packaging uses the explicit private marker `0.0.0.dev0`, read dynamically from the
 package. It is not a third release/version owner. The phase-A Windows product

@@ -49,9 +49,10 @@ Windows or npm release was published while implementing the automation.
 
 ## Scope and remaining decisions
 
-The supported release targets are the two existing npm packages and Windows.
-This PR does not refactor device adapters or the SDK/plugin architecture. Adding
-future internal workspaces requires an explicit impact-map/policy update;
+The supported release targets remain the two existing npm packages and Windows.
+The architecture split changes their internals while preserving separate product
+and SDK release decisions. Adding future internal workspaces requires an explicit
+impact-map/policy update;
 separately owned community repositories are not silently included in this
 repository's release permissions.
 
@@ -97,6 +98,22 @@ minimum 2.327.1. No forced-runtime environment workaround is used.
 - npm workflow publication and CLI/API publication are hard-disabled. Existing
   publisher ordering, baseline, digest, OIDC and partial-resume checks remain
   executable against fake I/O. No live publication is attempted by those tests.
-- Stable-only release validation is retained. Beta candidates remain explicitly
-  staged CI artifacts until their publication/channel policy is implemented and
-  separately approved.
+- Legacy stable plans remain supported. Schema-3 reviewed beta and stable
+  promotion plans bind committed public baselines and full Changesets replay.
+  Schema-2 artifact-only candidates and private source-CI packages cannot publish.
+- Exact next-to-main source handoffs are separate from stable version approval:
+  source tree and beta plan bytes are fixed, extra edits and stale refs fail,
+  preserving merge ancestry is required, and promotion needs fresh reviewed
+  baselines plus a separate pre-exit plan. End-to-end fixtures cover that path.
+- npm registry confirmation downloads the official exact-version tarballs and
+  compares SHA-256, SHA-512, and size with the approved artifacts. Metadata-only
+  matches, changed unrelated dist-tags, or stable values on beta fail closed.
+- Original artifact verification binds the exact run attempt, source-head
+  ancestry, successful unique build job, immutable archive identity, and manifest
+  source SHA. An ordinary stable Windows build does not inherit a lingering plan
+  digest; npm-only version PRs keep Windows in its independent source context.
+- Local beta Windows tests exercise the same publication engine with explicit
+  in-memory transports, including stable promotion, immutable retries, stale
+  public baselines, malformed channel plans, and build-byte tampering. No live
+  GitHub or npm write is performed. The real Windows installer still requires
+  Windows CI and upgrade/downgrade/device evidence before release approval.

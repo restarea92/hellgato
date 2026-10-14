@@ -1,26 +1,41 @@
 param(
     [string]$Python = 'python',
-    [string]$Iscc = 'ISCC.exe'
+    [string]$Iscc = 'ISCC.exe',
+    [string]$ReleasePlan = '',
+    [string]$SourceChannel = ''
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 Push-Location $projectRoot
 try {
-    $version = & $Python scripts/windows_release.py version
+    $planArgs = @()
+    if ($ReleasePlan -and $SourceChannel) { throw 'Release plan and source channel are mutually exclusive' }
+    if ($SourceChannel -and $SourceChannel -ne 'beta') { throw 'Invalid source channel' }
+    if ($SourceChannel) { $planArgs = @('--source-channel', 'beta') }
+    if ($ReleasePlan) {
+        $planArgs = @('--plan', $ReleasePlan)
+        & node scripts/sync-release-metadata.mjs --check @planArgs
+        if ($LASTEXITCODE) { throw 'Release-plan metadata check failed' }
+    }
+    if ($SourceChannel) {
+        & node scripts/sync-release-metadata.mjs --check @planArgs
+        if ($LASTEXITCODE) { throw 'Source-channel metadata check failed' }
+    }
+    $version = & $Python scripts/windows_release.py version @planArgs
     if ($LASTEXITCODE) { throw 'Invalid Windows installer version' }
     & $Python scripts/prepare-windows.py
     if ($LASTEXITCODE) { throw 'Runtime preparation failed' }
-    & './work/build-runtime/node.exe' scripts/stage-windows-sdk.mjs
+    & './work/build-runtime/node.exe' scripts/stage-windows-sdk.mjs @planArgs
     if ($LASTEXITCODE) { throw 'Packed SDK staging failed' }
     & pnpm run typecheck
     if ($LASTEXITCODE) { throw 'SDK public type checks failed' }
-    & $Python native/hellgato-ui/prepare.py
+    & $Python host-integrations/streamdeck/windows/native/ui/prepare.py
     if ($LASTEXITCODE) { throw 'Native UI build dependencies failed' }
-    & $Python native/hellgato-ui/build.py --output work/build-native-ui-package
+    & $Python host-integrations/streamdeck/windows/native/ui/build.py --output work/build-native-ui-package
     if ($LASTEXITCODE) { throw 'Native UI build failed' }
-    & $Python native/hellgato-startup/build.py --test
+    & $Python host-integrations/streamdeck/windows/native/startup/build.py --test
     if ($LASTEXITCODE) { throw 'Native startup fixture or build failed' }
-    & $Python native/hellgato-ui/build.py --test-host --output work/build-native-ui-test
+    & $Python host-integrations/streamdeck/windows/native/ui/build.py --test-host --output work/build-native-ui-test
     if ($LASTEXITCODE) { throw 'Native UI fixture build failed' }
     $oldPath = $env:PATH
     $oldQtPlugins = $env:QT_PLUGIN_PATH
@@ -44,6 +59,27 @@ try {
     $installer = Get-Item "dist/Hellgato-$version-Setup.exe"
     $checksum = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     "$checksum  $($installer.Name)" | Set-Content -LiteralPath "$($installer.FullName).sha256" -Encoding ascii
+    # An isolated CI-only portable trial. It never changes the installed engine.
+    & $Python -m PyInstaller --noconfirm --distpath dist --workpath work/pyinstaller-worker installer/mirabox-worker.spec
+    if ($LASTEXITCODE) { throw 'Frozen IPC worker build failed' }
+    & $Python -m PyInstaller --noconfirm --distpath dist --workpath work/pyinstaller-candidate installer/ipc-candidate.spec
+    if ($LASTEXITCODE) { throw 'Candidate supervisor build failed' }
+    & $Python scripts/stage-ipc-candidate.py
+    if ($LASTEXITCODE) { throw 'Immutable IPC candidate staging failed' }
+    $selfTestOutput = Join-Path $projectRoot 'work/ipc-candidate-self-test'
+    if (Test-Path -LiteralPath $selfTestOutput) { Remove-Item -Recurse -Force -LiteralPath $selfTestOutput }
+    $selfTest = Start-Process -FilePath (Join-Path $projectRoot 'dist/Hellgato-Ipc-Candidate/HellgatoIpcTest.exe') -ArgumentList '--self-test', '--output', "`"$selfTestOutput`"" -NoNewWindow -PassThru -RedirectStandardOutput 'work/ipc-candidate-self-test-stdout.txt' -RedirectStandardError 'work/ipc-candidate-self-test-stderr.txt'
+    if (-not $selfTest.WaitForExit(120000)) { $selfTest.Kill(); throw 'Frozen IPC candidate self-test timed out' }
+    $selfTest.WaitForExit()
+    Get-Content 'work/ipc-candidate-self-test-stdout.txt'
+    if ($selfTest.ExitCode -ne 0) {
+        Get-Content 'work/ipc-candidate-self-test-stderr.txt'
+        throw 'Frozen IPC candidate self-test failed'
+    }
+    & $Python scripts/stage-ipc-candidate.py --verify dist/Hellgato-Ipc-Candidate
+    if ($LASTEXITCODE) { throw 'Candidate changed during self-test' }
+    & $Python scripts/stage-ipc-candidate.py --archive dist/Hellgato-Ipc-Candidate
+    if ($LASTEXITCODE) { throw 'Candidate archive creation failed' }
     Write-Output $installer.FullName
 } finally {
     Pop-Location

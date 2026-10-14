@@ -1,7 +1,7 @@
 name: Release approved components
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   workflow_dispatch:
     inputs:
       release_sha:
@@ -41,7 +41,7 @@ env:
   RELEASE_APPROVAL_FILE: .release/approval.json
 jobs:
   approval:
-    if: github.repository == 'restarea92/hellgato' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.confirm)
+    if: github.repository == 'restarea92/hellgato' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/next') && (github.event_name == 'push' || inputs.confirm)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -50,6 +50,7 @@ jobs:
       actions: read
     outputs:
       selected: ${{ steps.approval.outputs.selected }}
+      channel: ${{ steps.approval.outputs.channel }}
       windows: ${{ steps.approval.outputs.windows }}
       npm: ${{ steps.approval.outputs.npm }}
       sha: ${{ steps.approval.outputs.release_sha }}
@@ -86,12 +87,12 @@ jobs:
           if [ -n "$SOURCE_RUN$SOURCE_ATTEMPT$WINDOWS_ID$NPM_ID" ]; then
             test -n "$SOURCE_RUN" && test -n "$SOURCE_ATTEMPT"
             if [ "$WINDOWS_SELECTED" = true ]; then
-              node scripts/release.mjs verify-artifact --component windows --artifact-id "$WINDOWS_ID" --run-id "$SOURCE_RUN" --run-attempt "$SOURCE_ATTEMPT"
+              node scripts/release.mjs verify-artifact --channel "${{ steps.approval.outputs.channel }}" --component windows --artifact-id "$WINDOWS_ID" --run-id "$SOURCE_RUN" --run-attempt "$SOURCE_ATTEMPT"
             else
               test -z "$WINDOWS_ID"
             fi
             if [ "$NPM_SELECTED" = true ]; then
-              node scripts/release.mjs verify-artifact --component npm --artifact-id "$NPM_ID" --run-id "$SOURCE_RUN" --run-attempt "$SOURCE_ATTEMPT"
+              node scripts/release.mjs verify-artifact --channel "${{ steps.approval.outputs.channel }}" --component npm --artifact-id "$NPM_ID" --run-id "$SOURCE_RUN" --run-attempt "$SOURCE_ATTEMPT"
             else
               test -z "$NPM_ID"
             fi
@@ -107,6 +108,7 @@ jobs:
     uses: ./.github/workflows/windows-build.yml
     with:
       release_sha: ${{ needs.approval.outputs.sha }}
+      release_plan: .release/plan.json
   npm-build:
     needs: approval
     if: needs.approval.outputs.npm == 'true' && needs.approval.outputs.recovery != 'true'
@@ -133,9 +135,9 @@ jobs:
       - run: |
           pnpm install --frozen-lockfile
           npm install --global npm@11.9.0 --ignore-scripts
-          pnpm run release:metadata:check
+          node scripts/sync-release-metadata.mjs --check --plan .release/plan.json
           pnpm run prepare:cora
-          pnpm run build:npm
+          node scripts/build-npm.mjs --plan .release/plan.json
           pnpm run typecheck
           pnpm test
           node scripts/pack-npm.mjs --destination dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
@@ -224,7 +226,7 @@ jobs:
       - name: Verify npm archive and tarballs before either component can publish
         if: needs.approval.outputs.npm == 'true'
         run: |
-          node scripts/release.mjs verify-artifact --component npm --artifact-id "$NPM_ARTIFACT_ID" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT" --directory dist/npm
+          node scripts/release.mjs verify-artifact --channel "${{ needs.approval.outputs.channel }}" --component npm --artifact-id "$NPM_ARTIFACT_ID" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT" --directory dist/npm
           node scripts/npm-release.mjs verify --artifacts dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT"
   npm-publish:
     needs: [approval, verified, npm-build]
@@ -268,7 +270,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           node scripts/release.mjs approve --structural-only true
-          node scripts/release.mjs verify-artifact --component npm --artifact-id "$NPM_ARTIFACT_ID" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT" --directory dist/npm
+          node scripts/release.mjs verify-artifact --channel "${{ needs.approval.outputs.channel }}" --component npm --artifact-id "$NPM_ARTIFACT_ID" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT" --directory dist/npm
       - name: Publish the exact verified tarballs core then facade
         run: node scripts/npm-release.mjs publish --artifacts dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT"
   windows-publish:
@@ -310,7 +312,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           node scripts/release.mjs approve --structural-only true
-          node scripts/release.mjs verify-artifact --component windows --artifact-id "$WINDOWS_ARTIFACT_ID" --run-id "$WINDOWS_BUILD_RUN_ID" --run-attempt "$WINDOWS_BUILD_RUN_ATTEMPT"
+          node scripts/release.mjs verify-artifact --channel "${{ needs.approval.outputs.channel }}" --component windows --artifact-id "$WINDOWS_ARTIFACT_ID" --run-id "$WINDOWS_BUILD_RUN_ID" --run-attempt "$WINDOWS_BUILD_RUN_ATTEMPT"
           python scripts/windows_release.py publish
   npm-finalize:
     needs: [approval, npm-publish, npm-build]
@@ -351,12 +353,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           node scripts/release.mjs approve --structural-only true
-          node scripts/release.mjs verify-artifact --component npm --artifact-id "$NPM_ARTIFACT_ID" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT" --directory dist/npm
+          node scripts/release.mjs verify-artifact --channel "${{ needs.approval.outputs.channel }}" --component npm --artifact-id "$NPM_ARTIFACT_ID" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT" --directory dist/npm
           node scripts/npm-release.mjs confirm --artifacts dist/npm --plan .release/plan.json --release-sha "$RELEASE_SHA" --repository "$GITHUB_REPOSITORY" --run-id "$NPM_BUILD_RUN_ID" --run-attempt "$NPM_BUILD_RUN_ATTEMPT"
           node scripts/release.mjs finalize-npm --artifacts dist/npm --structural-only true
   download-docs:
     needs: [approval, windows-publish]
-    if: always() && needs.windows-publish.result == 'success'
+    if: always() && needs.windows-publish.result == 'success' && needs.approval.outputs.channel == 'stable'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:

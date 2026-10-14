@@ -1079,7 +1079,8 @@
                 "clear",
                 "sleep",
                 "wake",
-                "showLogo"
+                "showLogo",
+                "screensaver"
               ]
             }
           },
@@ -1138,6 +1139,98 @@
             "type",
             "control",
             "color"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "deviceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "sequence": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "type": {
+              "const": "control"
+            },
+            "surfaceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "control": {
+              "const": "knobBrightness"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "type",
+            "control",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "deviceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "sequence": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "type": {
+              "const": "control"
+            },
+            "surfaceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "control": {
+              "const": "followDisplayBrightness"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "control",
+            "value"
           ],
           "additionalProperties": false
         }

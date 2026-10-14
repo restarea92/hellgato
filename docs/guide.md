@@ -100,33 +100,35 @@ Use **Help → Open logs** to access the data folder, or **Help → About Hellga
 
 ## Build and test
 
-Use Python 3.13 x64, Git, Visual Studio C++ Build Tools with the x64 MSVC tools and Windows SDK, and Inno Setup 6.7.3. Both native DLLs are built from source. The device preferences extension uses a pinned Qt 6.5.3 MSVC x64 development kit during compilation. It uses the Qt and C++ runtimes already loaded by Stream Deck; another Qt runtime is not bundled. In PowerShell, from the repository root:
+Use Python 3.13.7 x64, Node 24.19.0, npm 11.9.0, pnpm 11.10.0, uv 0.12.23, Git, Visual Studio C++ Build Tools with the x64 MSVC tools and Windows SDK, and Inno Setup 6.7.3. Both native DLLs are built from source. The device preferences extension uses a pinned Qt 6.5.3 MSVC x64 development kit during compilation. It uses the Qt and C++ runtimes already loaded by Stream Deck; another Qt runtime is not bundled. In PowerShell, from the repository root:
 
 ```powershell
-python -m venv work/build-venv
-./work/build-venv/Scripts/python.exe -m pip install -r installer/requirements-build.txt
-./work/build-venv/Scripts/python.exe scripts/prepare-windows.py
-./work/build-runtime/node.exe scripts/prepare-cora.mjs
-./work/build-venv/Scripts/python.exe native/hellgato-ui/prepare.py
-./work/build-venv/Scripts/python.exe native/hellgato-ui/build.py --output work/build-native-ui-package
-./work/build-venv/Scripts/python.exe native/hellgato-startup/build.py
-
-./work/build-venv/Scripts/python.exe -m unittest discover -s test -p 'test_*.py'
-./work/build-runtime/node.exe --test test/*.test.mjs
+python -m pip install uv==0.12.23
+uv sync --locked --no-install-workspace --python python
+pnpm install --frozen-lockfile
+pnpm run build:npm
+pnpm run typecheck
+pnpm test
+uv run --frozen --no-sync python scripts/check-python.py
+uv run --frozen --no-sync python -m unittest discover -s test -p 'test_*.py'
+./.venv/Scripts/python.exe scripts/prepare-windows.py
+./.venv/Scripts/python.exe host-integrations/streamdeck/windows/native/ui/prepare.py
+./.venv/Scripts/python.exe host-integrations/streamdeck/windows/native/ui/build.py --output work/build-native-ui-package
+./.venv/Scripts/python.exe host-integrations/streamdeck/windows/native/startup/build.py
 ```
 
 Before the first source run, close Stream Deck yourself and prepare startup support:
 
 ```powershell
-./work/build-venv/Scripts/python.exe scripts/setup-startup.py --install --elevate
-./work/build-venv/Scripts/python.exe scripts/setup-startup.py --check
+./.venv/Scripts/python.exe scripts/setup-startup.py --install --elevate
+./.venv/Scripts/python.exe scripts/setup-startup.py --check
 ```
 
 Then open Stream Deck yourself and start Hellgato Stream Dog:
 
 ```powershell
 $env:HELLGATO_NODE = (Resolve-Path ./work/build-runtime/node.exe).Path
-./work/build-venv/Scripts/python.exe app/hellgato.py
+./.venv/Scripts/python.exe apps/stream-dog/python/stream-dog.py
 ```
 
 The native startup build produces `work/build-native-startup/version.dll`; the installer bundles it as `_internal/native/version.dll` along with `scripts/setup-startup.py` and the Python compatibility modules. Setup defaults to `%ProgramFiles%\Elgato\StreamDeck\StreamDeck.exe`; use `--exe` for a different installation. `--check` reads the current preparation state. Repeat `--install --elevate` after a Stream Deck update changes the executable hash. `--remove --elevate` removes only verified Hellgato-owned startup files. Elevation is requested only when the target directory requires it. None of these commands launches, closes or restarts Stream Deck.
@@ -136,19 +138,23 @@ The native startup build produces `work/build-native-startup/version.dll`; the i
 Build the installer:
 
 ```powershell
-./scripts/build-windows.ps1 -Python ./work/build-venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
+./scripts/build-windows.ps1 -Python ./.venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
 ```
 
 Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-<version>-Setup.exe` and its SHA-256 sidecar. The version comes only from `packages/windows-release/package.json`, through generated runtime and installer metadata. Personal profiles and logs are excluded. Ordinary pushes and PRs build without publishing. A separately reviewed Changesets release PR selects Windows and/or npm; its owner-approved merge authorizes publication only after rollout is explicitly enabled. See [release operations](windows-releases.md) and [setup requirements](release-setup.md).
 
 | Directory | Purpose |
 | --- | --- |
-| `app/` | Windows launcher, interface and localization |
-| `app/n4/` | Hardware input, display, profiles and compatibility |
-| `app/cora/` | Stream Deck network transport |
+| `apps/stream-dog/` | Canonical Windows product, GUI and Node session runner |
+| `adapters/mirabox-python/` | Experimental physical-only IPC worker |
+| `host-integrations/streamdeck/windows/` | Canonical host inspection and native startup/Qt integration |
+| `packages/core/src/` | Canonical Stream Deck bridge and contracts |
+| `packages/hellgato/` | Session, sidecar, explicit bindings and conformance SDK |
+| `app/` | Legacy entrypoint aliases and retained assets |
+| `app/n4/` | Retained production physical engine and compatibility aliases |
+| `app/cora/` | Compatibility entrypoint wrappers |
 | `app/locales/` | Interface translations |
-| `native/hellgato-ui/` | Public Qt device preference extension and isolated test host |
-| `native/hellgato-startup/` | Startup DLL that validates and prepares the model before publication |
+| `native/` | Compatibility build wrappers for the canonical host integration |
 | `scripts/` | Dependency preparation, startup setup, diagnostics and builds |
 | `installer/` | Packaging and third-party notices |
 | `test/` | Compatibility, profiles, UI state and CORA checks |

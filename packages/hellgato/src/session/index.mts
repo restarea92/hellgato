@@ -1,0 +1,394 @@
+import type { Adapter, AdapterState, Diagnostic, SessionOptions, SessionState, SessionStatus, SessionBridge, Session as SessionApi, HostReadiness, MaybePromise } from '../../index.js';
+import type { DeviceDescriptor, DeviceCapabilities, MappingProfile, InputEvent, OutputEvent } from '@hellgato/core/contracts';
+type PressedInput = Extract<InputEvent, { type: 'key' } | { kind: 'press' }>;
+const failureDetails = (cause: unknown): { code?: string; message: string } => {
+  const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : undefined;
+  return { code: typeof code === 'string' ? code : undefined, message: cause instanceof Error ? cause.message : String(cause) };
+};
+import { EventEmitter } from 'node:events';
+import { randomUUID } from 'node:crypto';
+import { createDeviceBridge } from '@hellgato/core';
+import {
+  assertAdapterDescriptor, assertDeviceDescriptor, assertMappingProfile,
+  assertInputEvent, assertDisplayFrame, assertControlCommand,
+} from '@hellgato/core/contracts';
+
+export class SessionError extends Error {
+  readonly code: string;
+  constructor(code: string, message: string, options?: ErrorOptions) { super(message, options); this.name = 'SessionError'; this.code = code; }
+}
+
+function fail(code: string, message: string): never { throw new SessionError(code, message); };
+const abortCheck = (signal?: AbortSignal): void => { if (signal?.aborted) throw signal.reason ?? new SessionError('ABORTED', 'Session start cancelled'); };
+const clone = <T,>(value: T): T => structuredClone(value);
+const adapterOwners = new WeakMap<Adapter, Session>();
+
+function assertAdapter(adapter: Adapter): void {
+  if (!adapter || typeof adapter !== 'object') fail('INVALID_ADAPTER', 'An explicit adapter is required');
+  assertAdapterDescriptor(adapter.descriptor);
+  for (const name of ['discover', 'open', 'close', 'setOutput', 'setControl', 'onInput', 'onState'] as const) {
+    if (typeof adapter[name] !== 'function') fail('INVALID_ADAPTER', `Adapter must implement ${name}()`);
+  }
+}
+
+function preflightMapping(device: DeviceDescriptor, profile: MappingProfile): void {
+  const { capabilities } = device;
+  for (const [name, count, maximum] of [
+    ['keys', capabilities.keys, profile.target.geometry.keyCount],
+    ['dials', capabilities.dials, profile.target.geometry.encoderCount],
+  ] as const) {
+    const mapping = profile.controls[name];
+    if (mapping.length !== count) fail('INCOMPLETE_MAPPING', `${name} must explicitly map or omit every physical control`);
+    const used = new Set();
+    for (const target of mapping) {
+      if (target === null) continue;
+      if (!Number.isInteger(target) || target < 0 || target >= maximum) fail('UNSUPPORTED_MAPPING', `${name} mapping exceeds the target geometry`);
+      if (used.has(target)) fail('AMBIGUOUS_MAPPING', `${name} maps more than one physical control to the same target`);
+      used.add(target);
+    }
+  }
+  if (profile.touch && !capabilities.touch) fail('CAPABILITY_MISMATCH', 'Profile requires touch input');
+  if (profile.touch && (!profile.target.geometry.touchWidth || !profile.target.geometry.touchHeight)) fail('UNSUPPORTED_MAPPING', 'Touch mapping requires a target touch surface');
+  for (const name of profile.requirements?.capabilities ?? []) {
+    const value: unknown = Object.hasOwn(capabilities, name) ? capabilities[name as keyof DeviceCapabilities] : capabilities.features?.[name];
+    const status = value && typeof value === 'object' && 'status' in value ? value.status : value;
+    const supported = typeof status === 'number' ? status > 0 :
+      (typeof status === 'string' && ['native', 'emulated', 'pulse'].includes(status)) || (name === 'touch' && Boolean(value));
+    if (!supported) fail('CAPABILITY_MISMATCH', `Device does not provide required capability ${name}`);
+  }
+  const displays = new Map(capabilities.displays.map(surface => [surface.id, surface]));
+  const sources = new Set();
+  for (const mapping of profile.displays ?? []) {
+    if (sources.has(mapping.source)) fail('AMBIGUOUS_MAPPING', 'A host display may only map once');
+    sources.add(mapping.source);
+    if (!displays.has(mapping.target)) fail('CAPABILITY_MISMATCH', `Unknown physical display ${mapping.target}`);
+  }
+}
+
+function physicalInput(event: InputEvent, device: DeviceDescriptor): void {
+  assertInputEvent(event);
+  const caps = device.capabilities;
+  if (event.type === 'key' && event.index >= caps.keys) fail('UNSUPPORTED_INPUT', 'Key index exceeds device capabilities');
+  if (event.type === 'dial') {
+    if (event.index >= caps.dials) fail('UNSUPPORTED_INPUT', 'Dial index exceeds device capabilities');
+    if (event.kind === 'pulse' && caps.dialPress !== 'pulse') fail('UNSUPPORTED_INPUT', 'Device does not declare pulse dial presses');
+    if (event.kind === 'press' && (caps.dialPress !== 'native' || (event.state === 'up' && caps.dialRelease !== 'native'))) {
+      fail('UNSUPPORTED_INPUT', 'Device does not declare native dial press/release');
+    }
+  }
+  if (event.type === 'touch') {
+    if (!caps.touch) fail('UNSUPPORTED_INPUT', 'Device has no touch input');
+    for (const [x, y] of [[event.x, event.y], ...(event.gesture === 'swipe' ? [[event.endX, event.endY]] : [])]) {
+      if (x >= caps.touch.width || y >= caps.touch.height) fail('UNSUPPORTED_INPUT', 'Touch coordinates exceed sensor dimensions');
+    }
+  }
+}
+
+function mapInput(event: InputEvent, device: DeviceDescriptor, profile: MappingProfile): InputEvent | null {
+  if (event.type === 'key' || event.type === 'dial') {
+    const index = profile.controls[event.type === 'key' ? 'keys' : 'dials'][event.index];
+    return index === null ? null : { ...event, index };
+  }
+  if (!profile.touch || !device.capabilities.touch) return null;
+  const { width, height } = device.capabilities.touch;
+  const rotation = profile.touch.rotation ?? 0;
+  const rotate = (x: number, y: number): [number, number] => {
+    let u = width <= 1 ? 0 : x / (width - 1);
+    let v = height <= 1 ? 0 : y / (height - 1);
+    if (rotation === 90) [u, v] = [1 - v, u];
+    if (rotation === 180) [u, v] = [1 - u, 1 - v];
+    if (rotation === 270) [u, v] = [v, 1 - u];
+    return [Math.round(u * (profile.target.geometry.touchWidth - 1)), Math.round(v * (profile.target.geometry.touchHeight - 1))];
+  };
+  const [x, y] = rotate(event.x, event.y);
+  if (event.gesture !== 'swipe') return { ...event, x, y };
+  const [endX, endY] = rotate(event.endX, event.endY);
+  return { ...event, x, y, endX, endY };
+}
+
+/** Compose an explicit physical adapter and mapping with the Stream Deck bridge.
+ * Construction performs no device discovery, process creation, file writes or port binding.
+ */
+export function createSession(options: SessionOptions): SessionApi { return new Session(options); }
+
+class Session extends EventEmitter {
+  #options: SessionOptions & { maxOutputQueue: number }; #adapter: Adapter; #profile: MappingProfile; #device: DeviceDescriptor | null = null; #bridge: SessionBridge | null = null;
+  readonly id: string;
+  #state: SessionState = 'idle'; #generation = 0; #lastInput = -1; #lastOutput = -1; #inputSequence = 0;
+  #operation: Promise<unknown> = Promise.resolve(); #controller: AbortController | null = null; #startPromise: Promise<Session> | null = null; #stopPromise: Promise<void> | null = null;
+  #adapterStarted = false; #deviceOpened = false; #openAttempted = false; #bridgeStarted = false;
+  #unsubscribers: Array<() => void> = []; #pressed = new Map<string, PressedInput>(); #output: OutputEvent[] = []; #draining: Promise<void> | null = null; #hostReady = false;
+  #hostCheck: Promise<void> | null = null; #connectionEpoch = 0; #failurePending = false; #lastError: { code?: string; message: string } | null = null;
+  #adapterState = 'disconnected'; #hostState = 'disconnected'; #readiness: HostReadiness | null = null;
+
+  constructor(options: SessionOptions) {
+    super();
+    if (!options || typeof options !== 'object') fail('INVALID_OPTIONS', 'createSession requires explicit adapter, deviceId and profile');
+    assertAdapter(options.adapter);
+    if (typeof options.deviceId !== 'string' || !options.deviceId.trim()) fail('DEVICE_REQUIRED', 'An explicit deviceId is required');
+    assertMappingProfile(options.profile);
+    const queueLimit = options.maxOutputQueue ?? 32;
+    if (!Number.isInteger(queueLimit) || queueLimit < 1 || queueLimit > 1024) fail('INVALID_OPTIONS', 'maxOutputQueue must be between 1 and 1024');
+    if (options.bridgeFactory !== undefined && typeof options.bridgeFactory !== 'function') fail('INVALID_OPTIONS', 'bridgeFactory must be a function');
+    if (options.readiness !== undefined && typeof options.readiness !== 'function' && typeof options.readiness?.inspect !== 'function') {
+      fail('INVALID_OPTIONS', 'readiness must be a function or an inspect provider');
+    }
+    this.#adapter = options.adapter;
+    this.#profile = clone(options.profile);
+    this.#options = { ...options, maxOutputQueue: queueLimit };
+    this.id = options.sessionId ?? randomUUID();
+    if (typeof this.id !== 'string' || !this.id || this.id.length > 128) fail('INVALID_OPTIONS', 'sessionId must be a nonempty string');
+  }
+  get state() { return this.#state; }
+  get generation() { return this.#generation; }
+  get device() { return this.#device ? clone(this.#device) : null; }
+  get profile() { return clone(this.#profile); }
+  get ports() { return this.#bridge?.ports ?? { primary: null, child: null }; }
+  get status(): SessionStatus {
+    return { state: this.#state, sessionId: this.id, deviceId: this.#options.deviceId, generation: this.#generation,
+      adapter: this.#adapterState, host: this.#hostState, lastError: this.#lastError ? { code: this.#lastError.code ?? 'SESSION_FAILED', message: this.#lastError.message } : null };
+  }
+  #setState(state: SessionState) { this.#state = state; this.emit('state', this.status); }
+  #enqueue<T>(action: () => MaybePromise<T>): Promise<T> { const result = this.#operation.then(action); this.#operation = result.catch(() => {}); return result; }
+  #diagnostic(code: string, message: string) { this.emit('diagnostic', { code, message, sessionId: this.id, generation: this.#generation }); }
+
+  async #inspect(signal?: AbortSignal): Promise<HostReadiness> {
+    abortCheck(signal);
+    const required = this.#profile.requirements?.hostPreparation ?? [];
+    const provider = this.#options.readiness;
+    if (!provider) {
+      if (required.length) fail('HOST_READINESS_REQUIRED', 'This mapping requires an explicit host readiness provider');
+      return { ready: true, targetId: this.#profile.target.id, profileId: this.#profile.id, preparation: [] };
+    }
+    const inspect = typeof provider === 'function' ? provider : provider.inspect.bind(provider);
+    if (!this.#device) fail('DEVICE_REQUIRED', 'Readiness requires a discovered device');
+    const report = await inspect({ device: clone(this.#device), profile: this.profile, sessionId: this.id, generation: this.#generation, signal });
+    abortCheck(signal);
+    if (!report || report.ready !== true) fail('HOST_NOT_READY', 'Host readiness check did not approve this mapping');
+    if (report.targetId !== this.#profile.target.id || report.profileId !== this.#profile.id) {
+      fail('HOST_IDENTITY_MISMATCH', 'Readiness result must identify the requested target and mapping profile');
+    }
+    if (required.length) {
+      if (!report.host || !Number.isInteger(report.host.pid) || report.host.pid < 1 || typeof report.host.creationTime !== 'string' || !report.host.creationTime || !/^[a-f\d]{64}$/i.test(report.host.executableDigest ?? '')) {
+        fail('HOST_IDENTITY_REQUIRED', 'Prepared hosts require PID, creation time and executable SHA-256');
+      }
+      for (const requirement of required) if (!report.preparation?.includes(requirement)) fail('HOST_NOT_READY', `Host preparation missing: ${requirement}`);
+    }
+    return clone(report);
+  }
+
+  start() {
+    if (this.#startPromise) return this.#startPromise;
+    const controller = new AbortController();
+    this.#controller = controller;
+    const promise = this.#enqueue(() => this.#start(controller.signal));
+    this.#startPromise = promise;
+    promise.finally(() => { if (this.#startPromise === promise) this.#startPromise = null; }).catch(() => {});
+    return promise;
+  }
+  async #start(signal: AbortSignal): Promise<this> {
+    if (this.#state === 'ready') return this;
+    abortCheck(signal);
+    this.#generation += 1; this.#lastInput = -1; this.#lastOutput = -1; this.#inputSequence = 0; this.#lastError = null;
+    this.#failurePending = false; this.#setState('starting');
+    try {
+      if (adapterOwners.has(this.#adapter) && adapterOwners.get(this.#adapter) !== this) fail('ADAPTER_BUSY', 'Adapter already belongs to another active session');
+      if (this.#adapterStarted || this.#bridgeStarted || this.#openAttempted) fail('CLEANUP_REQUIRED', 'Previous cleanup did not complete; call stop before restarting');
+      adapterOwners.set(this.#adapter, this);
+      for (const [key, actual] of [['platforms', process.platform], ['architectures', process.arch]] as const) {
+        if (!this.#adapter.descriptor[key].includes('any') && !this.#adapter.descriptor[key].includes(actual)) fail('UNSUPPORTED_PLATFORM', `Adapter does not support ${actual}`);
+      }
+      await this.#adapter.preflight?.({ signal }); abortCheck(signal);
+      this.#adapterStarted = true;
+      await this.#adapter.start?.({ signal, sessionId: this.id }); abortCheck(signal);
+      const discovered = await this.#adapter.discover({ signal }); abortCheck(signal);
+      if (!Array.isArray(discovered)) fail('INVALID_DISCOVERY', 'Adapter discovery must return an array');
+      for (const item of discovered) assertDeviceDescriptor(item);
+      const matches = discovered.filter(item => item.id === this.#options.deviceId);
+      if (matches.length !== 1) fail(matches.length ? 'AMBIGUOUS_DEVICE' : 'DEVICE_NOT_FOUND', 'The selected device must resolve to exactly one candidate');
+      this.#device = clone(matches[0]);
+      if (this.#device.adapterId !== this.#adapter.descriptor.id) fail('ADAPTER_MISMATCH', 'Discovered device belongs to a different adapter');
+      preflightMapping(this.#device, this.#profile);
+      this.#readiness = await this.#inspect(signal); this.#hostReady = true;
+      const factory = this.#options.bridgeFactory ?? createDeviceBridge;
+      this.#bridge = await factory({ device: clone(this.#device), target: clone(this.#profile.target), sessionId: this.id,
+        generation: this.#generation, port: this.#options.port, childPort: this.#options.childPort, sleepDuration: this.#options.sleepDuration });
+      abortCheck(signal);
+      for (const method of ['start', 'stop', 'sendInput', 'on', 'off'] as const) if (typeof this.#bridge?.[method] !== 'function') fail('INVALID_BRIDGE', `Bridge must provide ${method}()`);
+      this.#subscribe();
+      this.#bridgeStarted = true; await this.#bridge!.start(); abortCheck(signal);
+      this.#openAttempted = true;
+      await this.#adapter.open(this.#device.id, { generation: this.#generation, sessionId: this.id, signal }); abortCheck(signal);
+      this.#deviceOpened = true;
+      this.#adapterState = 'connected'; this.#setState('ready'); this.#drain();
+      return this;
+    } catch (error) {
+      this.#lastError = failureDetails(error);
+      const failures = await this.#cleanup();
+      this.#setState(signal.aborted && signal.reason?.code === 'ABORTED' && !failures.length ? 'stopped' : 'failed');
+      throw error;
+    }
+  }
+
+  #subscribe() {
+    const device = this.#device; const bridge = this.#bridge; const controller = this.#controller;
+    if (!device || !bridge || !controller) fail('SESSION_NOT_INITIALIZED', 'Session subscriptions require initialized resources');
+    const generation = this.#generation;
+    const input = (event: InputEvent) => {
+      if (generation !== this.#generation || this.#state !== 'ready' || !this.#hostReady) return;
+      try {
+        if (!event || event.deviceId !== device.id || event.generation !== generation || (event.sessionId !== undefined && event.sessionId !== this.id)) return;
+        physicalInput(event, device);
+        if (event.sequence <= this.#lastInput) { this.#diagnostic('STALE_INPUT', 'Ignored out-of-order input'); return; }
+        this.#lastInput = event.sequence;
+        const mapped = mapInput(event, device, this.#profile);
+        if (!mapped) return;
+        mapped.sessionId = this.id; mapped.sequence = ++this.#inputSequence;
+        const delivered = bridge.sendInput(mapped);
+        if (delivered && (mapped.type === 'key' || (mapped.type === 'dial' && mapped.kind === 'press'))) {
+          const key = `${mapped.type}:${mapped.index}`;
+          if (mapped.state === 'down') this.#pressed.set(key, mapped); else this.#pressed.delete(key);
+        }
+        this.emit('input', { ...mapped, delivered });
+      } catch (error) { this.#fail(error); }
+    };
+    const state = (event: AdapterState & { status?: string }) => {
+      if (generation !== this.#generation || !event || (event.generation !== undefined && event.generation !== generation)) return;
+      if (event.deviceId !== undefined && event.deviceId !== this.#options.deviceId) return;
+      this.#adapterState = event.state ?? event.status ?? 'unknown';
+      this.emit('adapterState', clone(event));
+      if (['disconnected', 'failed', 'crashed'].includes(this.#adapterState) &&
+          (this.#state === 'ready' || (this.#state === 'starting' && (this.#openAttempted || this.#adapterState !== 'disconnected')))) {
+        this.#fail(new SessionError('ADAPTER_DISCONNECTED', 'Device disconnected; an explicit reconnect is required'));
+      }
+    };
+    const subscribe = (unsubscribe: (() => void) | undefined, name: string) => {
+      if (typeof unsubscribe !== 'function') fail('INVALID_ADAPTER', `${name} must return an unsubscribe function`);
+      this.#unsubscribers.push(unsubscribe);
+    };
+    subscribe(this.#adapter.onInput(input), 'onInput');
+    subscribe(this.#adapter.onState(state), 'onState');
+    if (this.#adapter.onDiagnostic) subscribe(this.#adapter.onDiagnostic(detail => this.emit('diagnostic', detail)), 'onDiagnostic');
+    const output = (frame: OutputEvent) => {
+      if (generation !== this.#generation || !['starting', 'ready'].includes(this.#state)) return;
+      // Only an active connection may queue frames while its fresh readiness check is pending.
+      if (this.#hostState === 'disconnected' && !this.#hostReady) return;
+      this.#queueOutput(frame);
+    };
+    const disconnected = (detail: { role?: string } | undefined) => {
+      if (detail?.role === 'primary') return;
+      this.#connectionEpoch++; this.#hostState = 'disconnected'; this.#releasePressed(); this.#output = [];
+      this.#hostReady = false;
+      this.emit('state', this.status);
+    };
+    const connected = (detail: { role?: string } | undefined) => {
+      if (detail?.role === 'primary') return;
+      const connectionEpoch = ++this.#connectionEpoch;
+      this.#hostState = 'connected';
+      if (!this.#options.readiness) { this.#hostReady = true; this.emit('state', this.status); this.#drain(); return; }
+      this.#hostReady = false;
+      this.#hostCheck = this.#inspect(controller.signal).then(report => {
+        if (generation !== this.#generation || connectionEpoch !== this.#connectionEpoch || this.#hostState !== 'connected' || !['starting', 'ready'].includes(this.#state)) return;
+        this.#readiness = report; this.#hostReady = true; this.emit('state', this.status); this.#drain();
+      }).catch(error => { if (generation === this.#generation && connectionEpoch === this.#connectionEpoch) this.#fail(error); });
+    };
+    bridge.on('output', output);
+    bridge.on('clientDisconnected', disconnected);
+    bridge.on('clientConnected', connected);
+    this.#unsubscribers.push(() => bridge.off('output', output),
+      () => bridge.off('clientDisconnected', disconnected), () => bridge.off('clientConnected', connected));
+  }
+
+  #queueOutput(value: OutputEvent) {
+    try {
+      const device = this.#device;
+      if (!device) return;
+      if (value.deviceId !== device.id || value.generation !== this.#generation || (value.sessionId !== undefined && value.sessionId !== this.id)) return;
+      if (typeof value.sequence !== 'number' || !Number.isSafeInteger(value.sequence) || value.sequence < 0) fail('INVALID_OUTPUT_SEQUENCE', 'Output must provide a nonnegative sequence');
+      if (value.sequence <= this.#lastOutput) { this.#diagnostic('STALE_OUTPUT', 'Ignored out-of-order output'); return; }
+      this.#lastOutput = value.sequence;
+      const output = clone(value);
+      if (output.type === 'frame') {
+        assertDisplayFrame(output);
+        const mapping = (this.#profile.displays ?? []).find(item => item.source === output.surfaceId);
+        if (!mapping) { this.#diagnostic('UNMAPPED_DISPLAY', `No output mapping for ${output.surfaceId}`); return; }
+        output.surfaceId = mapping.target;
+        const surface = device.capabilities.displays.find(item => item.id === output.surfaceId);
+        if (!surface || surface.format !== output.format || (!surface.partial && output.region) ||
+          (!output.region && (output.width !== surface.width || output.height !== surface.height)) ||
+          (output.region && (output.region.x + output.region.width > surface.width || output.region.y + output.region.height > surface.height))) {
+          fail('UNSUPPORTED_OUTPUT', 'Output requires an explicit adapter image transform or exceeds the physical display');
+        }
+      } else {
+        assertControlCommand(output);
+        const status = device.capabilities.features?.[output.control]?.status;
+        if (status !== 'native' && status !== 'emulated') fail('UNSUPPORTED_CONTROL', `Device does not declare supported ${output.control} control`);
+        if (output.surfaceId !== undefined) {
+          const mapping = (this.#profile.displays ?? []).find(item => item.source === output.surfaceId);
+          if (!mapping) { this.#diagnostic('UNMAPPED_DISPLAY', `No output mapping for ${output.surfaceId}`); return; }
+          output.surfaceId = mapping.target;
+        }
+      }
+      if (this.#output.length >= this.#options.maxOutputQueue) fail('OUTPUT_OVERFLOW', 'Display queue capacity exceeded; session stopped rather than dropping partial regions');
+      this.#output.push(output); this.#drain();
+    } catch (error) { this.#fail(error); }
+  }
+  #drain() {
+    if (this.#draining || !this.#deviceOpened || !this.#hostReady || this.#failurePending) return;
+    this.#draining = (async () => {
+      while (this.#output.length && this.#deviceOpened && this.#hostReady && !this.#failurePending && ['starting', 'ready'].includes(this.#state)) {
+        const frame = this.#output.shift();
+        if (!frame) break;
+        const result = frame.type === 'frame' ? await this.#adapter.setOutput(frame) : await this.#adapter.setControl(frame);
+        this.emit('output', { ...frame, result });
+      }
+    })().catch(error => this.#fail(error)).finally(() => { this.#draining = null; if (this.#output.length) this.#drain(); });
+  }
+  #releasePressed() {
+    for (const event of this.#pressed.values()) {
+      try { this.#bridge?.sendInput({ ...event, state: 'up', sequence: ++this.#inputSequence }); } catch { /* Cleanup remains best-effort after connection failure. */ }
+    }
+    this.#pressed.clear();
+  }
+  #fail(error: unknown) {
+    if (this.#failurePending || ['stopping', 'stopped', 'failed'].includes(this.#state)) return;
+    this.#failurePending = true; this.#lastError = failureDetails(error); this.#hostReady = false;
+    const detail = failureDetails(error);
+    this.#diagnostic(detail.code ?? 'SESSION_FAILED', detail.message);
+    if (this.#state === 'starting') { this.#controller?.abort(error); return; }
+    this.#enqueue(async () => { await this.#cleanup(); this.#setState('failed'); }).catch(() => {});
+  }
+  async #cleanup() {
+    this.#hostReady = false; this.#deviceOpened = false; this.#connectionEpoch++; this.#releasePressed(); this.#output = [];
+    for (const unsubscribe of this.#unsubscribers.splice(0).reverse()) { try { unsubscribe(); } catch {} }
+    const failures: unknown[] = [];
+    const attempt = async (operation: () => unknown, success: () => void) => { try { await operation(); success(); } catch (error) { failures.push(error); } };
+    if (this.#openAttempted) await attempt(() => this.#adapter.close(), () => { this.#openAttempted = false; });
+    if (this.#bridgeStarted) await attempt(() => this.#bridge?.stop(), () => { this.#bridgeStarted = false; });
+    if (this.#adapterStarted) {
+      if (typeof this.#adapter.stop === 'function') await attempt(() => this.#adapter.stop?.(), () => { this.#adapterStarted = false; this.#openAttempted = false; });
+      else if (!this.#openAttempted) this.#adapterStarted = false;
+    }
+    if (this.#draining) await this.#draining;
+    if (!this.#bridgeStarted) this.#bridge = null;
+    this.#adapterState = this.#adapterStarted ? 'unknown' : 'disconnected'; this.#hostState = this.#bridgeStarted ? 'unknown' : 'disconnected';
+    if (!this.#adapterStarted && !this.#bridgeStarted && !this.#openAttempted && adapterOwners.get(this.#adapter) === this) adapterOwners.delete(this.#adapter);
+    for (const error of failures) this.#diagnostic('CLEANUP_FAILED', failureDetails(error).message);
+    return failures;
+  }
+  stop() {
+    this.#controller?.abort(new SessionError('ABORTED', 'Session stopped'));
+    if (this.#stopPromise) return this.#stopPromise;
+    const promise = this.#enqueue(async () => {
+      if (this.#state === 'stopped') return;
+      this.#setState('stopping'); const failures = await this.#cleanup();
+      this.#setState(failures.length ? 'failed' : 'stopped');
+      if (failures.length) { this.#lastError = new AggregateError(failures, 'Session cleanup failed'); throw this.#lastError; }
+    });
+    this.#stopPromise = promise;
+    promise.finally(() => { if (this.#stopPromise === promise) this.#stopPromise = null; }).catch(() => {});
+    return promise;
+  }
+  /** Explicit recovery; re-runs discovery and fresh host readiness, never replays input. */
+  async reconnect() { await this.stop(); return this.start(); }
+}

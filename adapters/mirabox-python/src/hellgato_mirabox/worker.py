@@ -1,6 +1,7 @@
 """Physical-only JSON-RPC worker: stdin/stdout, no Node or host installation access."""
 import argparse
 from collections import deque
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -8,7 +9,7 @@ import queue
 import signal
 import sys
 import threading
-import time
+import tempfile
 
 from . import __version__
 from .protocol import (VERSION, FEATURES, MAX_MESSAGE_BYTES, MAX_FRAME_BYTES, MAX_REQUESTS,
@@ -144,7 +145,7 @@ class Worker:
                     'maxMessageBytes': limit, 'maxFrameBytes': MAX_FRAME_BYTES, 'supportStatus': 'experimental'}
         require(self.negotiated, 'hello required before device operations', 'ERR_HANDSHAKE_REQUIRED')
         if method == 'discover':
-            devices = self.backend.discover()
+            devices = self.backend.discover(lambda: self._deadline(params))
             require(len(devices) <= 64, 'Too many device candidates')
             return [validate_contract('DeviceDescriptor', item) for item in devices]
         if method == 'open':
@@ -158,7 +159,7 @@ class Worker:
             self.current, self.session_id = params['deviceId'], session
             self.sequence, self.output_sequence = 0, -1
             try:
-                self.descriptor = validate_contract('DeviceDescriptor', self.backend.open(self.current, self.emit_input))
+                self.descriptor = validate_contract('DeviceDescriptor', self.backend.open(self.current, self.emit_input, lambda: self._deadline(params)))
             except Exception:
                 self.current = None
                 self.backend.close()
@@ -186,12 +187,16 @@ class Worker:
             require((payload['width'], payload['height'], payload['format']) == (surface['width'], surface['height'], surface['format']),
                     'Frame differs from display capabilities', 'ERR_CONTRACT')
             require('region' not in payload or surface['partial'], 'Partial frames unsupported', 'ERR_UNSUPPORTED_OPERATION')
+            if sequence is not None:
+                self.output_sequence = sequence
             result = self.backend.set_output(payload, lambda: self._deadline(params))
         else:
             require('surfaceId' not in payload or payload['surfaceId'] in surfaces, 'Unknown control surface', 'ERR_UNSUPPORTED_OPERATION')
+            require('surfaceId' not in payload or payload['control'] in ('clear', 'fill'),
+                    'This control is device-wide', 'ERR_UNSUPPORTED_OPERATION')
+            if sequence is not None:
+                self.output_sequence = sequence
             result = self.backend.set_control(payload, lambda: self._deadline(params))
-        if sequence is not None:
-            self.output_sequence = sequence
         return {**result, 'generation': self.generation, 'sequence': sequence}
 
     def run(self):
@@ -201,11 +206,18 @@ class Worker:
         reader.start()
         try:
             while not self.stopped.is_set():
+                # Service idle/animation/input wake even under continuous output load.
                 try:
-                    data = self.requests.get(timeout=0.05)
-                except queue.Empty:
-                    if self.current and self.backend.poll() == 'disconnected':
+                    if self.current and self.backend.poll(lambda: require(not self.stopped.is_set(),
+                            'Worker stopping', 'ERR_WORKER_STOPPED')) == 'disconnected':
                         self.notify_state('disconnected')
+                except Exception:
+                    if not self.stopped.is_set():
+                        self.fail('ERR_DEVICE_OPERATION')
+                    break
+                try:
+                    data = self.requests.get(timeout=0.02)
+                except queue.Empty:
                     continue
                 with self.queue_lock:
                     self.queued_bytes -= len(data)
@@ -235,35 +247,68 @@ class Worker:
         return 2 if self.fatal else 0
 
 
+
+@contextmanager
+def physical_working_directory(enabled):
+    """Contain the pinned SDK's relative temporary PNGs for this worker process.
+
+    SDK and saved assets are explicit absolute paths. A private lifetime cwd also
+    supports read-only launch directories and cleans files left by SDK failures.
+    The fake backend needs no filesystem workspace.
+    Forced OS termination can leave this temporary directory for OS/user cleanup;
+    normal shutdown and Python exceptions restore cwd before removing its files.
+    """
+    if not enabled:
+        yield
+        return
+    previous = Path.cwd()
+    with tempfile.TemporaryDirectory(prefix='hellgato-mirabox-runtime-') as directory:
+        try:
+            os.chdir(directory)
+            yield
+        finally:
+            os.chdir(previous)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--backend', choices=('mirabox', 'fake'), default='mirabox')
     parser.add_argument('--sdk-path', type=Path, help='Explicit prepared vendor SDK source directory')
+    parser.add_argument('--strip-mode', choices=('frame', 'panels'), default='panels', help='Explicit N4 touch output policy; product passes the saved mode')
+    parser.add_argument('--logo-path', type=Path, help='Explicit absolute software display PNG; never boot-logo/firmware')
+    parser.add_argument('--screensaver-path', type=Path, help='Explicit absolute saved image/animation; never modifies the file')
     parser.add_argument('--build-id', default='source-candidate', help='Build ID provided by verified runtime manifest')
     parser.add_argument('--fake-write-delay-ms', type=int, default=0)
     parser.add_argument('--fake-input-count', type=int, default=0)
     args = parser.parse_args(argv)
+    if args.logo_path is not None and (args.backend != 'mirabox' or not args.logo_path.is_absolute() or not args.logo_path.is_file()):
+        parser.error('--logo-path requires an existing absolute local PNG and physical backend')
+    if args.screensaver_path is not None and (args.backend != 'mirabox' or not args.screensaver_path.is_absolute() or not args.screensaver_path.is_file()):
+        parser.error('--screensaver-path requires an existing absolute local file and physical backend')
     if not 0 < len(args.build_id) <= 128 or not 0 <= args.fake_write_delay_ms <= 10_000 or not 0 <= args.fake_input_count <= 10_000:
         parser.error('Invalid bounded worker arguments')
-    # Isolate stdout at the OS descriptor, including native printf output.
-    protocol_stdout = os.fdopen(os.dup(sys.stdout.fileno()), 'wb', buffering=0)
-    os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
-    if args.backend == 'fake':
-        from .transport.fake import FakeBackend
-        backend = FakeBackend(args.fake_write_delay_ms, args.fake_input_count)
-    else:
-        from .transport.mirabox import MiraboxBackend
-        if args.sdk_path is None or not args.sdk_path.is_absolute() or not args.sdk_path.is_dir():
-            parser.error('--sdk-path must name an explicit prepared absolute SDK directory')
-        backend = MiraboxBackend(args.sdk_path)
-    worker = Worker(backend, sys.stdin.buffer, protocol_stdout, args.build_id)
-    for name in ('SIGTERM', 'SIGINT'):
-        if hasattr(signal, name):
-            signal.signal(getattr(signal, name), lambda _signum, _frame: worker.stopped.set())
-    try:
-        return worker.run()
-    finally:
-        protocol_stdout.close()
+    with physical_working_directory(args.backend == 'mirabox'):
+        # Isolate stdout at the OS descriptor, including native printf output.
+        protocol_stdout = os.fdopen(os.dup(sys.stdout.fileno()), 'wb', buffering=0)
+        os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+        if args.backend == 'fake':
+            from .transport.fake import FakeBackend
+            backend = FakeBackend(args.fake_write_delay_ms, args.fake_input_count)
+        else:
+            from .transport.mirabox import MiraboxBackend
+            if args.sdk_path is None or not args.sdk_path.is_absolute() or not args.sdk_path.is_dir():
+                parser.error('--sdk-path must name an explicit prepared absolute SDK directory')
+            backend = MiraboxBackend(args.sdk_path, args.screensaver_path, args.logo_path, args.strip_mode)
+        worker = Worker(backend, sys.stdin.buffer, protocol_stdout, args.build_id)
+        for name in ('SIGTERM', 'SIGINT'):
+            if hasattr(signal, name):
+                signal.signal(getattr(signal, name), lambda _signum, _frame: worker.stopped.set())
+        try:
+            return worker.run()
+        finally:
+            if args.backend == 'mirabox' and backend.device is None:
+                backend.release_ownership()
+            protocol_stdout.close()
 
 
 if __name__ == '__main__':

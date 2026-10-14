@@ -5,6 +5,7 @@
 AppId={{FB7179C2-B55A-487C-B462-C50E15F91B1B}
 AppName=Hellgato Stream Dog
 AppVersion={#AppVersion}
+VersionInfoVersion={#AppVersionNumeric}
 AppPublisher=Hellgato
 DefaultDirName={autopf}\Hellgato
 UsePreviousAppDir=no

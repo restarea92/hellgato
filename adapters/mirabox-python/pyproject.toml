@@ -20,7 +20,7 @@ hellgato-mirabox-worker = "hellgato_mirabox.worker:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-hellgato_mirabox = ["schemas/*.json"]
+hellgato_mirabox = ["schemas/*.json", "models/n4_pro/firmware-policy.json"]
 
 [tool.setuptools.dynamic]
 version = {attr = "hellgato_mirabox.__version__"}

@@ -57,7 +57,10 @@
         "scripts/verify-npm.mjs",
         "scripts/pack-npm.mjs",
         "schemas/**",
-        "vendor/deckbridge/**"
+        "vendor/deckbridge/**",
+        "scripts/build-typescript.mjs",
+        "tsconfig.sdk.json",
+        "tsconfig.sdk-tests.json"
       ],
       "components": [
         "windows",
@@ -85,7 +88,8 @@
         "vendor/mirabox-sdk/**",
         "scripts/stage-windows-sdk.mjs",
         "pyproject.toml",
-        "uv.lock"
+        "uv.lock",
+        "scripts/stage-ipc-candidate.py"
       ],
       "components": [
         "windows"
@@ -115,12 +119,17 @@
         "scripts/release-version.mjs",
         "scripts/sync-release-metadata.mjs",
         "scripts/release-lib.mjs",
+        "scripts/release-policy.mjs",
+        "scripts/release-candidate.mjs",
         "scripts/release.mjs",
         "scripts/npm-release.mjs",
         "scripts/windows_release.py",
         "scripts/update-downloads.mjs",
         "scripts/verify-artifact.py",
-        "scripts/check-architecture.mjs"
+        "scripts/check-architecture.mjs",
+        "scripts/release-ci.mjs",
+        "scripts/release-handoff.mjs",
+        "scripts/check-python.py"
       ],
       "components": [],
       "reviewRequired": true

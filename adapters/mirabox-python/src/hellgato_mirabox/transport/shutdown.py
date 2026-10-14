@@ -77,7 +77,9 @@ def close_device(device, notify=True, report=print, native=None):
             checked('transport_destroy')
         except Exception as error:
             failed('closeTransport', error)
-        finally:
+        else:
+            # Retain ownership after native failure so a retry cannot mistake a
+            # leaked handle for a successful close and release the shared mutex.
             transport._handle = None
             transport._is_open = False
 

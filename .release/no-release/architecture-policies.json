@@ -1,15 +1,27 @@
 {
   "schemaVersion": 1,
   "baseSha": "ad8085f298110b5317b758a137fe42167bcd5798",
-  "reason": "Reviewable architecture policy adoption: hard-disable npm public writes only, preserve independent Windows release approvals and SDK builds/versioning, classify the new runtime paths, and strengthen strict archive, source provenance and boundary checks. Runtime changes are separately covered by the SDK minor and Windows patch changeset.",
+  "reason": "Reviewable architecture policy adoption: keep npm public writes hard-disabled, preserve independent owner approval and immutable release artifacts, implement reviewed beta and stable promotion plans with source-only handoff, bind public Windows and npm baselines independently from prepared versions, classify runtime paths, and strengthen Python quality, archive, provenance, and boundary checks. Runtime changes retain the SDK minor and Windows patch changeset.",
   "paths": [
     ".github/workflows/checks.yml",
+    ".github/workflows/release-pr.yml",
     ".github/workflows/release.yml",
     ".github/workflows/windows-build.yml",
+    ".release/channel-plan.schema.json",
     ".release/components.json",
+    ".release/plan.schema.json",
     "scripts/check-architecture.mjs",
+    "scripts/check-python.py",
+    "scripts/check-release-impact.mjs",
     "scripts/npm-release.mjs",
+    "scripts/release-candidate.mjs",
+    "scripts/release-ci.mjs",
+    "scripts/release-handoff.mjs",
+    "scripts/release-lib.mjs",
+    "scripts/release-policy.mjs",
+    "scripts/release-version.mjs",
     "scripts/release.mjs",
+    "scripts/sync-release-metadata.mjs",
     "scripts/windows_release.py"
   ]
 }

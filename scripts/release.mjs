@@ -1,3 +1,5 @@
+import { CHANNEL_HANDOFF_PATH, validateChannelHandoff } from './release-handoff.mjs';
+import { CHANNEL_PLAN_SCHEMA, channelPolicy } from './release-policy.mjs';
 import { assertNpmPublicationEnabled } from './npm-release.mjs';
 import { appendFile, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -41,13 +43,14 @@ export async function pages(path, api = github) {
 export function validateMergedPullRequest(pr, plan, releaseSha, commit) {
   invariant(pr && pr.merged === true && pr.state === 'closed', 'Release requires a merged pull request');
   invariant(pr.merge_commit_sha === releaseSha, 'PR merge commit differs from release SHA');
-  invariant(pr.base?.ref === 'main' && pr.base?.repo?.full_name === REPOSITORY && pr.head?.repo?.full_name === REPOSITORY, 'Release PR must be same-repository into main');
+  const policy = channelPolicy(plan.schemaVersion === CHANNEL_PLAN_SCHEMA ? plan.channel : 'stable');
+  invariant(pr.base?.ref === policy.branch && pr.base?.repo?.full_name === REPOSITORY && pr.head?.repo?.full_name === REPOSITORY, 'Release PR must be same-repository into main');
   const owner = REPOSITORY.split('/')[0];
   invariant(pr.merged_by?.login === owner, 'The repository owner must merge the release PR to approve publication');
   if (plan.bootstrap) {
     invariant(pr.user?.login === owner && /^release\/bootstrap-[a-z0-9-]+$/.test(pr.head?.ref), 'Bootstrap must be an owner-authored release/bootstrap-* PR');
   } else {
-    invariant(pr.user?.login === 'github-actions[bot]' && pr.head?.ref === RELEASE_BRANCH, 'Expected the Changesets bot release branch and author');
+    invariant(pr.user?.login === 'github-actions[bot]' && pr.head?.ref === policy.releaseBranch, 'Expected the Changesets bot release branch and author');
   }
   invariant(commit.sha === releaseSha && commit.parents?.[0]?.sha === plan.baseSha, 'Stale release plan: first parent must equal plan.baseSha');
   invariant(SHA.test(pr.head?.sha ?? ''), 'Missing exact release PR head');
@@ -55,7 +58,7 @@ export function validateMergedPullRequest(pr, plan, releaseSha, commit) {
 }
 
 export async function approveRelease({ root = ROOT, releaseSha, api = github, environment = process.env, validatePlan = true } = {}) {
-  invariant(environment.GITHUB_REPOSITORY === REPOSITORY && environment.GITHUB_REF === 'refs/heads/main', 'Release entry point must run on the original repository main');
+  invariant(environment.GITHUB_REPOSITORY === REPOSITORY && ['refs/heads/main', 'refs/heads/next'].includes(environment.GITHUB_REF), 'Release entry point must run on the original repository main');
   invariant(['push', 'workflow_dispatch'].includes(environment.GITHUB_EVENT_NAME), 'Unsupported publication event');
   if (environment.GITHUB_EVENT_NAME === 'workflow_dispatch') invariant(environment.RELEASE_CONFIRM === 'true', 'Recovery requires explicit confirmation');
   invariant(SHA.test(releaseSha ?? ''), 'A full immutable release SHA is required');
@@ -67,39 +70,50 @@ export async function approveRelease({ root = ROOT, releaseSha, api = github, en
   const commit = await api(`commits/${releaseSha}`);
   invariant(commit.parents?.length >= 1, 'Release commit must have a first parent');
   const changed = git(root, 'diff', '--name-only', commit.parents[0].sha, releaseSha).split('\n');
+  if (changed.includes(CHANNEL_HANDOFF_PATH)) {
+    await validateChannelHandoff({ root, baseSha: commit.parents[0].sha, headSha: releaseSha, targetBranch: environment.GITHUB_REF.slice('refs/heads/'.length) });
+    return null; // Source integration is never publication approval.
+  }
   if (!changed.includes('.release/plan.json')) return null;
-  invariant(plan.schemaVersion === 1 && plan.repository === REPOSITORY && SHA.test(plan.baseSha ?? ''), 'Unsupported or foreign release plan');
+  invariant([1, CHANNEL_PLAN_SCHEMA].includes(plan.schemaVersion) && plan.repository === REPOSITORY && SHA.test(plan.baseSha ?? ''), 'Unsupported or foreign release plan');
+  const channel = plan.schemaVersion === CHANNEL_PLAN_SCHEMA ? plan.channel : 'stable';
+  const policy = channelPolicy(channel);
+  invariant(environment.GITHUB_REF === `refs/heads/${policy.branch}` && (plan.schemaVersion === 1 || plan.candidateOnly === false && plan.branch === policy.branch), 'Release channel does not match its approved branch/intent');
   invariant(Array.isArray(plan.components) && plan.components.length > 0 && plan.components.length <= 2, 'Plan must explicitly select one or two components');
-  invariant(new Set(plan.components.map(c => c.component)).size === plan.components.length && plan.components.every(c => ['windows', 'npm'].includes(c.component) && c.channel === 'stable'), 'Invalid selected components/channel');
+  invariant(new Set(plan.components.map(c => c.component)).size === plan.components.length && plan.components.every(c => ['windows', 'npm'].includes(c.component) && c.channel === channel), 'Invalid selected components/channel');
   const prs = await pages(`commits/${releaseSha}/pulls`, api);
-  const candidates = prs.filter(pr => pr.merge_commit_sha === releaseSha && pr.base?.ref === 'main');
+  const candidates = prs.filter(pr => pr.merge_commit_sha === releaseSha && pr.base?.ref === policy.branch);
   invariant(candidates.length === 1, 'Expected exactly one merged release PR for this commit');
   const pr = await api(`pulls/${candidates[0].number}`);
   validateMergedPullRequest(pr, plan, releaseSha, commit);
   const headCommit = await api(`git/commits/${pr.head.sha}`);
   invariant(headCommit.tree?.sha === commit.commit?.tree?.sha, 'Merged release tree differs from the reviewed PR tree');
-  const relation = await api(`compare/${releaseSha}...main`);
+  const relation = await api(`compare/${releaseSha}...${policy.branch}`);
   invariant(['identical', 'ahead'].includes(relation.status) && relation.merge_base_commit?.sha === releaseSha, 'Approved release SHA is not in main history');
   if (validatePlan) execFileSync(process.execPath, ['scripts/release-version.mjs', '--check-plan', '--base', plan.baseSha, ...(validatePlan === 'structural' ? ['--structural-only'] : [])], { cwd: root, stdio: 'inherit' });
   return { schemaVersion: 1, repository: REPOSITORY, releaseSha, planSha256: hash(planBytes), baseSha: plan.baseSha, bootstrap: plan.bootstrap === true, components: plan.components, pullRequest: { number: pr.number, headSha: pr.head.sha, mergedBy: pr.merged_by.login } };
 }
 
-export async function verifyArtifactSource({ artifactId, runId, runAttempt, releaseSha, component, api = github }) {
+export async function verifyArtifactSource({ artifactId, runId, runAttempt, releaseSha, component, channel = 'stable', api = github }) {
   for (const [name, value] of Object.entries({ artifactId, runId, runAttempt })) invariant(/^[1-9][0-9]*$/.test(String(value)), `Invalid ${name}`);
   invariant(['windows', 'npm'].includes(component) && SHA.test(releaseSha), 'Invalid artifact identity');
-  const run = await api(`actions/runs/${runId}`);
-  invariant(run.repository?.full_name === REPOSITORY && run.head_repository?.full_name === REPOSITORY && run.path === '.github/workflows/release.yml' && ['push', 'workflow_dispatch'].includes(run.event), 'Artifact must come from the trusted release workflow');
-  invariant(run.head_branch === 'main', 'Artifact source run must be on main');
+  const run = await api(`actions/runs/${runId}/attempts/${runAttempt}`);
+  invariant(run.id === Number(runId) && run.run_attempt === Number(runAttempt) && SHA.test(run.head_sha ?? '') && ['in_progress', 'completed'].includes(run.status), 'Original artifact run attempt or source is invalid');
+  invariant(run.repository?.full_name === REPOSITORY && run.head_repository?.full_name === REPOSITORY && run.path?.split('@')[0] === '.github/workflows/release.yml' && ['push', 'workflow_dispatch'].includes(run.event), 'Artifact must come from the trusted release workflow');
+  invariant(run.head_branch === channelPolicy(channel).branch, 'Artifact source run must be on main');
   const artifact = await api(`actions/artifacts/${artifactId}`);
-  invariant(artifact.id === Number(artifactId) && artifact.expired === false && artifact.workflow_run?.id === Number(runId), 'Artifact is expired or belongs to another run');
+  invariant(artifact.id === Number(artifactId) && artifact.expired === false && artifact.workflow_run?.id === Number(runId) && artifact.workflow_run.head_sha === run.head_sha && artifact.workflow_run.head_branch === run.head_branch, 'Artifact is expired or belongs to another run/source');
   invariant(artifact.name === `${component === 'windows' ? 'windows-installer' : 'npm-packages'}-${runId}-${runAttempt}`, 'Artifact name does not bind the original run attempt');
   invariant(/^sha256:[a-f0-9]{64}$/.test(artifact.digest ?? ''), 'Artifact archive digest is required');
   // A recovery rebuild may check out an earlier approved SHA while its dispatch head is newer.
   // The source build manifest binds the exact checkout; additionally require the source attempt job to have passed.
+  const relation = await api(`compare/${releaseSha}...${run.head_sha}`);
+  invariant(['identical', 'ahead'].includes(relation.status) && relation.merge_base_commit?.sha === releaseSha, 'Artifact source run does not contain the approved release SHA');
   const jobs = await api(`actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`);
-  invariant(Array.isArray(jobs.jobs) && jobs.total_count <= 100, 'Unexpected or incomplete build job list');
+  invariant(Array.isArray(jobs.jobs) && Number.isSafeInteger(jobs.total_count) && jobs.total_count >= 0 && jobs.total_count <= 100 && jobs.jobs.length === jobs.total_count, 'Unexpected or incomplete build job list');
   const expected = component === 'windows' ? 'windows-build / build' : 'npm-build';
-  invariant(jobs.jobs.some(job => job.name === expected && job.conclusion === 'success'), `Original ${expected} job did not succeed`);
+  const builds = jobs.jobs.filter(job => job.name === expected);
+  invariant(builds.length === 1 && builds[0].status === 'completed' && builds[0].conclusion === 'success', `Original ${expected} job did not succeed`);
   return { artifactId: Number(artifactId), runId: Number(runId), runAttempt: Number(runAttempt), archiveDigest: artifact.digest, releaseSha };
 }
 
@@ -120,14 +134,21 @@ export async function exactTag(tag, releaseSha, api = github, create = false) {
   invariant(object?.type === 'commit' && object.sha === releaseSha, `Tag ${tag} already points to different source; never force tags`);
 }
 
-export async function finalizeNpm() {
+export async function finalizeNpm(options = {}) {
+  // Real GitHub adapters are unreachable until this hold is explicitly removed.
   assertNpmPublicationEnabled();
+  return executeNpmFinalization({ ...options, api: github, uploadAsset: uploadRemoteAsset, verifyAsset: verifyRemoteAsset });
 }
 
 // Fake-I/O-only regression surface while real npm finalization is disabled.
 export async function simulateNpmFinalization({ approval, manifest, artifactIdentity, api, root = ROOT, uploadAsset, verifyAsset }) {
   invariant(typeof api === 'function' && typeof uploadAsset === 'function' && typeof verifyAsset === 'function', 'Finalization simulation requires explicit fake I/O');
+  return executeNpmFinalization({ approval, manifest, artifactIdentity, api, root, uploadAsset, verifyAsset });
+}
+
+async function executeNpmFinalization({ approval, manifest, artifactIdentity, api, root = ROOT, uploadAsset, verifyAsset }) {
   const component = approval.components.find(c => c.component === 'npm');
+  const prerelease = component?.channel === 'beta';
   invariant(component, 'npm is not selected');
   for (const pkg of component.packages) await exactTag(pkg.tag, approval.releaseSha, api, true);
   const marker = `<!-- hellgato-release:${approval.planSha256}:${approval.releaseSha}:npm -->`;
@@ -140,10 +161,10 @@ export async function simulateNpmFinalization({ approval, manifest, artifactIden
   const assetName = 'npm-release-manifest.json';
   let release = await api(`releases/tags/${encodeURIComponent(tag)}`, { missing: true });
   if (release) {
-    invariant(release.prerelease === false && release.body === body && release.tag_name === tag && release.author?.login === 'github-actions[bot]', 'Existing npm release has conflicting metadata or ownership');
+    invariant(release.prerelease === prerelease && release.body === body && release.tag_name === tag && release.author?.login === 'github-actions[bot]', 'Existing npm release has conflicting metadata or ownership');
     await exactTag(tag, approval.releaseSha, api);
   } else {
-    release = await api('releases', { method: 'POST', body: { tag_name: tag, target_commitish: approval.releaseSha, name: `hellgato ${component.version}`, body, draft: true, prerelease: false, make_latest: 'false' } });
+    release = await api('releases', { method: 'POST', body: { tag_name: tag, target_commitish: approval.releaseSha, name: `hellgato ${component.version}`, body, draft: true, prerelease, make_latest: 'false' } });
   }
   const assets = await pages(`releases/${release.id}/assets`, api);
   invariant(assets.every(asset => asset.name === assetName) && assets.length <= 1, 'Unexpected assets in npm release');
@@ -154,7 +175,7 @@ export async function simulateNpmFinalization({ approval, manifest, artifactIden
   }
   if (release.draft) release = await api(`releases/${release.id}`, { method: 'PATCH', body: { draft: false, make_latest: 'false' } });
   release = await api(`releases/tags/${encodeURIComponent(tag)}`);
-  invariant(release.draft === false && release.prerelease === false && release.tag_name === tag && release.body === body, 'npm GitHub finalization did not confirm');
+  invariant(release.draft === false && release.prerelease === prerelease && release.tag_name === tag && release.body === body, 'npm GitHub finalization did not confirm');
   const finalAssets = await pages(`releases/${release.id}/assets`, api);
   invariant(finalAssets.length === 1 && finalAssets[0].name === assetName, 'Missing public npm manifest');
   await verifyAsset(finalAssets[0], publicManifest);
@@ -193,9 +214,9 @@ async function main() {
     const path = resolve(ROOT, options.output || '.release/approval.json');
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, JSON.stringify(approval, null, 2) + '\n');
-    await output({ selected: true, windows: approval.components.some(c => c.component === 'windows'), npm: approval.components.some(c => c.component === 'npm'), release_sha: sha, plan_sha256: approval.planSha256 });
+    await output({ selected: true, windows: approval.components.some(c => c.component === 'windows'), npm: approval.components.some(c => c.component === 'npm'), release_sha: sha, channel: approval.components[0].channel, plan_sha256: approval.planSha256 });
   } else if (command === 'verify-artifact') {
-    const identity = await verifyArtifactSource({ artifactId: options['artifact-id'], runId: options['run-id'], runAttempt: options['run-attempt'], releaseSha: sha, component: options.component });
+    const identity = await verifyArtifactSource({ artifactId: options['artifact-id'], runId: options['run-id'], runAttempt: options['run-attempt'], releaseSha: sha, component: options.component, channel: options.channel || 'stable' });
     if (options.directory) execFileSync('python', ['scripts/verify-artifact.py', '--artifact-id', String(identity.artifactId), '--sha256', identity.archiveDigest.slice('sha256:'.length), '--directory', options.directory], { cwd: ROOT, stdio: 'inherit' });
     console.log(JSON.stringify(identity));
   } else if (command === 'finalize-npm') {
@@ -205,7 +226,7 @@ async function main() {
     invariant(approval, 'Missing approved plan');
     const manifest = JSON.parse(await readFile(resolve(options.artifacts || 'dist/npm', 'npm-artifact-manifest.json'), 'utf8'));
     execFileSync(process.execPath, ['scripts/npm-release.mjs', 'confirm', '--artifacts', options.artifacts || 'dist/npm', '--plan', '.release/plan.json', '--release-sha', sha, '--repository', REPOSITORY, '--run-id', process.env.NPM_BUILD_RUN_ID, '--run-attempt', process.env.NPM_BUILD_RUN_ATTEMPT], { cwd: ROOT, stdio: 'inherit' });
-    const artifactIdentity = await verifyArtifactSource({ artifactId: process.env.NPM_ARTIFACT_ID, runId: process.env.NPM_BUILD_RUN_ID, runAttempt: process.env.NPM_BUILD_RUN_ATTEMPT, releaseSha: sha, component: 'npm' });
+    const artifactIdentity = await verifyArtifactSource({ artifactId: process.env.NPM_ARTIFACT_ID, runId: process.env.NPM_BUILD_RUN_ID, runAttempt: process.env.NPM_BUILD_RUN_ATTEMPT, releaseSha: sha, component: 'npm', channel: approval.components.find(c => c.component === 'npm').channel });
     console.log(await finalizeNpm({ approval, manifest, artifactIdentity, uploadAsset: uploadRemoteAsset, verifyAsset: verifyRemoteAsset }));
   } else throw new Error('Expected approve, verify-artifact, or finalize-npm');
 }

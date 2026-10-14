@@ -1,0 +1,14 @@
+"""Intentional invalid consumers. The quality runner must reject every case."""
+from pathlib import Path
+from hellgato_mirabox.protocol import ProtocolError, RpcRequest, RpcError, jpeg_size
+from hellgato_candidate.files import FileDigest, copy_verified
+from hellgato_host.startup_status import StartupStatus, decode_status
+
+jpeg_size('not bytes')  # expect: arg-type
+ProtocolError('bad', rpc_code='not an integer')  # expect: arg-type
+wrong: FileDigest = {'size': 'not an integer', 'sha256': '0' * 64}  # expect: typeddict-item
+copy_verified(Path('source'), Path('target'), [])  # expect: arg-type
+result: StartupStatus = decode_status(b'', object())  # expect: arg-type
+invalid_ready: str = result.ready  # expect: assignment
+bad_request: RpcRequest = {'jsonrpc': '2.0', 'id': None, 'method': 'hello', 'params': {}}  # expect: typeddict-item
+bad_error: RpcError = {'code': 'not an integer', 'message': 'bad'}  # expect: typeddict-item

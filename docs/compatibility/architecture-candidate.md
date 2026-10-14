@@ -5,6 +5,12 @@ new physical compatibility row until a device owner supplies candidate evidence.
 Historical N4 Pro E / V4.N4 Pro E.02.010 / Windows x64 / Stream Deck 7.6.0.23012
 results apply only to the earlier product, not automatically to the sidecar.
 
+The new physical worker's exact experimental admission policy permits only that
+historical firmware string for an explicit trial. Unknown firmware fails closed.
+Admission does not turn the historical row into a candidate pass: new candidate
+source/artifact hashes, the [trial procedure](ipc-trial.md) and fresh physical
+results are still required.
+
 Evidence categories:
 
 | Category | Required evidence | Meaning |

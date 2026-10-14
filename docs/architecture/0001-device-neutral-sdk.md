@@ -22,6 +22,11 @@ Status: implementation candidate. No release or new hardware support is implied.
   Windows staging installs the actual tarballs offline, with lifecycle scripts
   disabled and no workspace links, and embeds the SDK archive digests and full
   staged file inventory in `product-build-manifest.json`.
+- `apps/stream-dog/python/hellgato_stream_dog` owns the canonical GUI, launcher,
+  preferences and profile/identity handling. The old `app` entrypoints are
+  compatibility aliases to those same module objects, not duplicate sources.
+- `host-integrations/streamdeck/windows` owns host inspection/preparation and both
+  native integrations. The physical worker does not import this host layer.
 
 The public SDK consists of two fixed-version packages. Windows retains its own
 private version source. A device binding does not acquire another package/version
@@ -36,14 +41,26 @@ must pass recorded physical display/input/lifecycle parity before it replaces
 that engine. Existing trace-file IPC is therefore still present in the product
 compatibility path and is not presented as completion of phase A.
 
-New ESM implementation remains JavaScript with strictly checked public TypeScript
-declarations; a full strict-TypeScript source conversion is not claimed.
+New SDK contracts, device bridge, target glue, session, sidecar, N4 binding and
+simulation/conformance code are authored in strict TypeScript. The pinned compiler
+emits the published ESM and declarations; `pnpm typecheck` checks implementation
+bodies, public consumer types and generated-output drift. Source files and legacy
+boundary declarations do not enter npm archives. Existing protocol extensions and
+pinned vendor/legacy runtime remain staged JavaScript behind narrow typed boundaries.
+The product candidate runner is outside this SDK conversion boundary.
 
-Moving the remaining GUI and host-integration Python/native directories, locked
-Python tooling migration, stable/beta publishing, complete worker freezing and
-consumer release verification remain gated follow-on work. A directory move alone
-is not evidence of safe lifecycle migration. Separate runtime/CompatibilityTools
-ZIP publication is phase B and is not offered by this candidate.
+The product/host moves, pinned Python build dependencies and quality gates are
+implemented alongside compatibility tests. An isolated, manifest-bound
+[Windows IPC trial](../compatibility/ipc-trial.md) packages the new physical worker
+and supervisor separately from the ordinary installer. Its frozen self-test uses
+the fake backend; actual Windows artifact checks and the physical recipe remain
+distinct evidence. Bounded recovery, display/control restoration and local rollback
+are implemented, but remain physical-test candidates. A directory move or simulated
+test alone is not evidence of safe physical lifecycle migration.
+
+Separate runtime/CompatibilityTools ZIP publication is phase B and is not offered
+by this candidate. The portable trial is a product test bundle, not that independent
+SDK distribution channel.
 
 ## Safety and compatibility
 
@@ -68,4 +85,7 @@ npm public writes are disabled in both workflow and CLI while authentication is
 resolved. Package builds, tests, offline installation and version/changelog work
 continue. Windows publication is independent and retains its owner-approved plan
 and repository enablement gates. This PR does not turn on publication or merge
-itself. Stable-only validators continue rejecting unimplemented beta publication.
+itself. Reviewed stable/beta plans, immutable production baselines and the
+next-to-main promotion handoff are implemented with replay tests; the
+[release-channel policy](../release-channels.md) defines their closed publication
+gates. No successful live beta/stable publication is implied by those tests.

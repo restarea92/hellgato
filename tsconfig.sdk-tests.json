@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.sdk.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "test/architecture-core-types.mts",
+    "test/architecture-session-types.mts",
+    "packages/core/types/**/*.d.ts"
+  ]
+}

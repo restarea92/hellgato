@@ -45,3 +45,20 @@ test('Windows staging refuses untracked files and workspace links', t => {
     assert.throws(() => verifyWindowsSdkStage(root), /links/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('Windows-only SDK staging stays internal and mixed plans preserve npm intent', async () => {
+  const { stagingPlanOptions } = await import('../scripts/stage-windows-sdk.mjs');
+  const root = mkdtempSync(resolve(tmpdir(), 'hellgato-stage-plan-'));
+  try {
+    mkdirSync(resolve(root, '.release'));
+    const path = resolve(root, '.release/plan.json');
+    writeFileSync(path, JSON.stringify({ schemaVersion: 3, repository: 'restarea92/hellgato', components: [{ component: 'windows' }] }));
+    assert.deepEqual(stagingPlanOptions(root, path, { validate: false }), { consumerPlanPath: path });
+    writeFileSync(path, JSON.stringify({ schemaVersion: 3, repository: 'restarea92/hellgato', components: [{ component: 'windows' }, { component: 'npm' }] }));
+    assert.deepEqual(stagingPlanOptions(root, path, { validate: false }), { planPath: path });
+    writeFileSync(path, JSON.stringify({ schemaVersion: 3, repository: 'restarea92/hellgato', components: [{ component: 'npm' }] }));
+    assert.throws(() => stagingPlanOptions(root, path, { validate: false }), /selected Windows/);
+    assert.throws(() => stagingPlanOptions(root, resolve(root, 'wrong.json')), /checkout release plan/);
+    assert.deepEqual(stagingPlanOptions(root), {});
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

@@ -21,3 +21,6 @@ packages/core/THIRD-PARTY-NOTICES.txt
 *.tgz
 
 packages/core/src/vendor/
+
+*.egg-info/
+adapters/mirabox-python/build/

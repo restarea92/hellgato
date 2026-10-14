@@ -20,9 +20,10 @@
     "release:plan:check": "node scripts/release-version.mjs --check-plan",
     "test:release": "node --test test/release-*.test.mjs",
     "pack:npm": "node scripts/pack-npm.mjs",
-    "typecheck": "tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --types node test/architecture-core-types.mts test/architecture-session-types.mts",
+    "typecheck": "node scripts/build-typescript.mjs --check && tsc -p tsconfig.sdk-tests.json",
     "check:architecture": "node scripts/check-architecture.mjs",
-    "stage:windows-sdk": "node scripts/stage-windows-sdk.mjs"
+    "stage:windows-sdk": "node scripts/stage-windows-sdk.mjs",
+    "build:types": "node scripts/build-typescript.mjs"
   },
   "packageManager": "pnpm@11.10.0",
   "devDependencies": {
