@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "repository": "restarea92/hellgato",
+  "components": [
+    {
+      "component": "windows",
+      "packages": [
+        {
+          "name": "@hellgato/windows-release",
+          "path": "packages/windows-release"
+        }
+      ],
+      "tag": "v{version}",
+      "notes": "docs/releases/{version}.md"
+    },
+    {
+      "component": "npm",
+      "packages": [
+        {
+          "name": "@hellgato/core",
+          "path": "packages/core"
+        },
+        {
+          "name": "hellgato",
+          "path": "packages/hellgato"
+        }
+      ],
+      "tag": "hellgato@{version}",
+      "notes": "docs/releases/npm-{version}.md"
+    }
+  ],
+  "rules": [
+    {
+      "paths": [
+        "app/cora/**",
+        "scripts/prepare-cora.mjs",
+        "scripts/cora-paths.mjs"
+      ],
+      "components": [
+        "windows",
+        "npm"
+      ]
+    },
+    {
+      "paths": [
+        "packages/core/README.md",
+        "packages/hellgato/README.md",
+        "packages/*/CHANGELOG.md"
+      ],
+      "components": []
+    },
+    {
+      "paths": [
+        "packages/core/**",
+        "packages/hellgato/**",
+        "scripts/build-npm.mjs",
+        "scripts/verify-npm.mjs",
+        "scripts/pack-npm.mjs"
+      ],
+      "components": [
+        "npm"
+      ]
+    },
+    {
+      "paths": [
+        "app/**",
+        "native/**",
+        "installer/**",
+        "scripts/build-windows.ps1",
+        "scripts/prepare-windows.py",
+        "scripts/build-icons.py",
+        "scripts/draw-stream-dog.py",
+        "scripts/load-native-ui.py",
+        "scripts/patch-background-grid.py",
+        "scripts/patch-device-geometry.py",
+        "scripts/setup-startup.py",
+        "scripts/start-streamdeck.py",
+        "packages/windows-release/package.json"
+      ],
+      "components": [
+        "windows"
+      ]
+    },
+    {
+      "paths": [
+        "LICENSE",
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        ".gitattributes",
+        ".gitignore"
+      ],
+      "components": [
+        "windows",
+        "npm"
+      ]
+    },
+    {
+      "paths": [
+        ".github/workflows/**",
+        ".github/pull_request_template.md",
+        ".release/**",
+        ".changeset/**",
+        "scripts/check-release-impact.mjs",
+        "scripts/release-version.mjs",
+        "scripts/sync-release-metadata.mjs",
+        "scripts/release-lib.mjs",
+        "scripts/release.mjs",
+        "scripts/npm-release.mjs",
+        "scripts/windows_release.py",
+        "scripts/update-downloads.mjs",
+        "scripts/verify-artifact.py"
+      ],
+      "components": [],
+      "reviewRequired": true
+    },
+    {
+      "paths": [
+        "README.md",
+        "docs/**",
+        "test/**",
+        ".github/ISSUE_TEMPLATE/**"
+      ],
+      "components": []
+    }
+  ]
+}

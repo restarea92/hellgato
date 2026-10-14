@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from 'node:fs';
-import { resolve, dirname, relative } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { coraModulePath } from './cora-paths.mjs';
 import { fileURLToPath } from 'node:url';
 import { stripTypeScriptTypes } from 'node:module';
 
@@ -21,7 +22,7 @@ const visited = new Set();
 function compile(file) {
   if (visited.has(file)) return;
   visited.add(file);
-  const path = relative(sourceRoot, file).replaceAll('\\', '/');
+  const path = coraModulePath(sourceRoot, file);
   let source;
   if (path === 'platform/tcp.ts') {
     source = "export * from 'node:net';\n";
@@ -49,5 +50,5 @@ for (const file of ['cora/primary-server.ts', 'cora/child-server.ts', 'cora/resp
 }
 copyFileSync(resolve(checkout, 'LICENSE'), resolve(outputRoot, 'LICENSE'));
 writeFileSync(resolve(outputRoot, 'package.json'), JSON.stringify({ type: 'module' }));
-writeFileSync(resolve(outputRoot, 'provenance.json'), JSON.stringify({ repository: 'https://github.com/lukasMega/DeckBridge', revision, modules: [...visited].map(p => relative(sourceRoot, p)).sort(), adaptations: ['Node TCP transport', 'loopback binding only', 'manual pairing only; mDNS disabled', 'log level info', 'TypeScript transformed by Node'] }, null, 2));
+writeFileSync(resolve(outputRoot, 'provenance.json'), JSON.stringify({ repository: 'https://github.com/lukasMega/DeckBridge', revision, modules: [...visited].map(p => coraModulePath(sourceRoot, p)).sort(), adaptations: ['Node TCP transport', 'loopback binding only', 'manual pairing only; mDNS disabled', 'log level info', 'TypeScript transformed by Node'] }, null, 2));
 console.log(`Prepared ${visited.size} modules from ${revision}`);

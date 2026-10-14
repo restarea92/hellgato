@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "baseBranch": "main",
+  "access": "public",
+  "fixed": [
+    [
+      "@hellgato/core",
+      "hellgato"
+    ]
+  ],
+  "linked": [],
+  "updateInternalDependencies": "patch",
+  "bumpVersionsWithWorkspaceProtocolOnly": false,
+  "privatePackages": {
+    "version": true,
+    "tag": false
+  },
+  "ignore": []
+}

@@ -19,6 +19,7 @@ include_tree('work/references/mirabox/Python-SDK/src/StreamDock', {'.py', '.dll'
 for script in ('setup-startup.py', 'start-streamdeck.py', 'patch-device-geometry.py', 'patch-background-grid.py', 'load-native-ui.py'):
     datas.append((str(root / 'scripts' / script), 'scripts'))
 datas += [
+    (str(root / 'app/release.json'), 'app'),
     (str(root / 'work/build-native-startup/version.dll'), 'native'),
     (str(root / 'work/build-native-ui-package/HellgatoNativeUiV2.dll'), 'native'),
     (str(root / 'LICENSE'), '.'),

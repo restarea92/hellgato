@@ -6,6 +6,7 @@ import logging
 import os
 from pathlib import Path
 import queue
+import re
 import runpy
 import subprocess
 import sys
@@ -15,7 +16,21 @@ import time
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 STATE = Path(os.environ.get('HELLGATO_STATE_DIR', Path(os.environ['LOCALAPPDATA']) / 'Hellgato'))
-VERSION = '0.1.1'
+def read_release_metadata(root):
+    """Use the same packaged metadata in source and PyInstaller execution."""
+    metadata = json.loads((root / 'app/release.json').read_text(encoding='utf-8'))
+    if (not isinstance(metadata, dict) or set(metadata) != {'version', 'channel'}
+            or metadata['channel'] != 'stable'
+            or not isinstance(metadata['version'], str)
+            or not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', metadata['version'])):
+        raise ValueError('Invalid packaged Hellgato release metadata')
+    return metadata
+
+
+VERSION = read_release_metadata(ROOT)['version']
+if sys.argv[1:] == ['--version']:
+    print(VERSION)
+    raise SystemExit(0)
 os.environ['HELLGATO_STATE_DIR'] = str(STATE)
 sys.path.insert(0, str(ROOT / 'app/n4'))
 from compatibility import INCOMPATIBLE

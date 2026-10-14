@@ -3,12 +3,28 @@ name: Windows build
 on:
   push:
     branches: [main]
-    paths: ['app/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'docs/releases/**', '.github/workflows/**']
+    paths: ['app/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.release/**', 'docs/releases/**', '.github/workflows/**']
   pull_request:
     branches: [main]
-    paths: ['app/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'docs/releases/**', '.github/workflows/**']
+    paths: ['app/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.release/**', 'docs/releases/**', '.github/workflows/**']
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Optional exact head for dispatched PR checks
+        required: false
+        type: string
   workflow_call:
+    inputs:
+      release_sha:
+        required: true
+        type: string
+    outputs:
+      artifact_id:
+        value: ${{ jobs.build.outputs.artifact_id }}
+      run_id:
+        value: ${{ jobs.build.outputs.run_id }}
+      run_attempt:
+        value: ${{ jobs.build.outputs.run_attempt }}
 
 permissions:
   contents: read
@@ -16,19 +32,40 @@ permissions:
 jobs:
   build:
     runs-on: windows-2022
-    timeout-minutes: 20
+    timeout-minutes: 30
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      run_id: ${{ steps.identity.outputs.run_id }}
+      run_attempt: ${{ steps.identity.outputs.run_attempt }}
     defaults:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.release_sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.13.7'
           architecture: x64
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - name: Validate exact checkout and locked metadata
+        id: identity
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha || inputs.release_sha }}
+        run: |
+          if ($env:EXPECTED_SHA -and (git rev-parse HEAD) -ne $env:EXPECTED_SHA) { throw 'Unexpected checkout SHA' }
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE) { throw 'Frozen workspace installation failed' }
+          pnpm run release:metadata:check
+          if ($LASTEXITCODE) { throw 'Release metadata drift' }
+          "run_id=$env:GITHUB_RUN_ID" >> $env:GITHUB_OUTPUT
+          "run_attempt=$env:GITHUB_RUN_ATTEMPT" >> $env:GITHUB_OUTPUT
       - name: Resolve installer version
         id: metadata
         run: |
@@ -52,16 +89,28 @@ jobs:
           if ($LASTEXITCODE) { throw 'Installer migration checks failed' }
           ./scripts/build-windows.ps1 -Iscc (Join-Path $env:RUNNER_TEMP 'InnoSetup/ISCC.exe')
           if ($LASTEXITCODE) { throw 'Windows build failed' }
+          $expectedVersion = python scripts/windows_release.py version
+          if ($LASTEXITCODE) { throw 'Expected packaged version unavailable' }
+          $packagedVersion = & ./dist/Hellgato/HellgatoWorker.exe --version
+          if ($LASTEXITCODE -or $packagedVersion -ne $expectedVersion) { throw 'Packaged runtime version differs from installer metadata' }
           ./work/build-runtime/node.exe --test test/*.test.mjs
           if ($LASTEXITCODE) { throw 'CORA checks failed' }
           python scripts/windows_release.py artifacts
           if ($LASTEXITCODE) { throw 'Installer artifact validation failed' }
+      - name: Bind artifacts to their exact build
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
+        run: |
+          python scripts/windows_release.py manifest
+          if ($LASTEXITCODE) { throw 'Build manifest failed' }
       - name: Save installer and SHA-256 (not a release)
-        uses: actions/upload-artifact@v4
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: windows-installer-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             dist/Hellgato-${{ steps.metadata.outputs.version }}-Setup.exe
             dist/Hellgato-${{ steps.metadata.outputs.version }}-Setup.exe.sha256
+            dist/build-manifest.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90

@@ -1,75 +1,49 @@
-name: Windows release
-
-# Publication is never triggered by a code push, PR, tag push or release event.
+name: Windows release recovery
+# This compatibility entry point delegates to the single serialized publisher.
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Existing stable tag at this main commit (vMAJOR.MINOR.PATCH)'
+      release_sha:
+        description: Exact previously approved release merge SHA
+        required: true
+        type: string
+      source_run_id:
+        description: Original verified release build run ID
+        required: true
+        type: string
+      source_run_attempt:
+        description: Original verified build attempt
+        required: true
+        type: string
+      windows_artifact_id:
+        description: Original immutable Windows artifact ID
         required: true
         type: string
       confirm:
-        description: 'Publish this explicitly prepared new stable version'
+        description: Resume this previously approved Windows-only release
         required: true
         type: boolean
         default: false
-
 permissions:
   contents: read
-
-# Serialize all stable publications, including retries and different versions.
-concurrency:
-  group: windows-release
-  cancel-in-progress: false
-
 jobs:
-  preflight:
-    if: github.repository == 'restarea92/hellgato' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.13.7'
-      - name: Validate release request without publishing
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_CONFIRM: ${{ inputs.confirm }}
-        run: python scripts/windows_release.py check
-
-  build:
-    needs: preflight
-    permissions:
-      contents: read
-    uses: ./.github/workflows/windows-build.yml
-
-  publish:
-    needs: [preflight, build]
-    if: github.repository == 'restarea92/hellgato' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm
-    runs-on: ubuntu-latest
+  dispatch:
+    if: github.repository == 'restarea92/hellgato' && github.ref == 'refs/heads/main' && inputs.confirm
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      contents: write
+      actions: write
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.13.7'
-      - uses: actions/download-artifact@v4
-        with:
-          name: windows-installer-${{ github.run_id }}-${{ github.run_attempt }}
-          path: dist
-      - name: Revalidate and publish the exact tested installer
+      - name: Dispatch the common release recovery entry point
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_CONFIRM: ${{ inputs.confirm }}
-        run: python scripts/windows_release.py publish
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          WINDOWS_ARTIFACT_ID: ${{ inputs.windows_artifact_id }}
+        run: |
+          gh workflow run release.yml --repo "$GH_REPO" --ref main \
+            -f release_sha="$RELEASE_SHA" -f source_run_id="$SOURCE_RUN_ID" \
+            -f source_run_attempt="$SOURCE_RUN_ATTEMPT" -f windows_artifact_id="$WINDOWS_ARTIFACT_ID" \
+            -f confirm=true

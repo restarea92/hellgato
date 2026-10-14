@@ -1,4 +1,4 @@
-* text=auto
+* text=auto eol=lf
 *.py text eol=lf
 *.mjs text eol=lf
 *.json text eol=lf
@@ -6,3 +6,6 @@
 *.yml text eol=lf
 *.png binary
 *.ico binary
+
+*.yaml text eol=lf
+installer/version.iss text eol=lf

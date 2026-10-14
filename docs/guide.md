@@ -139,7 +139,7 @@ Build the installer:
 ./scripts/build-windows.ps1 -Python ./work/build-venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
 ```
 
-Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-0.1.1-Setup.exe` and its SHA-256 sidecar. Personal profiles and logs are excluded. The Windows release workflow runs manually or when `docs/releases/0.1.1.md`, `.github/workflows/windows-release.yml` or files under `native/` change on `main`. Update the version, installer filenames, release-note trigger and workflow release command together before publishing release notes. Other pushes run checks without publishing.
+Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-<version>-Setup.exe` and its SHA-256 sidecar. The version comes only from `packages/windows-release/package.json`, through generated runtime and installer metadata. Personal profiles and logs are excluded. Ordinary pushes and PRs build without publishing. A separately reviewed Changesets release PR selects Windows and/or npm; its owner-approved merge authorizes publication only after rollout is explicitly enabled. See [release operations](windows-releases.md) and [setup requirements](release-setup.md).
 
 | Directory | Purpose |
 | --- | --- |
@@ -161,15 +161,19 @@ Open an issue or submit a pull request with a focused change. Run both test suit
 
 `hellgato` re-exports `@hellgato/core`. Both are built from `app/cora/bridge.mjs`, which the Windows app also uses. See [the core API](../packages/core) for usage and supported scope.
 
-With the pinned Node 24 runtime prepared, build and pack from the repository root:
+Use Node 24 and the exact pnpm version in the root `packageManager` field:
 
-```powershell
-./work/build-runtime/node.exe scripts/build-npm.mjs
-npm pack ./packages/core --pack-destination ./work
-npm pack ./packages/hellgato --pack-destination ./work
+```sh
+pnpm install --frozen-lockfile
+pnpm run prepare:cora
+pnpm run build:npm
+node scripts/pack-npm.mjs --destination dist/npm
+node scripts/verify-npm.mjs --artifacts dist/npm
 ```
 
-Keep both package versions and the facade's exact core dependency in sync. The root package stays private. Packages include the prepared DeckBridge runtime and its license, so consumers need no Git checkout or build step. Publish stable tarballs with the `latest` tag; npm publication is manual and is independent of the Windows installer release.
+Changesets keeps the two npm versions fixed together. The source facade uses `workspace:*`; pnpm pack converts that to the exact core version inside the tarball. Both tarballs are inspected and installed into an isolated consumer for import and lifecycle checks. The root and Windows metadata workspaces stay private. Packages include the prepared DeckBridge runtime and license, so consumers need no Git checkout or build step.
+
+Include a changeset with releasable code changes. A change to shared `app/cora/**` requires both npm and Windows targets. Windows-only changes do not publish npm. The [release workflow](windows-releases.md) publishes only immutable, verified tarballs selected by the approved release plan.
 
 ### Translations
 
