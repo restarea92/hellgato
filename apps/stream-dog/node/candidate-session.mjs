@@ -70,7 +70,7 @@ export function createDisplayJournal({ maxEntries = 64, maxBytes = 8 * 1024 * 10
   };
 }
 
-function restoringAdapter(raw, { controls, persist, persistControl, count, record, journal, observations }) {
+function restoringAdapter(raw, { controls, persist, persistControl, releaseReason, count, record, journal, observations }) {
   let context, opened = false, sequence = 0, idleControl = null, inputEpoch = 0, lastInputSequence = -1;
   let previewKnob = false;
   let inputReceivedAt = null;
@@ -149,7 +149,7 @@ function restoringAdapter(raw, { controls, persist, persistControl, count, recor
       if (idleControl) await write({ type: 'control', control: idleControl }, true);
       record('restored', { generation: context.generation, count: journal.length });
     },
-    async close() { opened = false; await raw.close(); },
+    async close() { opened = false; const reason = releaseReason(); await raw.close(reason ? { releaseReason: reason } : undefined); },
     async stop() { opened = false; await raw.stop(); },
     setOutput: payload => write(payload), setControl: payload => write(payload),
     onInput: listener => raw.onInput(event => {
@@ -253,9 +253,11 @@ export function createCandidateRunner(input, dependencies = {}) {
     'restoredWrites', 'unconfirmedWrites', 'simulationWrites', 'inputObserved', 'inputForwarded', 'inputNotDelivered', 'diagnostics', 'cleanStops'].map(key => [key, 0]));
   const count = key => { counts[key] = Math.min(Number.MAX_SAFE_INTEGER, counts[key] + 1); };
   const raw = runtimeAdapter(config, dependencies);
+  let hostSuspended = false, recoveryAbort;
   const adapter = restoringAdapter(raw, { controls, persist: settings => {
     saveCandidateSettings(config, settings); product('settingsChanged', { settings: { ...settings } });
-  }, persistControl: payload => pendingOutputs.get(`${payload.generation}:${payload.sequence}`)?.persist !== false, count, record,
+  }, persistControl: payload => pendingOutputs.get(`${payload.generation}:${payload.sequence}`)?.persist !== false,
+    releaseReason: () => hostSuspended ? 'host-exit' : undefined, count, record,
     journal: createDisplayJournal({ lcdMode: config.screensaverMode === 'stream' ? 'stream-screensaver' : 'normal' }), observations });
   let activeBridge, retainedNetwork, hostApproved = false, hostEpoch = 0, outputFailure;
   let pendingControlCount = 0;
@@ -375,6 +377,7 @@ export function createCandidateRunner(input, dependencies = {}) {
     port: config.port, childPort: config.childPort, sleepDuration: controls.sleepDuration ?? 0 });
   const abort = new AbortController();
   let state = 'idle', stopping = false, launching = false, recovery = null, startPromise, stopPromise;
+  let hostTransition = Promise.resolve(), hostRequest = 0;
   let readyGeneration = 0, disconnectedGeneration = 0;
   let lastCode = null, completion;
   const completed = new Promise(resolve => { completion = resolve; });
@@ -388,18 +391,22 @@ export function createCandidateRunner(input, dependencies = {}) {
   };
   const terminal = error => { lastCode = diagnosticCode(error); record('failure', { code: lastCode }); setState('failed'); completion(snapshot()); };
   const reconnect = reason => {
+    if (hostSuspended) return Promise.resolve();
     if (recovery) return recovery;
+    const controller = new AbortController(); recoveryAbort = controller;
+    const cancel = () => controller.abort(); abort.signal.addEventListener('abort', cancel, { once: true });
     recovery = (async () => {
       let error = reason;
-      while (!stopping && (config.productMode || counts.reconnectAttempts < config.reconnect.maxAttempts) &&
+      while (!stopping && !hostSuspended && (config.productMode || counts.reconnectAttempts < config.reconnect.maxAttempts) &&
         (RETRYABLE.has(diagnosticCode(error)) || config.productMode && diagnosticCode(error) === 'ERR_DEVICE_OPERATION')) {
         count('reconnectAttempts'); setState('reconnecting'); record('reconnect', { attempt: counts.reconnectAttempts });
-        await delay(config.reconnect.delayMs, abort.signal);
-        if (stopping) return;
+        try { await delay(config.reconnect.delayMs, controller.signal); }
+        catch (failure) { if (stopping || hostSuspended) return; throw failure; }
+        if (stopping || hostSuspended) return;
         try { await session.reconnect(); lastCode = null; setState('ready'); return; }
         catch (next) { error = next; }
       }
-      if (!stopping) {
+      if (!stopping && !hostSuspended) {
         // A failed final cleanup must still settle the supervisor's completion
         // promise. The Windows job remains responsible for any unreaped process.
         try { await session.stop(); await closeRetainedNetwork(); }
@@ -407,13 +414,13 @@ export function createCandidateRunner(input, dependencies = {}) {
         finally { terminal(error); }
         throw error;
       }
-    })().finally(() => { recovery = null; });
+    })().finally(() => { recovery = null; if (recoveryAbort === controller) recoveryAbort = null; abort.signal.removeEventListener('abort', cancel); });
     return recovery;
   };
   session.on('state', status => {
     if (['stopping', 'stopped', 'failed'].includes(status.state)) { hostApproved = false; rejectOutputs(new CandidateError('CANDIDATE_SESSION_ENDED')); }
     // Start ACK timers only after the SDK accepts readiness and completes device restoration.
-    if (status.state === 'ready' && !status.lastError && hostApproved && !stopping && !outputFailure &&
+    if (status.state === 'ready' && !status.lastError && hostApproved && !hostSuspended && !stopping && !outputFailure &&
       activeBridge?.generation === status.generation) {
       activeBridge.resumeOutput();
       if (readyGeneration !== status.generation) {
@@ -421,7 +428,7 @@ export function createCandidateRunner(input, dependencies = {}) {
         product(event, productDevice(session.device));
       }
     }
-    if (status.state === 'failed' && !stopping && !launching && !recovery) void reconnect(status.lastError).catch(() => {});
+    if (status.state === 'failed' && !hostSuspended && !stopping && !launching && !recovery) void reconnect(status.lastError).catch(() => {});
   });
   session.on('adapterState', detail => {
     if (!stopping && ['disconnected', 'failed', 'crashed'].includes(detail.state ?? detail.status) && disconnectedGeneration !== session.generation) {
@@ -456,6 +463,34 @@ export function createCandidateRunner(input, dependencies = {}) {
       if (stopping || state !== 'ready') return Promise.reject(new CandidateError('CANDIDATE_RECONNECT_STATE'));
       return reconnect(new CandidateError('ADAPTER_DISCONNECTED'));
     },
+    pauseDevice() {
+      if (!config.productMode || stopping) return Promise.reject(new CandidateError('CANDIDATE_CONTROL_NOT_READY'));
+      hostRequest++; hostSuspended = true; hostApproved = false; recoveryAbort?.abort(); retainedNetwork?.queue.pause();
+      const shutdown = session.stop(); shutdown.catch(() => {});
+      const pending = hostTransition.catch(() => {}).then(async () => {
+        await shutdown;
+        if (recovery) await recovery.catch(() => {});
+        if (stopping) return { status: 'stopped' };
+        disconnectedGeneration = session.generation;
+        product('deviceDisconnected', { code: 'HOST_NOT_READY' }); setState('hostPaused'); product('hostPaused');
+        return { status: 'paused' };
+      });
+      hostTransition = pending; return pending;
+    },
+    resumeDevice() {
+      if (!config.productMode || stopping) return Promise.reject(new CandidateError('CANDIDATE_CONTROL_NOT_READY'));
+      const request = ++hostRequest;
+      const pending = hostTransition.catch(() => {}).then(async () => {
+        if (stopping) return { status: 'stopped' };
+        if (request !== hostRequest) return { status: state };
+        if (!hostSuspended) return { status: state };
+        hostSuspended = false; setState('starting');
+        try { await session.start(); if (!stopping && !hostSuspended) setState('ready'); }
+        catch (error) { if (!stopping && !hostSuspended) await reconnect(error); }
+        return { status: state };
+      });
+      hostTransition = pending; return pending;
+    },
     async control(value) {
       if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['control', 'value', ...(config.productMode ? ['persist'] : [])].includes(key)) ||
         value.persist !== undefined && (typeof value.persist !== 'boolean' || value.control !== 'knobBrightness') ||
@@ -481,6 +516,7 @@ export function createCandidateRunner(input, dependencies = {}) {
           await closeRetainedNetwork();
           if (startPromise) await startPromise.catch(() => {});
           if (recovery) await recovery.catch(() => {});
+          await hostTransition.catch(() => {});
           if (diagnosticsFailure) throw diagnosticsFailure;
           count('cleanStops'); setState('stopped'); completion(snapshot());
         } catch (error) { terminal(error); throw error; }

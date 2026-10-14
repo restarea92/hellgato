@@ -56,7 +56,7 @@ Mirabox StreamDock accepts 800×480 JPG/PNG images for the stored logo. Hellgato
 
 Elgato firmware updates do not apply to N4 Pro. Update controls and firmware-label actions are disabled for the selected virtual N4 Pro; genuine Elgato controls keep their normal behavior. The CORA bridge also rejects unsupported write operations before a success acknowledgement, logs the unsupported operation and closes that connection without a success reply. Firmware-version and discovery reads continue to work. The virtual device's reported compatibility version is separate from the N4 Pro's actual firmware.
 
-Closing Stream Deck leaves Hellgato's network listener available for the next user-initiated Stream Deck launch. Exiting or disconnecting Hellgato stops its workers. USB removal closes the physical device handles while preserving the virtual network connection. Held inputs are released and are never replayed. Cached display state is restored when the USB worker reconnects. The last LCD image can remain until the device returns to its stored logo; hardware transition timing still needs measurement.
+Closing Stream Deck releases the USB device with its native close notification while leaving Hellgato's network listener available for the next user-initiated Stream Deck launch. Hellgato resumes USB use after the new Stream Deck process passes preparation checks. Exiting or disconnecting Hellgato stops its workers. USB removal closes the physical device handles while preserving the virtual network connection. Held inputs are released and are never replayed. Cached display state is restored when the USB worker reconnects. The physical transition back to the device's standalone screen is undergoing IPC regression testing.
 
 ## How it works
 
@@ -72,7 +72,7 @@ Blue carries input toward Stream Deck; orange carries display updates toward N4 
 
 The device preferences extension uses Stream Deck's loaded public Qt APIs and matches the selected virtual device's exact serial. It sends authenticated requests to a local control endpoint; the USB worker applies them on its own thread. Each connection refreshes the endpoint token without adding duplicate preference rows. If the expected Qt layout or serial cannot be verified, the extension leaves the host UI unchanged. See [the native extension](../native/hellgato-ui) for its build and integration checks.
 
-The SDK output queue combines replaceable updates to each display surface. The default frame mode sends only the changed touch-strip region after its initial frame. Full LCD writes finish with a hardware refresh after the key and touch surfaces have been submitted.
+The SDK output queue combines replaceable updates to each display surface. The default frame mode sends only the changed touch-strip region after its initial frame. Full LCD writes finish with a hardware refresh after the key and touch surfaces have been submitted. Fully black LCD frames clear native key icons instead of installing opaque black key images, allowing subsequent action icons to appear after initialization.
 
 ## Local data
 

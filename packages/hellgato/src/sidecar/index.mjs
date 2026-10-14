@@ -435,12 +435,14 @@ export function createSidecarAdapter(options) {
         }
     }
     function close(options = {}) {
+        if (options.releaseReason !== undefined && options.releaseReason !== 'host-exit')
+            return Promise.reject(error('ERR_IPC_CONFIG', 'Invalid device release reason'));
         if (closing)
             return closing;
         if (!current)
             return Promise.resolve({ status: 'closed' });
         const deviceId = current, openGeneration = generation, processEpoch = epoch;
-        const promise = request('close', { deviceId, generation }, options).then(result => {
+        const promise = request('close', { deviceId, generation, ...(options.releaseReason ? { releaseReason: options.releaseReason } : {}) }, options).then(result => {
             if (epoch === processEpoch && generation === openGeneration && current === deviceId)
                 current = null;
             return result;

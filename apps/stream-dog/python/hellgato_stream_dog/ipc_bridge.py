@@ -243,7 +243,7 @@ class ProductProcess:
                 guard()
                 try:
                     result = pending.get(timeout=.05)
-                    if result.get('event') in ('controlFailed', 'workerStateFailed'):
+                    if result.get('event') in ('controlFailed', 'workerStateFailed', 'hostTransitionFailed'):
                         raise OSError('The SDK rejected the device operation')
                     guard()
                     return result
@@ -358,6 +358,46 @@ class ProductBridge:
         self.discovered = queue.Queue(maxsize=1)
         self.selected = None
         self.failure = None
+        self.host_available = True
+        self.host_commands = queue.Queue(maxsize=16)
+        self.parent_closed = False
+        self.command_failure = None
+
+    def read_host_commands(self, stream):
+        try:
+            while not self.stopped():
+                line = stream.readline(1025)
+                if not line:
+                    self.parent_closed = True
+                    return
+                if isinstance(line, str):
+                    line = line.encode('utf-8')
+                if len(line) > 1024 or not line.endswith(b'\n'):
+                    raise ValueError('Invalid product lifecycle frame')
+                value = json.loads(line.decode('utf-8'))
+                if (not isinstance(value, dict) or set(value) != {'command'}
+                        or value['command'] not in ('hostUnavailable', 'hostAvailable')):
+                    raise ValueError('Unsupported product lifecycle command')
+                self.host_commands.put_nowait(value['command'])
+        except (OSError, ValueError, queue.Full):
+            self.command_failure = 'PRODUCT_COMMAND_INVALID'
+
+    def pump_host_commands(self, channel=None):
+        if self.command_failure:
+            raise ProductRuntimeError(self.command_failure)
+        while True:
+            try:
+                command = self.host_commands.get_nowait()
+            except queue.Empty:
+                return
+            self.host_available = command == 'hostAvailable'
+            if not self.host_available:
+                self.controls.connected = self.controls.host_connected = False
+            if channel is not None:
+                result = channel.request(command, guard=self.check_running, timeout=8)
+                expected = ('ready', 'starting', 'reconnecting') if self.host_available else ('paused',)
+                if result.get('event') != command or result.get('status') not in expected:
+                    raise ProductRuntimeError('PRODUCT_HOST_TRANSITION_FAILED')
 
     def on_event(self, value):
         event = value.get('event')
@@ -371,14 +411,14 @@ class ProductBridge:
                 if self.selected is None or detail.get('deviceId') != self.selected['id']:
                     raise ValueError('The worker selected a different registered device')
                 self.registry.remember(self.selected)
-                self.controls.connected = True
+                self.controls.connected = self.host_available
                 self.controls.firmware = detail.get('firmware')
                 features = detail.get('capabilities', {}).get('features', {})
                 self.controls.knob_supported = features.get('knobBrightness', {}).get('status') == 'native'
             elif event == 'deviceDisconnected':
                 self.controls.connected = False
             elif event.startswith('child.client'):
-                self.controls.host_connected = event == 'child.clientConnected'
+                self.controls.host_connected = self.host_available and event == 'child.clientConnected'
             self.emit({'event': event, 'detail': {key: item for key, item in detail.items()
                        if key in ('deviceId', 'code', 'ports', 'attempt')}})
         elif value.get('state') == 'failed':
@@ -386,7 +426,7 @@ class ProductBridge:
             self.failure = code if isinstance(code, str) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,80}', code) else 'CANDIDATE_FAILED'
 
     def stopped(self):
-        return self.stop_file.exists()
+        return self.parent_closed or self.stop_file.exists()
 
     def check_running(self):
         if self.stopped():
@@ -425,6 +465,9 @@ class ProductBridge:
         with self.channel(discover=True) as channel:
             deadline = time.monotonic() + 35
             while not self.stopped() and time.monotonic() < deadline:
+                self.pump_host_commands()
+                if not self.host_available:
+                    return None
                 server.drain()
                 try:
                     return self.select_device(self.discovered.get(timeout=.05))
@@ -448,12 +491,18 @@ class ProductBridge:
         try:
             self.emit({'event': 'bridgeReady'})
             while not self.stopped():
+                self.pump_host_commands()
+                if not self.host_available:
+                    server.drain()
+                    time.sleep(.05)
+                    continue
                 self.failure = None
                 self.selected = self.discover(server)
                 if self.selected is None:
                     for _ in range(20):
                         if self.stopped():
                             break
+                        self.pump_host_commands()
                         server.drain()
                         time.sleep(.05)
                     continue
@@ -462,6 +511,7 @@ class ProductBridge:
                     self.controls.channel = channel
                     next_query = next_saver = 0
                     while not self.stopped() and channel.process.poll() is None and channel.failure is None:
+                        self.pump_host_commands(channel)
                         server.drain()
                         now = time.monotonic()
                         if self.controls.connected and now >= next_query:
@@ -476,7 +526,7 @@ class ProductBridge:
                                     self.controls.update_state(observed['state'])
                                     if observed['state'].get('connected') is False:
                                         self.controls.connected = False
-                        if now >= next_saver:
+                        if self.host_available and now >= next_saver:
                             next_saver = now + 1
                             if saver.reload():
                                 break
@@ -506,7 +556,9 @@ def main(argv=None):
     state = Path(os.environ.get('HELLGATO_STATE_DIR', Path(os.environ['LOCALAPPDATA']) / 'Hellgato'))
     stop_file = Path(os.environ.get('HELLGATO_STOP_FILE', state / 'bridge.stop'))
     try:
-        ProductBridge(state, stop_file).run()
+        bridge = ProductBridge(state, stop_file)
+        threading.Thread(target=bridge.read_host_commands, args=(getattr(sys.stdin, 'buffer', sys.stdin),), daemon=True).start()
+        bridge.run()
         return 0
     except (OSError, ValueError, KeyError, TimeoutError) as error:
         code = error.code if isinstance(error, ProductRuntimeError) else 'PRODUCT_IPC_FAILED'

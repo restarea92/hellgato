@@ -233,7 +233,7 @@ class MiraboxBackend:
             raise
         return descriptor(device_id, str(device.firmware_version or ''), knob_supported=led_supported(device), logo_supported=self.logo_path is not None)
 
-    def close(self):
+    def close(self, *, notify=False):
         self.input_token = None
         self._close_probe()
         device = self.device
@@ -246,7 +246,7 @@ class MiraboxBackend:
             if device.heartbeat_thread and device.heartbeat_thread.is_alive():
                 device.heartbeat_thread.join(timeout=2)
             with self.lock:
-                require(close_device(device, notify=False, report=lambda event: None),
+                require(close_device(device, notify=notify, report=lambda event: None),
                         'Native handle has not finished closing', 'ERR_DEVICE_CLOSE')
                 device.decode_input_event = self.original_decode
                 device.transport.heartbeat = self.original_heartbeat

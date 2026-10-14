@@ -178,7 +178,12 @@ class Worker:
             return {'status': 'open', 'deviceId': self.current, 'generation': self.generation, 'descriptor': self.descriptor}
         if method == 'close':
             self._active(params)
-            self.backend.close()
+            reason = params.get('releaseReason')
+            require(reason is None or reason == 'host-exit', 'Unknown device release reason', 'ERR_CONTRACT')
+            if reason == 'host-exit':
+                self.backend.close(notify=True)
+            else:
+                self.backend.close()
             self.current, self.descriptor = None, None
             return {'status': 'closed', 'generation': self.generation}
         if method == 'getState':

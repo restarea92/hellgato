@@ -106,6 +106,7 @@ class Session:
         self.stop = threading.Event()
         self.thread = None
         self.bridge = None
+        self.bridge_command_lock = threading.Lock()
         self.connected = threading.Event()
         self.listening = threading.Event()
         self.device_ready = threading.Event()
@@ -260,7 +261,7 @@ class Session:
         with (STATE / 'bridge.log').open('a', encoding='utf-8') as log:
             logging.info('Starting bridge for prepared host pid=%s created=%s', host.pid, host.created)
             self.bridge = subprocess.Popen(command('apps/stream-dog/python/hellgato_stream_dog/ipc_bridge.py', '--init'),
-                                           cwd=STATE, env=environment, stdout=subprocess.PIPE,
+                                           cwd=STATE, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                            stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace',
                                            creationflags=subprocess.CREATE_NO_WINDOW)
             reader = threading.Thread(target=self.log_bridge, args=(self.bridge.stdout, log), daemon=True)
@@ -282,6 +283,8 @@ class Session:
                         continue
                     now = time.monotonic()
                     if current != observed_host:
+                        if observed_host is not None:
+                            self.send_bridge_command('hostUnavailable')
                         observed_host, prepared_host = current, None
                         native_ui_ready, attempts, next_ui = False, 0, 0
                         notified, started = False, now
@@ -304,6 +307,7 @@ class Session:
                             self.status('detail.starting', 'starting')
                             continue
                         prepared_host = current
+                        self.send_bridge_command('hostAvailable')
                     if self.bridge_ready.is_set() and not native_ui_ready and attempts < 3 and now >= next_ui:
                         attempts += 1
                         native_ui_ready = self.prepare_native_ui(current.pid, environment, log)
@@ -321,6 +325,15 @@ class Session:
                 self.status('error.device', 'error')
                 return False
         return True
+
+    def send_bridge_command(self, name):
+        if name not in ('hostUnavailable', 'hostAvailable'):
+            raise ValueError('Unsupported product lifecycle command')
+        with self.bridge_command_lock:
+            if self.bridge is None or self.bridge.poll() is not None:
+                raise OSError('The product runtime is disconnected')
+            self.bridge.stdin.write(json.dumps({'command': name}, separators=(',', ':')) + '\n')
+            self.bridge.stdin.flush()
 
     def prepare_native_ui(self, app_pid, environment, log):
         try:

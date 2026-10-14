@@ -48,7 +48,7 @@ class FakeBackend:
             emit({'type': 'key', 'index': 0, 'state': 'down' if index % 2 == 0 else 'up'})
         return descriptor()
 
-    def close(self):
+    def close(self, *, notify=False):
         self.device = None
 
     def poll(self, check_deadline=lambda: None):

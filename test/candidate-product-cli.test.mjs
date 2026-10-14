@@ -24,12 +24,13 @@ const error = (code, message = 'PRIVATE-FIXTURE-ERROR') => Object.assign(new Err
 const module = {
   createCandidateRunner(config) {
     write({ event: 'fixtureRunnerCreated' });
-    const runner = new EventEmitter(); let state = 'idle', finish, queries = 0;
+    const runner = new EventEmitter(); let state = 'idle', finish, queries = 0, hostTransitions = 0, starts = 0;
     const completed = new Promise(resolve => { finish = resolve; });
     Object.assign(runner, {
       completed,
       getStatus: () => ({ schemaVersion: 1, engine: 'fixture', state, generation: 1 }),
       async start() {
+        starts++; write({ event: 'fixtureRunnerStarted' });
         if (config.scenario === 'fatal-start') throw error('PRIVATE-ERROR-CODE');
         state = 'ready';
         runner.emit('product', { schemaVersion: 1, event: 'bridgeReady', generation: 1 });
@@ -43,6 +44,14 @@ const module = {
       async getProductWorkerState() {
         if (config.firstStateFailure && ++queries === 1) throw error('CANDIDATE_CONTROL_NOT_READY');
         return ${JSON.stringify(workerState)};
+      },
+      async pauseDevice() {
+        if (config.firstHostFailure && ++hostTransitions === 1) throw error('CANDIDATE_CONTROL_NOT_READY');
+        state = 'hostPaused'; return { status: 'paused' };
+      },
+      async resumeDevice() {
+        if (config.resumePending) { state = 'reconnecting'; return new Promise(() => {}); }
+        if (!starts) await runner.start(); state = 'ready'; return { status: 'ready' };
       },
       async stop() {
         if (state === 'stopped') return;
@@ -61,6 +70,7 @@ const module = {
 };
 write({ event: 'fixtureWrapperReady' });
 await runCandidateCli(process.argv.slice(2), { loadModule: async options => {
+  if (process.env.HELLGATO_TEST_MODULE_DELAY_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.HELLGATO_TEST_MODULE_DELAY_MS)));
   write({ event: 'fixtureModuleLoaded', selfTest: options.selfTest }); return module;
 } }).catch(error => {
   process.stderr.write(JSON.stringify({ event: 'fixtureCliFailed', code: diagnosticCode(error) }) + '\\n');
@@ -68,11 +78,12 @@ await runCandidateCli(process.argv.slice(2), { loadModule: async options => {
 });
 `;
 let serial = 0;
-function fixture(t, { config = { productMode: true }, writeConfig = true, args = [] } = {}) {
+function fixture(t, { config = { productMode: true }, writeConfig = true, args = [], loadDelayMs = 0 } = {}) {
   const folder = join(temp, `case-${++serial}`); mkdirSync(folder);
   const configPath = join(folder, 'config.json'), wrapperPath = join(folder, 'runner-fixture.mjs');
   writeFileSync(wrapperPath, wrapper); if (writeConfig) writeFileSync(configPath, JSON.stringify(config));
-  const child = spawn(process.execPath, [wrapperPath, '--config', configPath, '--supervised', ...args], { timeout: 10000 });
+  const child = spawn(process.execPath, [wrapperPath, '--config', configPath, '--supervised', ...args],
+    { timeout: 10000, env: { ...process.env, HELLGATO_TEST_MODULE_DELAY_MS: String(loadDelayMs) } });
   const records = [], invalidLines = []; let stdout = '', stderr = '', pending = '', closed;
   child.stdout.on('data', chunk => {
     const text = chunk.toString(); stdout += text; pending += text;
@@ -124,8 +135,24 @@ test('commands before the supervised start gate fail without reading missing con
   assert.ok(!f.stderr.includes('ENOENT'));
 });
 
+test('host pause arriving with start waits through module loading and prevents initial worker startup', { timeout: 10000 }, async t => {
+  const f = fixture(t, { loadDelayMs: 30 });
+  f.child.stdin.write(JSON.stringify({ command: 'start' }) + '\n' + JSON.stringify({ command: 'hostUnavailable', requestId: 21 }) + '\n');
+  await f.wait(() => reply(f, 21));
+  assert.deepEqual(reply(f, 21), { schemaVersion: 1, event: 'hostUnavailable', requestId: 21, status: 'paused' });
+  assert.ok(f.records.some(record => record.event === 'fixtureModuleLoaded'));
+  assert.ok(!f.records.some(record => record.event === 'fixtureRunnerStarted'));
+  f.send({ command: 'status', requestId: 22 }); await f.wait(() => reply(f, 22));
+  assert.equal(reply(f, 22).state, 'hostPaused'); assert.equal(f.closed, undefined);
+  f.send({ command: 'hostAvailable', requestId: 23 }); await f.wait(() => reply(f, 23));
+  assert.deepEqual(reply(f, 23), { schemaVersion: 1, event: 'hostAvailable', requestId: 23, status: 'starting' });
+  assert.equal(f.records.filter(record => record.event === 'fixtureRunnerStarted').length, 1);
+  f.send({ command: 'status', requestId: 24 }); await f.wait(() => reply(f, 24)); assert.equal(reply(f, 24).state, 'ready');
+  f.send({ command: 'stop' }); assert.deepEqual(await f.completed, { code: 0, signal: null }); assert.equal(f.stderr, '');
+});
+
 test('product CLI correlates successful and failed controls and worker queries without ending the session', { timeout: 10000 }, async t => {
-  const f = fixture(t, { config: { productMode: true, firstStateFailure: true } });
+  const f = fixture(t, { config: { productMode: true, firstStateFailure: true, firstHostFailure: true } });
   f.send({ command: 'start' }); await f.wait(() => f.records.some(record => record.state === 'ready'));
   f.send({ command: 'control', requestId: 11, control: { control: 'knobBrightness', value: 13 } });
   await f.wait(() => reply(f, 11));
@@ -139,9 +166,34 @@ test('product CLI correlates successful and failed controls and worker queries w
   assert.deepEqual(reply(f, 14), { schemaVersion: 1, event: 'workerState', requestId: 14, ...workerState });
   f.send({ command: 'status', requestId: 15 }); await f.wait(() => reply(f, 15));
   assert.equal(reply(f, 15).state, 'ready'); assert.equal(f.closed, undefined);
+  f.send({ command: 'hostUnavailable', requestId: 16 }); await f.wait(() => reply(f, 16));
+  assert.deepEqual(reply(f, 16), { schemaVersion: 1, event: 'hostTransitionFailed', requestId: 16, code: 'CANDIDATE_CONTROL_NOT_READY' });
+  f.send({ command: 'hostUnavailable', requestId: 17 }); await f.wait(() => reply(f, 17));
+  assert.deepEqual(reply(f, 17), { schemaVersion: 1, event: 'hostUnavailable', requestId: 17, status: 'paused' });
+  f.send({ command: 'status', requestId: 18 }); await f.wait(() => reply(f, 18)); assert.equal(reply(f, 18).state, 'hostPaused');
+  f.send({ command: 'hostAvailable', requestId: 19 }); await f.wait(() => reply(f, 19));
+  assert.deepEqual(reply(f, 19), { schemaVersion: 1, event: 'hostAvailable', requestId: 19, status: 'starting' });
+  f.send({ command: 'status', requestId: 20 }); await f.wait(() => reply(f, 20)); assert.equal(reply(f, 20).state, 'ready');
+  assert.equal(f.closed, undefined);
   assert.ok(!f.stdout.includes('PRIVATE')); assert.ok(!f.records.some(record => record.event === 'productFailed'));
   f.send({ command: 'stop' }); assert.deepEqual(await f.completed, { code: 0, signal: null });
   assert.equal(f.records.filter(record => record.event === 'stopped').length, 1); assert.equal(f.stderr, '');
+});
+
+test('host availability acknowledges immediately while an unresolved device resume leaves status pause and stop responsive', { timeout: 10000 }, async t => {
+  const f = fixture(t, { config: { productMode: true, resumePending: true } });
+  f.send({ command: 'start' }); await f.wait(() => f.records.some(record => record.state === 'ready'));
+  f.send({ command: 'hostUnavailable', requestId: 31 }); await f.wait(() => reply(f, 31));
+  assert.equal(reply(f, 31).status, 'paused');
+  f.send({ command: 'hostAvailable', requestId: 32 }); await f.wait(() => reply(f, 32));
+  assert.deepEqual(reply(f, 32), { schemaVersion: 1, event: 'hostAvailable', requestId: 32, status: 'starting' });
+  f.send({ command: 'status', requestId: 33 }); await f.wait(() => reply(f, 33));
+  assert.equal(reply(f, 33).state, 'reconnecting'); assert.equal(f.closed, undefined);
+  f.send({ command: 'hostUnavailable', requestId: 34 }); await f.wait(() => reply(f, 34));
+  assert.deepEqual(reply(f, 34), { schemaVersion: 1, event: 'hostUnavailable', requestId: 34, status: 'paused' });
+  f.send({ command: 'status', requestId: 35 }); await f.wait(() => reply(f, 35)); assert.equal(reply(f, 35).state, 'hostPaused');
+  f.send({ command: 'stop' }); assert.deepEqual(await f.completed, { code: 0, signal: null });
+  assert.ok(!f.records.some(record => record.event === 'productFailed')); assert.equal(f.stderr, '');
 });
 
 test('discovery CLI uses the discovery module with cancellation and exits after emitting descriptors', { timeout: 10000 }, async t => {

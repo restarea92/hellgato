@@ -26,20 +26,27 @@ The reconnect journal preserves normal frames across streamed overlays.
 Temporary knob brightness previews do not become saved preferences during
 unrelated host brightness updates.
 
-The installed `7559023` IPC build showed black keys after USB reconnection,
-Stream Deck restart and Hellgato restart. Profile changes did not recover them;
-sleep followed by wake restored icons in every reported case. Full LCD writes
-now finish with a refresh after all key and touch surfaces, including the extra
-clear sent when the SDK opens a session. Previously only initialization and
-wake restoration refreshed that composite. Focused sequence tests pass; the
-replacement installer's physical result is still pending.
+The installed `ddc911e` IPC build still showed black keys after initial connection
+and USB reconnection; touch-strip output worked. A final refresh and a full redraw
+did not recover the keys. Actual sleep/wake after image submission did, but
+sleep/wake before submission did not. Clearing native key icons before redrawing
+also recovered the submitted images.
+
+Black full-LCD frames now clear native key icons instead of writing ten opaque
+black key PNGs. Colored full-LCD frames keep the existing crop mapping. With this
+source change, a direct worker-backend probe showed all ten colored keys immediately
+after a fresh physical USB connection, without sleep/wake. The user confirmed the
+screen. The packaged app still needs the same initial/reconnect regression check.
 
 The product keeps its CORA listener and sockets through USB worker generations,
 releases held inputs, and reapplies pending display output after fresh readiness.
-The desktop launcher also keeps the listener alive while Stream Deck restarts,
-so the host can dial its saved dock during startup. It revalidates the new host
-before loading native controls. Hellgato itself restarting while Stream Deck is
-already open can still require manual pairing; no automatic host restart is used.
+The user confirmed automatic pairing through USB and Stream Deck restarts in
+`ddc911e`. The launcher now releases the USB worker on confirmed Stream Deck exit,
+including native device-close notification, while keeping the network listener
+available. The next prepared host resumes a fresh USB session; absent USB remains
+recoverable. Host-presence query errors do not release hardware. Packaged physical
+standby/restart checks are pending. Hellgato itself restarting while Stream Deck
+is already open can still require manual pairing; no automatic host restart is used.
 
 Display diagnostics contain fixed per-surface counters and brightness/last-writer
 summaries, never image bytes, raw identities, profile content or credentials.

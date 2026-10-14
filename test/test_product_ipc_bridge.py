@@ -1,6 +1,6 @@
 """Product GUI, native preferences and process supervision use the separated worker."""
 
-from io import StringIO
+from io import BytesIO, StringIO
 from contextlib import contextmanager
 import json
 import os
@@ -253,6 +253,39 @@ for line in sys.stdin:
                 bridge.run()
             self.assertEqual(count, 2)
             self.assertFalse(bridge.controls.connected)
+
+    def test_host_commands_are_bounded_and_relay_correlated_physical_transitions(self):
+        with TemporaryDirectory() as directory:
+            bridge = self.make_bridge(Path(directory))
+            bridge.read_host_commands(BytesIO(b'{"command":"hostUnavailable"}\n{"command":"hostAvailable"}\n'))
+            channel = Mock()
+            channel.request.side_effect = [{'event': 'hostUnavailable', 'status': 'paused'},
+                                           {'event': 'hostAvailable', 'status': 'starting'}]
+            bridge.parent_closed = False
+            bridge.pump_host_commands(channel)
+            self.assertEqual([call.args[0] for call in channel.request.call_args_list],
+                             ['hostUnavailable', 'hostAvailable'])
+            self.assertTrue(bridge.host_available)
+            self.assertFalse(bridge.controls.connected)
+            bridge.read_host_commands(BytesIO(b'{"command":"hostUnavailable","reason":"untrusted"}\n'))
+            with self.assertRaises(OSError):
+                bridge.pump_host_commands(channel)
+
+    def test_confirmed_host_absence_does_not_start_discovery_worker(self):
+        import device_control_server
+        import screensaver
+        with TemporaryDirectory() as directory:
+            bridge = self.make_bridge(Path(directory))
+            bridge.host_commands.put_nowait('hostUnavailable')
+            def pause(_):
+                bridge.stop_file.touch()
+            with patch.object(bridge, 'discover') as discover, \
+                    patch.object(device_control_server, 'DeviceControlServer'), \
+                    patch.object(screensaver, 'ScreensaverSource'), \
+                    patch('hellgato_stream_dog.ipc_bridge.time.sleep', side_effect=pause):
+                bridge.run()
+            discover.assert_not_called()
+            self.assertFalse(bridge.host_available)
 
 
 if __name__ == '__main__':

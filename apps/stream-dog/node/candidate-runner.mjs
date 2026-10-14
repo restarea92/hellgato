@@ -17,6 +17,7 @@ export async function runCandidateCli(argv = process.argv.slice(2), { loadModule
   if (!configPath || !isAbsolute(configPath)) throw new CandidateError('CANDIDATE_CONFIG_REQUIRED');
   if (discovery && selfTest) throw new CandidateError('CANDIDATE_ARGUMENTS');
   let runner, productMode = false, stopping = false, input = Buffer.alloc(0), gateResolved = !supervised, protocolError;
+  const pendingHostCommands = [];
   let gateResolve, gateReject;
   const gate = new Promise((yes, no) => { gateResolve = yes; gateReject = no; });
   const abort = new AbortController();
@@ -25,17 +26,33 @@ export async function runCandidateCli(argv = process.argv.slice(2), { loadModule
   const write = detail => process.stdout.write(JSON.stringify(detail) + '\n');
   const stop = () => { stopping = true; abort.abort(); if (!gateResolved) gateReject(protocolError ?? new CandidateError('CANDIDATE_START_CANCELLED')); void runner?.stop().catch(() => {}); };
   const fail = code => { protocolError ??= new CandidateError(code); stop(); };
+  const hostCommand = command => {
+    const pending = runner[command.command === 'hostUnavailable' ? 'pauseDevice' : 'resumeDevice']();
+    if (command.command === 'hostAvailable') {
+      write({ schemaVersion: 1, event: command.command, requestId: command.requestId, status: 'starting' });
+      void pending.catch(error => {
+        write({ schemaVersion: 1, event: 'productFailed', state: 'failed', code: diagnosticCode(error) }); fail(diagnosticCode(error));
+      });
+      return Promise.resolve();
+    }
+    return pending.then(result => write({ schemaVersion: 1, event: command.command, requestId: command.requestId, ...result }))
+      .catch(error => write({ schemaVersion: 1, event: 'hostTransitionFailed', requestId: command.requestId, code: diagnosticCode(error) }));
+  };
   const line = bytes => {
     let command;
     try { command = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
     catch { fail('CANDIDATE_COMMAND_INVALID'); return; }
     if (!command || Array.isArray(command) || typeof command.command !== 'string' ||
       Object.keys(command).some(key => !['command', ...(command.command === 'control' ? ['control'] : []),
-        ...(['control', 'workerState', 'status'].includes(command.command) ? ['requestId'] : [])].includes(key)) ||
+        ...(['control', 'workerState', 'status', 'hostUnavailable', 'hostAvailable'].includes(command.command) ? ['requestId'] : [])].includes(key)) ||
       command.requestId !== undefined && (!Number.isSafeInteger(command.requestId) || command.requestId < 1)) { fail('CANDIDATE_COMMAND_INVALID'); return; }
     if (!gateResolved) {
       if (command.command !== 'start' || stopping) { fail('CANDIDATE_START_REQUIRED'); return; }
       gateResolved = true; gateResolve(); return;
+    }
+    if (['hostUnavailable', 'hostAvailable'].includes(command.command) && !runner && command.requestId) {
+      if (pendingHostCommands.length >= 8) { fail('CANDIDATE_COMMAND_LIMIT'); return; }
+      pendingHostCommands.push(command); return;
     }
     if (command.command === 'stop') stop();
     else if (command.command === 'status' && runner) write({ ...runner.getStatus(), ...(command.requestId ? { requestId: command.requestId } : {}) });
@@ -50,6 +67,9 @@ export async function runCandidateCli(argv = process.argv.slice(2), { loadModule
     else if (command.command === 'workerState' && runner && productMode && command.requestId) {
       void runner.getProductWorkerState().then(result => write({ schemaVersion: 1, event: 'workerState', requestId: command.requestId, ...result }))
         .catch(error => write({ schemaVersion: 1, event: 'workerStateFailed', requestId: command.requestId, code: diagnosticCode(error) }));
+    }
+    else if (['hostUnavailable', 'hostAvailable'].includes(command.command) && runner && productMode && command.requestId) {
+      void hostCommand(command);
     }
     else fail('CANDIDATE_COMMAND_INVALID');
   };
@@ -86,7 +106,13 @@ export async function runCandidateCli(argv = process.argv.slice(2), { loadModule
     runner.on('state', write);
     runner.on('product', write);
     if (fixture) write(await fixture.verify());
-    else { await runner.start(); await runner.completed; if (runner.getStatus().state === 'failed') throw new CandidateError(runner.getStatus().code); }
+    else {
+      if (pendingHostCommands.length && !productMode) throw new CandidateError('CANDIDATE_COMMAND_INVALID');
+      if (!pendingHostCommands.some(command => command.command === 'hostUnavailable')) await runner.start();
+      for (const command of pendingHostCommands.splice(0)) await hostCommand(command);
+      await runner.completed;
+      if (runner.getStatus().state === 'failed') throw new CandidateError(runner.getStatus().code);
+    }
     if (protocolError) throw protocolError;
   } catch (error) {
     if (productMode) write({ schemaVersion: 1, event: 'productFailed', state: 'failed', code: diagnosticCode(error) });

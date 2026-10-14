@@ -319,11 +319,12 @@ export function createSidecarAdapter(options: SidecarOptions): SidecarAdapter {
     try { return await request('open', { deviceId, generation, ...(sessionId ? { sessionId } : {}) }, { signal }); }
     catch (cause) { current = null; throw cause; }
   }
-  function close(options: OperationContext = {}): Promise<unknown> {
+  function close(options: OperationContext & { releaseReason?: 'host-exit' } = {}): Promise<unknown> {
+    if (options.releaseReason !== undefined && options.releaseReason !== 'host-exit') return Promise.reject(error('ERR_IPC_CONFIG', 'Invalid device release reason'));
     if (closing) return closing;
     if (!current) return Promise.resolve({ status: 'closed' });
     const deviceId = current, openGeneration = generation, processEpoch = epoch;
-    const promise = request('close', { deviceId, generation }, options).then(result => {
+    const promise = request('close', { deviceId, generation, ...(options.releaseReason ? { releaseReason: options.releaseReason } : {}) }, options).then(result => {
       if (epoch === processEpoch && generation === openGeneration && current === deviceId) current = null;
       return result;
     }).finally(() => { if (closing === promise) closing = null; });

@@ -291,6 +291,18 @@ test('failed close retains ownership and permits a cleanup retry', async () => {
   await value.open('fixture'); await value.stop();
 });
 
+test('host-exit release reason reaches only an explicit close and invalid reasons leave ownership intact', async () => {
+  const value = adapter({ command: process.execPath, args: ['-e', protocolWorker(
+    "if(q.method==='close') { reply({status:'closed',releaseReason:q.params.releaseReason??null}); continue; }")] });
+  await value.start(); await value.open('fixture');
+  await assert.rejects(value.close({ releaseReason: 'usb-disconnected' }), { code: 'ERR_IPC_CONFIG' });
+  assert.equal((await value.setControl({ type: 'control', control: 'sleep' })).status, 'applied');
+  assert.equal((await value.close({ releaseReason: 'host-exit' })).releaseReason, 'host-exit');
+  await value.open('fixture');
+  assert.equal((await value.close()).releaseReason, null);
+  await value.stop();
+});
+
 test('open cannot reach a worker before the hello handshake is verified', async () => {
   const value = adapter({ command: process.execPath, args: ['-e', protocolWorker('DELAY_HELLO')] });
   const starting = value.start();

@@ -67,7 +67,8 @@ class DisplayObservationTests(unittest.TestCase):
         self.assertTrue(all(key['black'] and key['lastWriter'] == 'lcd' for key in snapshot['keys']))
         self.assertEqual(snapshot['keys'][2]['submitted'], 2)
         self.assertEqual(observed[0], (3, (120, 120), (9, 18, 30)))
-        self.assertEqual([item[0] for item in observed[1:]], list(range(1, 11)))
+        self.assertEqual(len(observed), 1)
+        self.device.clearAllIcon.assert_called_once()
         self.assertEqual(list(Path(self.temporary.name).iterdir()), [])
 
     def test_idle_frames_only_change_cache_then_wake_records_restoration(self):
@@ -95,7 +96,7 @@ class DisplayObservationTests(unittest.TestCase):
         self.state.initialize(lambda: None)
         keys = self.state.display_observations()['keys']
         self.assertTrue(all(key['submitted'] == 2 and key['lastWriter'] == 'initialize' for key in keys))
-        self.assertEqual(keys[0]['vendorReturnKinds'], {'none': 1, 'zero': 1, 'negative': 0, 'positive': 0, 'other': 0})
+        self.assertEqual(keys[0]['vendorReturnKinds'], {'none': 2, 'zero': 0, 'negative': 0, 'positive': 0, 'other': 0})
         self.control('clear')
         self.assertTrue(all(key['lastWriter'] == 'clear' for key in self.state.display_observations()['keys']))
         self.control('fill', surfaceId='key:6', color=[20, 30, 40])

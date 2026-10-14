@@ -129,9 +129,13 @@ class DisplayWriter:
 
     def lcd(self, image, check, writer_type='lcd'):
         self.frame(image.transpose(Image.Transpose.ROTATE_180), check)
-        for index in range(10):
-            x, y = 13 + (index % 5) * 164, 12 + (index // 5) * 160
-            self.key(index, image.crop((x, y, x + 120, y + 120)), check, writer_type)
+        if image.getbbox() is None:
+            # Remove black key overlays so later action images can become visible.
+            self.clear_keys(check, writer_type)
+        else:
+            for index in range(10):
+                x, y = 13 + (index % 5) * 164, 12 + (index // 5) * 160
+                self.key(index, image.crop((x, y, x + 120, y + 120)), check, writer_type)
         self.frame_initialized = False
         self.touch(image.crop((0, 380, 800, 480)), (0, 0, 800, 100), check)
         # Finish composite writes like open and wake restoration, after every surface.

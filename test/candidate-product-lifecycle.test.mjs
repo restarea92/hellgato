@@ -278,6 +278,48 @@ test('primary disconnect gates product input until an already-connected child pa
   } finally { release?.(); await f.runner.stop(); }
 });
 
+test('host pause releases the worker with the host-exit reason while its bridge stays open for restored resume', async () => {
+  const f = fixture();
+  const close = f.adapter.close.bind(f.adapter), closes = [];
+  f.adapter.close = async options => { closes.push(options); return close(options); };
+  try {
+    await f.runner.start(); const bridge = f.bridges[0];
+    await f.runner.control({ control: 'brightness', value: 71 });
+    bridge.output(frame('key:0', 7)); await waitUntil(() => f.runner.getStatus().counters.frameWrites === 1);
+    assert.deepEqual(await f.runner.pauseDevice(), { status: 'paused' });
+    assert.equal(f.runner.getStatus().state, 'hostPaused');
+    assert.deepEqual(closes.filter(value => value?.releaseReason), [{ releaseReason: 'host-exit' }]);
+    assert.equal(f.adapter.calls.filter(value => value === 'stop').length, 1);
+    assert.equal(bridge.startCount, 1); assert.equal(bridge.stopCount, 0); assert.equal(f.bridges.length, 1);
+    assert.deepEqual(bridge.ports, { primary: 5343, child: 5344 });
+    assert.equal(f.events.filter(event => event.event === 'deviceDisconnected').at(-1).code, 'HOST_NOT_READY');
+    assert.deepEqual(await f.runner.resumeDevice(), { status: 'ready' });
+    assert.equal(f.runner.getStatus().state, 'ready'); assert.equal(f.runner.getStatus().generation, 2);
+    assert.equal(f.bridges.length, 1); assert.equal(bridge.startCount, 1); assert.equal(bridge.stopCount, 0);
+    assert.equal(f.adapter.outputs.at(-1).data, frame('key:0', 7).data); assert.equal(f.adapter.outputs.at(-1).generation, 2);
+    assert.equal((await f.runner.getWorkerState()).brightness, 71);
+  } finally { await f.runner.stop(); }
+  assert.equal(f.bridges[0].stopCount, 1);
+});
+
+test('host pause cancels a pending USB recovery delay until an explicit resume', async () => {
+  const f = fixture({ config: { reconnect: { maxAttempts: 1, delayMs: 200 } } });
+  try {
+    await f.runner.start(); const bridge = f.bridges[0];
+    f.adapter.disconnect(); await waitUntil(() => f.runner.getStatus().state === 'reconnecting');
+    assert.deepEqual(await f.runner.pauseDevice(), { status: 'paused' });
+    const paused = f.runner.getStatus(), discoveries = f.adapter.calls.filter(value => value === 'discover').length;
+    await new Promise(resolve => setTimeout(resolve, 250));
+    assert.equal(f.runner.getStatus().state, 'hostPaused'); assert.equal(f.runner.getStatus().generation, paused.generation);
+    assert.equal(f.runner.getStatus().counters.reconnectAttempts, paused.counters.reconnectAttempts);
+    assert.equal(f.adapter.calls.filter(value => value === 'discover').length, discoveries);
+    assert.equal(f.bridges.length, 1); assert.equal(bridge.startCount, 1); assert.equal(bridge.stopCount, 0);
+    assert.deepEqual(await f.runner.resumeDevice(), { status: 'ready' });
+    assert.equal(f.runner.getStatus().state, 'ready'); assert.ok(f.runner.getStatus().generation > paused.generation);
+    assert.equal(f.bridges.length, 1); assert.equal(bridge.startCount, 1); assert.equal(bridge.stopCount, 0);
+  } finally { await f.runner.stop(); }
+});
+
 test('knob preview submits observed output without changing saved settings or reconnect intent', async () => {
   const f = fixture();
   try {

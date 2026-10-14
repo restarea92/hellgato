@@ -232,7 +232,8 @@ class DisplayStateTests(unittest.TestCase):
         self.assertEqual(self.device.set_brightness.call_args_list[-1].args, (100,))
         self.assertLess(names.index('refresh'), names.index('wakeScreen'))
         self.assertLess(names.index('wakeScreen'), len(names) - 1)
-        self.assertEqual(self.device.set_key_image.call_count, 10)
+        self.device.set_key_image.assert_not_called()
+        self.assertEqual(self.device.clearAllIcon.call_count, 2)
         self.assertEqual(self.device.set_seondscreen_image.call_count, 4)
         self.assertEqual(self.state.screen_level, 100)
         self.assertEqual(self.led.call_args.args, (100,))
@@ -359,13 +360,27 @@ class StripPolicyTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 device = Mock()
                 writer = DisplayWriter(device, self.temporary.name, mode)
-                writer.lcd(Image.new('RGB', (800, 480), 'black'), lambda: None)
+                writer.lcd(Image.new('RGB', (800, 480), 'white'), lambda: None)
                 names = [call[0] for call in device.mock_calls]
                 self.assertEqual(names[-1], 'refresh')
                 self.assertEqual(names.count('refresh'), 1)
                 self.assertEqual(names.count('set_key_image'), 10)
                 self.assertEqual(names[-2], 'set_seondscreen_image' if mode == 'panels'
                                  else 'transport.set_background_frame_stream')
+
+    def test_black_full_lcd_removes_key_overlays_without_submitting_opaque_black_pngs(self):
+        for mode in ('panels', 'frame'):
+            with self.subTest(mode=mode):
+                device = Mock()
+                writer = DisplayWriter(device, self.temporary.name, mode)
+                writer.lcd(Image.new('RGB', (800, 480), 'black'), lambda: None)
+                device.clearAllIcon.assert_called_once()
+                device.set_key_image.assert_not_called()
+                self.assertEqual(device.transport.set_background_frame_stream.call_args_list[0].args[1:],
+                                 (800, 480, 0, 0))
+                self.assertEqual(device.mock_calls[-1][0], 'refresh')
+                self.assertTrue(all(key['lastWriter'] == 'lcd' and key['submitted'] == 1 and key['black']
+                                    for key in writer.observations()))
 
     def test_startup_clear_is_refreshed_before_following_action_images_without_sleep_wake(self):
         device = Mock()
@@ -391,7 +406,7 @@ class StripPolicyTests(unittest.TestCase):
         device.set_key_image.side_effect = [0, 0, -1]
         writer = DisplayWriter(device, self.temporary.name, 'frame')
         with self.assertRaises(OSError):
-            writer.lcd(Image.new('RGB', (800, 480), 'black'), lambda: None)
+            writer.lcd(Image.new('RGB', (800, 480), 'white'), lambda: None)
         device.refresh.assert_not_called()
         self.assertEqual(device.set_key_image.call_count, 3)
 
@@ -754,7 +769,7 @@ class NativeLifecycleTests(unittest.TestCase):
         self.device.clearAllIcon.side_effect = lambda: events.append('clear')
         self.device.wakeScreen.side_effect = lambda: events.append('wake')
         self.backend.open('selected', Mock())
-        self.assertEqual(events, ['configure', 'firmware', 'configure', 'clear', 'wake'])
+        self.assertEqual(events, ['configure', 'firmware', 'configure', 'clear', 'clear', 'wake'])
         self.backend.close()
         self.native_close.reset_mock()
         def guard():
