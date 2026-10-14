@@ -129,8 +129,14 @@ class LauncherView:
         style.map('Devices.Treeview', background=[('selected', BORDER)],
                   foreground=[('selected', TEXT)])
         style.configure('Devices.Vertical.TScrollbar', background=BORDER,
-                        troughcolor=SURFACE, bordercolor=SURFACE, arrowcolor=MUTED,
-                        lightcolor=BORDER, darkcolor=BORDER)
+                        troughcolor=SURFACE, bordercolor=SURFACE, borderwidth=0,
+                        lightcolor=BORDER, darkcolor=BORDER, arrowsize=10, gripcount=0)
+        style.layout('Devices.Vertical.TScrollbar', [
+            ('Vertical.Scrollbar.trough', {'sticky': 'ns', 'children': [
+                ('Vertical.Scrollbar.thumb', {'sticky': 'nswe'})]})])
+        for option in ('background', 'lightcolor', 'darkcolor'):
+            style.map('Devices.Vertical.TScrollbar', **{
+                option: [('pressed', '#526b86'), ('active', '#405874')]})
         window.option_add('*TCombobox*Listbox.background', SURFACE)
         window.option_add('*TCombobox*Listbox.foreground', TEXT)
         window.option_add('*TCombobox*Listbox.selectBackground', BORDER)
@@ -188,17 +194,18 @@ class LauncherView:
             self._labels.append((label, key))
         table = tk.Frame(device.body, bg=SURFACE)
         table.pack(fill='x', pady=(10, 14))
+        table.columnconfigure(0, weight=1)
         self.device_list = ttk.Treeview(table, columns=('name', 'serial', 'status'),
                                        show='headings', height=3, style='Devices.Treeview',
                                        selectmode='browse')
         self.device_list.column('name', width=240, minwidth=180)
         self.device_list.column('serial', width=180, minwidth=150)
         self.device_list.column('status', width=160, minwidth=120)
-        scroll = ttk.Scrollbar(table, orient='vertical', command=self.device_list.yview,
-                               style='Devices.Vertical.TScrollbar')
-        self.device_list.configure(yscrollcommand=scroll.set)
-        scroll.pack(side='right', fill='y')
-        self.device_list.pack(side='left', fill='x', expand=True)
+        self.device_scroll = ttk.Scrollbar(table, orient='vertical', command=self.device_list.yview,
+                                          style='Devices.Vertical.TScrollbar')
+        self.device_scroll.grid(row=0, column=1, sticky='ns', padx=(6, 0))
+        self.device_list.configure(yscrollcommand=self._scroll_devices)
+        self.device_list.grid(row=0, column=0, sticky='ew')
         self.empty_devices = tk.Label(self.device_list, bg=SURFACE, fg=MUTED,
                                       font=('Segoe UI', 9), wraplength=540)
         self._labels.append((self.empty_devices, 'ui.devices_empty'))
@@ -381,6 +388,14 @@ class LauncherView:
             self.close_dialog()
             for button in self.menu_buttons.values():
                 button.configure(state='disabled')
+
+    def _scroll_devices(self, first, last):
+        self.device_scroll.set(first, last)
+        if float(first) <= 0 and float(last) >= 1:
+            if self.device_scroll.winfo_manager():
+                self.device_scroll.grid_remove()
+        elif not self.device_scroll.winfo_manager():
+            self.device_scroll.grid()
 
     def render_devices(self, devices):
         """Update remembered rows in place so selection and scroll position survive."""
