@@ -21,7 +21,7 @@ the session. Saved settings and profile transfer retain their product paths.
 
 Product streamed LCD frames now use explicit `stream-screensaver` mode. They
 preserve normal key/background/touch caches; input, wake and host clear restore
-the latest images. Normal full-LCD output for other SDK consumers is unchanged.
+the latest images. Normal full-LCD output remains available to other SDK consumers.
 The reconnect journal preserves normal frames across streamed overlays.
 Temporary knob brightness previews do not become saved preferences during
 unrelated host brightness updates.
@@ -35,8 +35,9 @@ also recovered the submitted images.
 Black full-LCD frames now clear native key icons instead of writing ten opaque
 black key PNGs. Colored full-LCD frames keep the existing crop mapping. With this
 source change, a direct worker-backend probe showed all ten colored keys immediately
-after a fresh physical USB connection, without sleep/wake. The user confirmed the
-screen. The packaged app still needs the same initial/reconnect regression check.
+after a fresh physical USB connection, without sleep/wake. Installed IPC build
+`bb51866` then passed the user's initial-icon and USB-reconnect checks, with icons
+visible and automatic reconnection in both cases.
 
 The product keeps its CORA listener and sockets through USB worker generations,
 releases held inputs, and reapplies pending display output after fresh readiness.
@@ -44,9 +45,12 @@ The user confirmed automatic pairing through USB and Stream Deck restarts in
 `ddc911e`. The launcher now releases the USB worker on confirmed Stream Deck exit,
 including native device-close notification, while keeping the network listener
 available. The next prepared host resumes a fresh USB session; absent USB remains
-recoverable. Host-presence query errors do not release hardware. Packaged physical
-standby/restart checks are pending. Hellgato itself restarting while Stream Deck
-is already open can still require manual pairing; no automatic host restart is used.
+recoverable. Host-presence query errors do not release hardware. In installed
+`bb51866`, the user confirmed quick return to the device's standalone screen on
+Stream Deck exit and immediate automatic reconnection on Stream Deck relaunch.
+The installed manifest was read back as `engine: ipc` with full release SHA
+`bb518665ffa926cd013e0406baba79dc191d8ef7`. Hellgato itself restarting while Stream
+Deck is already open can still require manual pairing; no automatic host restart is used.
 
 Display diagnostics contain fixed per-surface counters and brightness/last-writer
 summaries, never image bytes, raw identities, profile content or credentials.
@@ -78,7 +82,9 @@ Before the app switch, both apps were closed by the user and 66 settings/profile
 files were backed up to ignored `work/before-ipc-app-backup`. Keep that backup
 private. Do not replace saved identities or another PC's profiles.
 
-Ask the user to perform physical/manual checks directly. Start with key icons,
-then button/knob/touch actions and native knob brightness, then profile change,
-screen saver wake and a USB reconnect. Fix observed failures before claiming
-app completion; automated release work is outside this scope.
+Ask the user to perform physical/manual checks directly. Initial icons, USB
+reconnection, host-exit standby and host relaunch have passed in `bb51866`; do not
+repeat them without a relevant change. Final requested checks are button/knob/touch
+actions, profile/page image changes, display/knob brightness and sleep/wake, and
+Hellgato-only exit/relaunch. Fix observed failures before claiming app completion;
+automated release work is outside this scope.

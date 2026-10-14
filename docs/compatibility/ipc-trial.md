@@ -1,21 +1,24 @@
 # Isolated Windows IPC trial
 
-This document describes a **CI-only experimental candidate**, not a new physical
-support claim or public release. The ordinary installer continues selecting the
-existing N4 engine. No Rust rewrite or npm publication is involved.
+This document describes an optional **isolated experimental bundle**. The current
+branch's ordinary installer now uses the SDK session and separated USB worker by
+default. The console procedure below remains separate from normal GUI operation;
+it does not establish new hardware support or a public release. No Rust rewrite
+or npm publication is involved.
 
 ## What is packaged
 
 A Windows build produces two separate deliverables from the same exact source:
 
-- The ordinary installer, using the packed SDK bridge and retained physical engine.
+- The ordinary installer, using the packed SDK session and separated physical worker.
 - `Hellgato-Ipc-Candidate-<source>.zip`: a portable supervisor, pinned Node,
   offline-installed SDK, frozen Python worker/native dependencies, exact manifests,
   and a read-only host inspector. It is not independently published as an SDK runtime.
 
-The second artifact is the path that actually exercises the new IPC worker.
-`HellgatoWorker.exe` in the ordinary installer is the compatibility execution helper,
-not this new worker. There is no automatic GUI engine switch.
+Both artifacts exercise the separated IPC worker. In the ordinary installer,
+`HellgatoWorker.exe` runs product/host helper scripts and
+`HellgatoMiraboxWorker.exe` owns USB. The GUI starts them automatically; the
+portable bundle retains its explicit `TEST` procedure and finite recovery budget.
 
 The immutable manifests bind executable/dependency hashes, source SHA, build ID and
 SDK tarball provenance. The runtime verifies them before starting; CI runs the exact
@@ -43,7 +46,7 @@ a fake-backend test cannot excuse missing physical-runtime files.
 3. The installed Stream Deck startup shim must exactly match this candidate's
    bytes and reviewed plan. If it does not, use the **ordinary installer from the
    same CI run**, follow its existing explicit startup-setup UI, and confirm the
-   old engine works. The trial itself does not elevate, patch or prepare the host.
+   ordinary app works. The trial itself does not elevate, patch or prepare the host.
 4. Genuine Stream Deck + coexistence is unsupported, even with N4 disconnected.
    Do not connect one for this trial. Other unknown hardware combinations are not
    promoted to supported.
@@ -128,7 +131,7 @@ restarts, crash cleanup, reboot and sleep/resume, contention, and a full workday
 measured latency/resources. Software fault-injection and instrumentation are our
 responsibility; do not ask a tester to invent malformed protocol commands.
 
-## Logs and return to the existing engine
+## Logs and return to the ordinary app
 
 Each run lives under `%LOCALAPPDATA%\Hellgato-Ipc-Candidate\<source>\<run>`.
 The console prints its exact path. Keep `config.json`, screensaver snapshots and
@@ -136,8 +139,10 @@ The console prints its exact path. Keep `config.json`, screensaver snapshots and
 are bounded and omit raw serials, paths, profiles and frame payloads. Review even
 redacted diagnostics before sharing. Nothing is uploaded automatically.
 
-Normal rollback is simply stop the candidate, close its console, and launch the
-ordinary Hellgato app. If profiles/settings need restoring, close both apps and run:
+Return to normal operation by stopping the candidate, closing its console, and
+launching the ordinary Hellgato app. That app also uses IPC on this branch; returning
+to an earlier engine requires its verified previous installer. If profiles/settings
+need restoring, close both apps and run:
 
     HellgatoIpcTest.exe --restore-backup "<run-folder>\backup"
 

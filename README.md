@@ -72,7 +72,7 @@ Complete any pairing confirmation in Stream Deck when prompted.
 
 The installer bundles the runtimes and USB SDK; no source code, build tools or StreamDock app are required. Updating from an earlier installation retains your settings and profiles. Install any extra Stream Deck plugins separately.
 
-The installer adds a startup DLL beside Stream Deck once. Each Stream Deck launch prepares the ten-key model before it becomes available to devices, even when N4 Pro is unplugged. Hellgato waits for Stream Deck to be opened by you; closing Stream Deck stops the bridge until your next launch. Reconnecting USB restores the hardware connection while keeping the virtual device connection intact.
+The installer adds a startup DLL beside Stream Deck once. Each Stream Deck launch prepares the ten-key model before it becomes available to devices, even when N4 Pro is unplugged. Hellgato waits for Stream Deck to be opened by you. Current branch builds retain the network listener when Stream Deck closes and release the USB session to native standby; a newly prepared host reconnects automatically. Reconnecting USB restores the hardware connection while keeping the virtual device connection intact.
 
 If preparation is needed after installation or a Stream Deck app update, close Stream Deck yourself and choose **Prepare Stream Deck** in Hellgato Stream Dog. A changed executable hash requires a new plan; unsupported internal structures are rejected. See the [guide](docs/guide.md#build-and-test) for source setup and diagnostics.
 
@@ -111,7 +111,7 @@ See the [guide](docs/guide.md) for everyday use, local data, builds and contribu
 
 ## SDK architecture
 
-Development now separates the reusable core, explicit adapter/session SDK, and
+The current branch separates the reusable core, explicit adapter/session SDK, and
 Stream Dog product. Windows builds consume npm tarballs offline. The desktop app
 starts the SDK session and a separate Python USB worker automatically, retains
 the saved device identity, and connects the native preferences controls through
@@ -121,6 +121,11 @@ Streamed screensaver frames preserve normal button and touch-strip images so
 input can restore them. Automated releases and npm publication are deferred.
 The older [isolated IPC trial](docs/compatibility/ipc-trial.md) remains available
 for development; the ordinary installer now includes the worker directly.
+The device owner confirmed initial icons, USB reconnect with automatic pairing,
+native standby after Stream Deck exit, and automatic reconnect after Stream Deck
+restart on installed build `bb51866`. The remaining normal-app checks and complete
+hardware recipe are pending. These branch results do not describe the older public
+`v0.1.1` download linked above.
 See the [architecture and staged rollout](docs/architecture/0001-device-neutral-sdk.md),
 [adapter guide](docs/adapters/contributing.md), and
 [evidence requirements](docs/compatibility/architecture-candidate.md).

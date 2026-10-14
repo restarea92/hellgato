@@ -39,7 +39,7 @@ Brightness, idle timeout, full LCD images, full-screen and individual-key color 
 
 Sleep without a screensaver uses N4 Pro's native screen-off command. With a screensaver, the image appears first and dims over 0.3 seconds to the LCD's minimum brightness, while knob lighting turns off immediately. Wake restores action images while dim/off, then fades back to the Stream Deck brightness and restores the selected knob brightness. Display animations do not reset the idle timer. Sleep timing is stored per virtual device and returned to Stream Deck after reconnection. Manual Sleep is recognized early when a recent key release is followed by timeout-disable and brightness-fade commands; when Stream Deck sends only brightness changes, screen-off waits for its zero-brightness command.
 
-Hardware checks of the earlier bridge confirmed the 5×2 layout when Stream Deck starts without USB hardware, both rightmost keys, USB reconnection, Stream Deck relaunch and native knob brightness. The integrated IPC build is undergoing physical regression checks; automated checks alone do not establish the same hardware behavior. Hellgato leaves a manually closed Stream Deck closed. Earlier beta checks covered five-minute idle activation, screensaver dimming and wake behavior.
+Hardware checks of the earlier bridge confirmed the 5×2 layout when Stream Deck starts without USB hardware, both rightmost keys, USB reconnection, Stream Deck relaunch and native knob brightness. Installed IPC build `bb51866` passed physical checks for initial key images, USB reconnection with automatic connection and visible icons, return to the standalone device screen on Stream Deck exit, and automatic reconnection on Stream Deck relaunch. Other IPC action/control checks are still in progress. Hellgato leaves a manually closed Stream Deck closed. Earlier beta checks covered five-minute idle activation, screensaver dimming and wake behavior.
 
 Automated registry tests cover persistence across restarts, physical-serial matching after USB port changes, USB-path fallback and protection against reusing an assigned identity for another device. Physical identity recording and LCD button images were also verified after the Program Files migration. The image worker uses the writable user-data directory for SDK temporary images.
 
@@ -56,7 +56,7 @@ Mirabox StreamDock accepts 800×480 JPG/PNG images for the stored logo. Hellgato
 
 Elgato firmware updates do not apply to N4 Pro. Update controls and firmware-label actions are disabled for the selected virtual N4 Pro; genuine Elgato controls keep their normal behavior. The CORA bridge also rejects unsupported write operations before a success acknowledgement, logs the unsupported operation and closes that connection without a success reply. Firmware-version and discovery reads continue to work. The virtual device's reported compatibility version is separate from the N4 Pro's actual firmware.
 
-Closing Stream Deck releases the USB device with its native close notification while leaving Hellgato's network listener available for the next user-initiated Stream Deck launch. Hellgato resumes USB use after the new Stream Deck process passes preparation checks. Exiting or disconnecting Hellgato stops its workers. USB removal closes the physical device handles while preserving the virtual network connection. Held inputs are released and are never replayed. Cached display state is restored when the USB worker reconnects. The physical transition back to the device's standalone screen is undergoing IPC regression testing.
+Closing Stream Deck releases the USB device with its native close notification while leaving Hellgato's network listener available for the next user-initiated Stream Deck launch. Hellgato resumes USB use after the new Stream Deck process passes preparation checks. Exiting or disconnecting Hellgato stops its workers. USB removal closes the physical device handles while preserving the virtual network connection. Held inputs are released and are never replayed. Cached display state is restored when the USB worker reconnects. Return to the device's standalone screen on Stream Deck exit was physically confirmed in IPC build `bb51866`.
 
 ## How it works
 
@@ -141,17 +141,17 @@ Build the installer:
 ./scripts/build-windows.ps1 -Python ./.venv/Scripts/python.exe -Iscc 'C:\Path\To\Inno Setup 6\ISCC.exe'
 ```
 
-Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-<version>-Setup.exe` and its SHA-256 sidecar. The version comes only from `packages/windows-release/package.json`, through generated runtime and installer metadata. Personal profiles and logs are excluded. Ordinary pushes and PRs build without publishing. A separately reviewed Changesets release PR selects Windows and/or npm; its owner-approved merge authorizes publication only after rollout is explicitly enabled. See [release operations](windows-releases.md) and [setup requirements](release-setup.md).
+Build inputs are pinned and verified against upstream source metadata and checksums. Outputs are `dist/Hellgato-<version>-Setup.exe` and its SHA-256 sidecar. The version comes only from `packages/windows-release/package.json`, through generated runtime and installer metadata. Personal profiles and logs are excluded. Ordinary pushes and PRs run checks and builds without publishing. Automatic release coordination was removed and publication is deferred while desktop integration is completed.
 
 | Directory | Purpose |
 | --- | --- |
 | `apps/stream-dog/` | Canonical Windows product, GUI and Node session runner |
-| `adapters/mirabox-python/` | Experimental physical-only IPC worker |
+| `adapters/mirabox-python/` | Bundled physical-only IPC worker |
 | `host-integrations/streamdeck/windows/` | Canonical host inspection and native startup/Qt integration |
 | `packages/core/src/` | Canonical Stream Deck bridge and contracts |
 | `packages/hellgato/` | Session, sidecar, explicit bindings and conformance SDK |
 | `app/` | Legacy entrypoint aliases and retained assets |
-| `app/n4/` | Retained production physical engine and compatibility aliases |
+| `app/n4/` | Legacy physical engine and compatibility helpers |
 | `app/cora/` | Compatibility entrypoint wrappers |
 | `app/locales/` | Interface translations |
 | `native/` | Compatibility build wrappers for the canonical host integration |
@@ -183,7 +183,7 @@ Build before running tests or type checks: facade imports resolve the public cor
 
 Changesets keeps the two npm versions fixed together. The source facade uses `workspace:*`; pnpm pack converts that to the exact core version inside the tarball. Both tarballs are inspected and installed into an isolated consumer for import and lifecycle checks. The root and Windows metadata workspaces stay private. Packages include the prepared DeckBridge runtime and license, so consumers need no Git checkout or build step.
 
-Include a changeset with releasable code changes. A change to shared `app/cora/**` requires both npm and Windows targets. Windows-only changes do not publish npm. The [release workflow](windows-releases.md) publishes only immutable, verified tarballs selected by the approved release plan.
+Changesets metadata remains available for future releases; automatic publication is currently deferred. Local Windows packaging consumes the verified SDK tarballs without publishing them.
 
 ### Translations
 
@@ -201,11 +201,13 @@ The catalogs use standard flat JSON, compatible with translation platforms such 
 ### Packed SDK staging
 
 After installing the pinned Node/pnpm workspace dependencies, run
-`pnpm run stage:windows-sdk` before launching the source N4 compatibility engine.
+`pnpm run stage:windows-sdk` to prepare the source product's SDK runtime.
 This builds, verifies and offline-installs both SDK tarballs into the generated
 `work/stream-dog-sdk` product runtime. `scripts/build-windows.ps1` performs the same
 step automatically. The old `app/cora/server.mjs` is now only a launcher; do not copy
 core sources or substitute workspace symlinks into a distributed installer.
 
-The candidate sidecar SDK is not yet the product's physical N4 engine. See the
-[staged architecture](architecture/0001-device-neutral-sdk.md) before testing it.
+The ordinary desktop app runs the sidecar SDK and the separately packaged Mirabox
+worker. Build and stage that worker with `scripts/build-windows.ps1` before running
+the product. See the [architecture](architecture/0001-device-neutral-sdk.md) for
+the boundary between host integration, SDK sessions and physical device code.

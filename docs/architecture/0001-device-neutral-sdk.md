@@ -1,6 +1,7 @@
 # Device-neutral SDK extraction
 
-Status: implementation candidate. No release or new hardware support is implied.
+Status: integrated into the Windows product; complete hardware parity remains
+unverified. No public release or new hardware support is implied.
 
 ## Boundaries
 
@@ -16,9 +17,10 @@ Status: implementation candidate. No release or new hardware support is implied.
 - `hellgato/adapters/mirabox-n4-pro` is the N4 binding subpath; the Python runtime
   is separately provided. `hellgato/testing` exposes simulation/conformance tools.
 - `adapters/mirabox-python` is a physical-worker package. Versioned NDJSON over
-  stdio replaces trace files in the candidate API. This is process isolation,
+  stdio replaces trace files in the product's physical API. This is process isolation,
   not a security sandbox for arbitrary third-party code.
-- `apps/stream-dog/node` owns product persistence and the compatibility launcher.
+- `apps/stream-dog/node` owns product persistence, the SDK session runner and the
+  retained compatibility launcher.
   Windows staging installs the actual tarballs offline, with lifecycle scripts
   disabled and no workspace links, and embeds the SDK archive digests and full
   staged file inventory in `product-build-manifest.json`.
@@ -34,12 +36,13 @@ until independent consumers, dependencies or maintainership justify one.
 
 ## Deliberately staged rollout
 
-The Windows product continues using its existing N4 compatibility engine. Its
-Node bridge now comes from the packed SDK; its proven Python display, settings,
-identity, host safety and reconnect behavior are retained. The candidate sidecar
-must pass recorded physical display/input/lifecycle parity before it replaces
-that engine. Existing trace-file IPC is therefore still present in the product
-compatibility path and is not presented as completion of phase A.
+The current branch's ordinary Windows installer selects the SDK session and a
+separate Python USB worker. The GUI retains product settings, profiles and virtual
+identity; the worker owns physical display, input and USB lifetime. Legacy
+trace-file code remains available as a compatibility implementation, but is no
+longer the ordinary app's default engine. Confirmed Stream Deck exit releases the
+physical session to standby while retaining the network listener; a newly prepared
+host resumes through fresh readiness checks and display restoration.
 
 New SDK contracts, device bridge, target glue, session, sidecar, N4 binding and
 simulation/conformance code are authored in strict TypeScript. The pinned compiler
@@ -47,16 +50,18 @@ emits the published ESM and declarations; `pnpm typecheck` checks implementation
 bodies, public consumer types and generated-output drift. Source files and legacy
 boundary declarations do not enter npm archives. Existing protocol extensions and
 pinned vendor/legacy runtime remain staged JavaScript behind narrow typed boundaries.
-The product candidate runner is outside this SDK conversion boundary.
+The product session runner is outside this SDK conversion boundary.
 
 The product/host moves, pinned Python build dependencies and quality gates are
 implemented alongside compatibility tests. An isolated, manifest-bound
-[Windows IPC trial](../compatibility/ipc-trial.md) packages the new physical worker
-and supervisor separately from the ordinary installer. Its frozen self-test uses
-the fake backend; actual Windows artifact checks and the physical recipe remain
-distinct evidence. Bounded recovery, display/control restoration and local rollback
-are implemented, but remain physical-test candidates. A directory move or simulated
-test alone is not evidence of safe physical lifecycle migration.
+[Windows IPC trial](../compatibility/ipc-trial.md) remains an optional portable
+supervisor alongside the ordinary installer, which now bundles the same separated
+worker directly. Its frozen self-test uses the fake backend; actual Windows
+artifact checks and the physical recipe remain distinct evidence. The device owner
+confirmed four installed `bb51866` checks: initial icons, USB reconnect with icons
+and automatic pairing, Stream Deck exit to native standby, and automatic reconnect
+after Stream Deck restart. Core actions, profiles, brightness, sleep/wake and
+Hellgato restart checks remain pending; the complete hardware recipe is not passed.
 
 Separate runtime/CompatibilityTools ZIP publication is phase B and is not offered
 by this candidate. The portable trial is a product test bundle, not that independent
@@ -64,7 +69,7 @@ SDK distribution channel.
 
 ## Safety and compatibility
 
-Only a single N4 Pro active physical session is supported by the old product.
+Only a single N4 Pro active physical session is supported by the Windows product.
 N4 dial presses are pulses; physical dial release is unavailable. Synthesized
 release does not implement hold or press-and-turn support.
 
