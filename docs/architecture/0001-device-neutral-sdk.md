@@ -1,7 +1,8 @@
 # Device-neutral SDK extraction
 
-Status: integrated into the Windows product; complete hardware parity remains
-unverified. No public release or new hardware support is implied.
+Status: integrated into the Windows product. Normal N4 Pro operation and the
+connection scenarios below have passed physical checks; broader hardware support
+and the complete endurance recipe remain unverified.
 
 ## Boundaries
 
@@ -34,9 +35,9 @@ The public SDK consists of two fixed-version packages. Windows retains its own
 private version source. A device binding does not acquire another package/version
 until independent consumers, dependencies or maintainership justify one.
 
-## Deliberately staged rollout
+## Windows product integration
 
-The current branch's ordinary Windows installer selects the SDK session and a
+The ordinary Windows installer selects the SDK session and a
 separate Python USB worker. The GUI retains product settings, profiles and virtual
 identity; the worker owns physical display, input and USB lifetime. Legacy
 trace-file code remains available as a compatibility implementation, but is no
@@ -57,18 +58,17 @@ implemented alongside compatibility tests. An isolated, manifest-bound
 [Windows IPC trial](../compatibility/ipc-trial.md) remains an optional portable
 supervisor alongside the ordinary installer, which now bundles the same separated
 worker directly. Its frozen self-test uses the fake backend; actual Windows
-artifact checks and the physical recipe remain distinct evidence. The device owner
-confirmed installed `bb51866` checks for initial icons, USB reconnect with icons
+artifact checks and the physical recipe remain distinct evidence. Physical checks
+confirmed initial icons, USB reconnect with icons
 and automatic pairing, Stream Deck exit to native standby, and automatic reconnect
 after Stream Deck restart, plus normal input/actions, profile/page images,
 display/knob brightness and sleep/wake. Hellgato-only exit leaves the last screen
 visible for tens of seconds before native standby; Hellgato-only relaunch while
 Stream Deck remains open requires manual pairing, after which icons work. The
-complete hardware recipe is not passed, and no public release is claimed.
+complete hardware endurance recipe has not been run.
 
-Separate runtime/CompatibilityTools ZIP publication is phase B and is not offered
-by this candidate. The portable trial is a product test bundle, not that independent
-SDK distribution channel.
+Separate runtime/CompatibilityTools ZIP publication remains deferred. The portable
+trial is a product test bundle, not an independent SDK distribution channel.
 
 ## Safety and compatibility
 
@@ -87,13 +87,9 @@ missing capabilities must not be silently promoted to supported.
 
 ## Releases
 
-Changesets still calculates the fixed SDK pair and independent Windows version.
-Archive allowlists, source impact checks and existing release approval remain.
-npm public writes are disabled in both workflow and CLI while authentication is
-resolved. Package builds, tests, offline installation and version/changelog work
-continue. Windows publication is independent and retains its owner-approved plan
-and repository enablement gates. This PR does not turn on publication or merge
-itself. Reviewed stable/beta plans, immutable production baselines and the
-next-to-main promotion handoff are implemented with replay tests; the
-[release-channel policy](../release-channels.md) defines their closed publication
-gates. No successful live beta/stable publication is implied by those tests.
+Changesets retains the fixed SDK pair and independent Windows version. Archive
+allowlists, source impact checks, package builds and offline installation remain
+part of the build tooling. Windows installers are published through the
+[manual release procedure](../windows-releases.md). Automatic publication and npm
+publication remain deferred; ordinary checks and builds do not publish packages
+or releases.

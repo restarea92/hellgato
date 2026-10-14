@@ -72,7 +72,7 @@ Complete any pairing confirmation in Stream Deck when prompted.
 
 The installer bundles the runtimes and USB SDK; no source code, build tools or StreamDock app are required. Updating from an earlier installation retains your settings and profiles. Install any extra Stream Deck plugins separately.
 
-The installer adds a startup DLL beside Stream Deck once. Each Stream Deck launch prepares the ten-key model before it becomes available to devices, even when N4 Pro is unplugged. Hellgato waits for Stream Deck to be opened by you. Current branch builds retain the network listener when Stream Deck closes and release the USB session to native standby; a newly prepared host reconnects automatically. Reconnecting USB restores the hardware connection while keeping the virtual device connection intact.
+The installer adds a startup DLL beside Stream Deck once. Each Stream Deck launch prepares the ten-key model before it becomes available to devices, even when N4 Pro is unplugged. Hellgato waits for Stream Deck to be opened by you, retains the network listener when Stream Deck closes and releases the USB session to native standby. A newly prepared host reconnects automatically. Reconnecting USB restores the hardware connection while keeping the virtual device connection intact.
 
 If preparation is needed after installation or a Stream Deck app update, close Stream Deck yourself and choose **Prepare Stream Deck** in Hellgato Stream Dog. A changed executable hash requires a new plan; unsupported internal structures are rejected. See the [guide](docs/guide.md#build-and-test) for source setup and diagnostics.
 
@@ -105,7 +105,7 @@ N4 Pro stores a single static boot/standby logo on the device, separate from PC-
 
 Touch alignment across plugins, extended use and reboot recovery need broader hardware testing. [Report issues](https://github.com/restarea92/hellgato/issues) with your device, Stream Deck version and reproduction steps. Review logs and exported profiles for personal information before sharing.
 
-In installed branch build `bb51866`, quitting only Hellgato leaves the last screen visible for tens of seconds before native standby. Relaunching Hellgato while Stream Deck stays open requires manual network pairing; key icons work after pairing.
+Quitting only Hellgato can leave the last screen visible for tens of seconds before native standby. Relaunching Hellgato while Stream Deck stays open requires manual network pairing; key icons work after pairing.
 
 ## Documentation and contributing
 
@@ -113,22 +113,22 @@ See the [guide](docs/guide.md) for everyday use, local data, builds and contribu
 
 ## SDK architecture
 
-The current branch separates the reusable core, explicit adapter/session SDK, and
+The app separates the reusable core, explicit adapter/session SDK, and
 Stream Dog product. Windows builds consume npm tarballs offline. The desktop app
 starts the SDK session and a separate Python USB worker automatically, retains
 the saved device identity, and connects the native preferences controls through
 its local control endpoint. The USB vendor SDK is bundled only with the worker.
 
 Streamed screensaver frames preserve normal button and touch-strip images so
-input can restore them. Automated releases and npm publication are deferred.
+input can restore them. Windows releases are published manually; automated releases
+and npm publication are deferred.
 The older [isolated IPC trial](docs/compatibility/ipc-trial.md) remains available
 for development; the ordinary installer now includes the worker directly.
 The device owner confirmed initial icons, USB reconnect with automatic pairing,
 native standby after Stream Deck exit, and automatic reconnect after Stream Deck
-restart on installed build `bb51866`, along with button/knob/touch actions,
-profile/page image changes, display/knob brightness and sleep/wake. The complete
-hardware recipe remains unverified. These branch results do not describe the older
-public `v0.1.1` download linked above.
+restart, along with button/knob/touch actions, profile/page image changes,
+display/knob brightness and sleep/wake. Extended use and additional device/firmware
+combinations still require hardware testing.
 See the [architecture and staged rollout](docs/architecture/0001-device-neutral-sdk.md),
 [adapter guide](docs/adapters/contributing.md), and
 [evidence requirements](docs/compatibility/architecture-candidate.md).

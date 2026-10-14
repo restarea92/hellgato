@@ -127,7 +127,6 @@
         "scripts/update-downloads.mjs",
         "scripts/verify-artifact.py",
         "scripts/check-architecture.mjs",
-        "scripts/release-ci.mjs",
         "scripts/release-handoff.mjs",
         "scripts/check-python.py"
       ],
@@ -137,7 +136,6 @@
     {
       "paths": [
         "README.md",
-        "HANDOFF.md",
         "docs/**",
         "test/**",
         ".github/ISSUE_TEMPLATE/**",
