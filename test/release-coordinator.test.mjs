@@ -141,3 +141,25 @@ test('npm GitHub finalizer resumes its own draft and completed retry is immutabl
   await assert.rejects(finalizeNpm(options), /conflicting/);
   assert.deepEqual(writes, []);
 });
+
+
+test('Node 24 action pins preserve immutable ZIP upload and strict extracted downloads', async () => {
+  for (const file of ['checks.yml', 'windows-build.yml', 'release-pr.yml', 'release.yml']) {
+    const yaml = await readFile(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8');
+    for (const block of yaml.split(/(?=      - uses:)/)) {
+      if (block.includes('uses: pnpm/action-setup@')) assert.match(block, /pnpm\/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320/);
+      if (block.includes('uses: actions/upload-artifact@')) {
+        assert.match(block, /upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
+        assert.match(block, /archive: true/);
+        assert.match(block, /overwrite: false/);
+      }
+      if (block.includes('uses: actions/download-artifact@')) {
+        assert.match(block, /download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/);
+        assert.match(block, /skip-decompress: false/);
+        assert.match(block, /digest-mismatch: error/);
+        assert.match(block, /artifact-ids:/);
+        assert.match(block, /merge-multiple: true/);
+      }
+    }
+  }
+});

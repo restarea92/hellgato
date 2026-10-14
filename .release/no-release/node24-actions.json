@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "baseSha": "9bb32954a7167877c4b620a7658e814b7cdc3b96",
+  "reason": "Migrate existing CI actions to SHA-pinned Node 24-native runtimes while preserving pnpm 11.10.0, immutable ZIP artifacts, exact-ID recovery and strict digest verification. This infrastructure-only change creates no component release intent or package version bump.",
+  "paths": [
+    ".github/workflows/checks.yml",
+    ".github/workflows/release-pr.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/windows-build.yml",
+    ".release/no-release/node24-actions.json",
+    "docs/release-validation.md",
+    "test/release-coordinator.test.mjs"
+  ]
+}
