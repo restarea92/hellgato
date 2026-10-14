@@ -37,10 +37,10 @@ class NativeBoundaryTests(unittest.TestCase):
             self.assertEqual(legacy.ROOT, canonical.ROOT)
             self.assertEqual(legacy.main.__code__.co_filename, str(CANONICAL / new))
 
-    def test_windows_pipeline_builds_canonical_fixtures(self):
+    def test_windows_pipeline_builds_canonical_libraries_without_packaging_fixtures(self):
         build = (ROOT / 'scripts/build-windows.ps1').read_text()
-        self.assertIn('host-integrations/streamdeck/windows/native/startup/build.py --test', build)
-        self.assertIn('host-integrations/streamdeck/windows/native/ui/build.py --test-host', build)
+        self.assertIn('host-integrations/streamdeck/windows/native/startup/build.py', build)
+        self.assertIn('host-integrations/streamdeck/windows/native/ui/build.py --output work/build-native-ui-package', build)
         self.assertNotIn('native/hellgato-ui/build.py', build)
         spec = (ROOT / 'installer/hellgato.spec').read_text()
         self.assertNotIn('fixture.cpp', spec)

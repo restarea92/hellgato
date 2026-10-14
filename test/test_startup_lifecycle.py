@@ -65,23 +65,35 @@ class StartupLifecycleTest(unittest.TestCase):
         self.assertEqual(self.session.phase, 'setup')
         run.assert_not_called()
 
-    def test_host_exit_stops_only_worker_and_usb_events_do_not_restart_it(self):
+    def test_host_exit_pauses_usb_and_retains_supervisor_until_user_stop(self):
         presence = Mock()
-        presence.host.side_effect = [self.host, None]
-        self.session.stop.wait = Mock(return_value=False)
+        presence.host.side_effect = [self.host, None, None]
         child = Mock()
+        child.stdin = io.StringIO()
         child.stdout = io.StringIO('\n'.join(__import__('json').dumps({'event': event}) for event in
                                            ['bridgeReady', 'deviceReady', 'child.clientConnected',
                                             'deviceDisconnected', 'deviceReconnected']))
         child.poll.return_value = None
         self.session.prepare_native_ui = Mock(return_value=True)
+        waits = []
+        def stop_after_host_absence(seconds):
+            waits.append(seconds)
+            if len(waits) < 4:
+                return False
+            child.wait.assert_not_called()
+            self.assertFalse(self.session.stop_file.exists())
+            self.assertEqual(child.stdin.getvalue(), '{"command":"hostUnavailable"}\n')
+            return True
+        self.session.stop.wait = Mock(side_effect=stop_after_host_absence)
         with patch.object(hellgato.subprocess, 'Popen', return_value=child) as popen, \
                 patch.object(hellgato.subprocess, 'run') as run:
             self.assertTrue(self.session.run_bridge(self.host, presence, {}))
         self.assertEqual(popen.call_count, 1)
-        self.assertIn('bridge.py', str(popen.call_args.args[0]))
-        # The SDK writes rotated image files relative to the worker directory.
+        self.assertIn('ipc_bridge.py', str(popen.call_args.args[0]))
+        self.assertEqual(popen.call_args.kwargs['stdin'], hellgato.subprocess.PIPE)
         self.assertEqual(Path(popen.call_args.kwargs['cwd']), self.state)
+        self.assertEqual(presence.host.call_count, 3)
+        self.assertEqual(child.stdin.getvalue(), '{"command":"hostUnavailable"}\n')
         child.wait.assert_called_once_with(timeout=12)
         run.assert_not_called()
         self.assertTrue(self.session.stop_file.exists())

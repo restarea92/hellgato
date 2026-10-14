@@ -331,7 +331,7 @@ export function createCandidateRunner(input, dependencies = {}) {
     const facade = new EventEmitter();
     let sequence = 0;
     const envelope = { deviceId: options.device.id, sessionId: options.sessionId, generation: options.generation };
-    let closed = false;
+    let closed = false, stopCompleted = false;
     network.current = { facade, submit: payload => new Promise((resolve, reject) => {
       const { persist, ...value } = payload;
       const stamped = { ...value, ...envelope, sequence: ++sequence };
@@ -354,7 +354,7 @@ export function createCandidateRunner(input, dependencies = {}) {
         sessionId: network.options.sessionId, sequence: ++network.inputSequence } : event),
       resumeOutput: () => { if (!closed && network.current?.facade === facade) network.queue.resume(); },
       async stop() {
-        if (closed) return;
+        if (stopCompleted) return;
         if (activeBridge === facade) { hostEpoch++; hostApproved = false; }
         closed = true; network.queue.reset(new CandidateError('CANDIDATE_SESSION_ENDED'),
           { retainPending: config.productMode && !stopping && !outputFailure });
@@ -366,6 +366,7 @@ export function createCandidateRunner(input, dependencies = {}) {
           await network.close();
           if (retainedNetwork === network) retainedNetwork = null;
         }
+        stopCompleted = true;
       },
       control: payload => network.queue.enqueue({ ...payload, type: 'control' }),
     });

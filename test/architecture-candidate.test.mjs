@@ -289,12 +289,16 @@ test('automatic recovery has a total bounded budget across repeated successful r
 
 test('exhausted reconnect settles failed completion even when final cleanup rejects', async () => {
   const f = fixture({ config: { reconnect: { maxAttempts: 0, delayMs: 1 } } }); await f.runner.start();
-  f.bridges[0].stop = async () => { throw new Error('private cleanup details'); };
+  let cleanupAttempts = 0;
+  f.bridges[0].stop = async () => { cleanupAttempts++; throw new Error('private cleanup details'); };
   f.adapter.disconnect();
   let timer;
   const report = await Promise.race([f.runner.completed, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Completion hung')), 1000); })]); clearTimeout(timer);
   assert.equal(report.state, 'failed'); assert.equal(report.code, 'CLEANUP_FAILED');
+  assert.equal(cleanupAttempts, 2);
+  assert.ok(!JSON.stringify(report).includes('private cleanup details'));
   await assert.rejects(f.runner.stop());
+  assert.equal(cleanupAttempts, 3);
 });
 
 test('diagnostic storage failure closes resources and settles completion without callback throws', async () => {

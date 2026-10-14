@@ -134,9 +134,9 @@ class PinnedSdkPreparation(unittest.TestCase):
             self.run_prepare()
         self.assertFalse((outside / 'foreign').exists())
 
-    def test_checks_do_not_download_runtime_but_actual_build_still_does(self):
+    def test_checks_and_packaging_prepare_the_pinned_runtime(self):
         checks = (ROOT / '.github/workflows/checks.yml').read_text()
-        self.assertNotIn('prepare-windows.py', checks)
+        self.assertIn('scripts/prepare-windows.py', checks)
         self.assertIn('test_installer_migration.ps1', checks)
         self.assertIn('scripts/prepare-windows.py', (ROOT / 'scripts/build-windows.ps1').read_text())
         source = (ROOT / 'scripts/prepare-windows.py').read_text()
