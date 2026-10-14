@@ -40,6 +40,7 @@ class CandidateFilesTests(unittest.TestCase):
         (self.profiles / 'profile.sdProfile/image.png').write_bytes(b'private-profile-image')
 
     def tearDown(self):
+        shutil.rmtree(self.windows_io_path(self.root))
         self.temp.cleanup()
 
     def write(self, name, value):
@@ -47,6 +48,145 @@ class CandidateFilesTests(unittest.TestCase):
 
     def snapshot(self):
         return make_snapshot(self.state, self.profiles, self.backup, 42, 'a' * 40)
+
+    def windows_io_path(self, path):
+        if os.name != 'nt':
+            return path
+        return Path('\\\\?\\' + str(path.absolute()))
+
+    def deep_profile(self):
+        relative = ('381d596e-4563-46a8-a185-799fae66a39f.sdProfile/Profiles/'
+                    '961560c8-ecdb-4d5c-99be-ec9471ce1f03/Images/button-image.png')
+        source = self.profiles / relative
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b'private-deep-profile-image')
+        self.backup = (self.root / 'LocalAppData/Hellgato-Ipc-Candidate' / ('a' * 40)
+                       / 'pre-install-20261014T053000-local-test' / 'backup')
+        self.assertLess(len(str(source)), 260)
+        self.assertGreater(len(str(self.backup / 'profiles' / relative)), 260)
+        return relative
+
+    def test_deep_profile_snapshot_verifies_and_restores_preserving_new_work(self):
+        relative = self.deep_profile()
+        before = inventory(self.state), inventory(self.profiles)
+        value = self.snapshot()
+        self.assertEqual(verify_snapshot(self.backup), value)
+        self.assertEqual((inventory(self.state), inventory(self.profiles)), before)
+        changed = {**self.settings, 'stripMode': 'panels'}
+        self.write('settings.json', changed)
+        (self.profiles / relative).write_bytes(b'new-private-image')
+        preserved = restore_snapshot(self.backup, self.state, self.profiles)
+        self.assertEqual(read_json(self.state / 'settings.json'), self.settings)
+        self.assertEqual(read_json(preserved / 'settings.json'), changed)
+        self.assertEqual((self.profiles / relative).read_bytes(), b'private-deep-profile-image')
+        previous = list(self.root.glob('ProfilesV3.before-ipc-rollback-*'))
+        self.assertEqual(len(previous), 1)
+        self.assertEqual(self.windows_io_path(previous[0] / relative).read_bytes(), b'new-private-image')
+
+    def test_deep_profile_tampering_refuses_restore_without_mutating_sources(self):
+        relative = self.deep_profile()
+        self.snapshot()
+        self.windows_io_path(self.backup / 'profiles' / relative).write_bytes(b'tampered-image')
+        before = inventory(self.state), inventory(self.profiles)
+        with self.assertRaisesRegex(ValueError, 'inventory does not match'):
+            restore_snapshot(self.backup, self.state, self.profiles)
+        self.assertEqual((inventory(self.state), inventory(self.profiles)), before)
+
+    def test_deep_profile_failed_restore_recovers_profiles_and_prior_settings(self):
+        relative = self.deep_profile()
+        self.snapshot()
+        self.write('settings.json', {**self.settings, 'stripMode': 'panels'})
+        (self.profiles / relative).write_bytes(b'new-private-image')
+        before_settings = {path.name: path.read_bytes() for path in self.state.iterdir()}
+        before_profiles = inventory(self.profiles)
+        real_replace = os.replace
+        def fail_setting(source, target):
+            if Path(source).parent.name == 'replacement' and Path(target).name == 'settings.json':
+                raise OSError('Simulated locked setting file')
+            return real_replace(source, target)
+        with patch('hellgato_candidate.files.os.replace', side_effect=fail_setting):
+            with self.assertRaisesRegex(OSError, 'Simulated locked'):
+                restore_snapshot(self.backup, self.state, self.profiles)
+        self.assertEqual({name: (self.state / name).read_bytes() for name in before_settings}, before_settings)
+        self.assertEqual(inventory(self.profiles), before_profiles)
+        self.assertEqual(list(self.root.glob('.ipc-restore-stage-*')), [])
+        self.assertEqual(list(self.root.glob('.ipc-profiles-stage-*')), [])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows extended path aliases')
+    def test_prefixed_paths_do_not_bypass_snapshot_or_restore_overlap_checks(self):
+        before = inventory(self.state), inventory(self.profiles)
+        pairs = ((self.state, self.windows_io_path(self.state / 'nested-backup')),
+                 (self.windows_io_path(self.state), self.state / 'nested-backup'))
+        for state, destination in pairs:
+            with self.subTest(state=state), self.assertRaisesRegex(ValueError, 'locations must be separate'):
+                make_snapshot(state, self.profiles, destination, 42, 'a' * 40)
+        self.assertEqual((inventory(self.state), inventory(self.profiles)), before)
+        self.snapshot()
+        nested = self.profiles / 'nested-backup'
+        self.backup.rename(nested)
+        before = inventory(self.state), inventory(self.profiles)
+        pairs = ((self.windows_io_path(nested), self.state, self.profiles),
+                 (nested, self.state, self.windows_io_path(self.profiles)))
+        for backup, state, profiles in pairs:
+            with self.subTest(backup=backup), self.assertRaisesRegex(ValueError, 'locations must be separate'):
+                restore_snapshot(backup, state, profiles)
+        self.assertEqual((inventory(self.state), inventory(self.profiles)), before)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows extended path aliases')
+    def test_extended_paths_keep_unc_names_and_reject_device_namespaces(self):
+        from hellgato_candidate.files import _io_path, _ordinary_path
+        self.assertEqual(_ordinary_path(_io_path(self.state)), self.state.absolute())
+        self.assertEqual(_io_path(_io_path(self.state)), _io_path(self.state))
+        unc = Path(r'\\server\share\profiles\image.png')
+        extended_unc = Path(r'\\?\UNC\server\share\profiles\image.png')
+        self.assertEqual(_io_path(unc), extended_unc)
+        self.assertEqual(_ordinary_path(extended_unc), unc)
+        self.assertEqual(_io_path(extended_unc), extended_unc)
+        for namespace in (r'\\.\PhysicalDrive0', r'\\?\GLOBALROOT\Device\HarddiskVolume1'):
+            with self.subTest(namespace=namespace), self.assertRaises(ValueError):
+                _io_path(Path(namespace))
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows extended path aliases')
+    def test_prefixed_parent_paths_cannot_hide_reparse_ancestors(self):
+        linked = self.root / 'linked-state'
+        try:
+            linked.symlink_to(self.state, target_is_directory=True)
+        except OSError:
+            self.skipTest('Symlink creation unavailable')
+        before = inventory(self.state), inventory(self.profiles)
+        self.snapshot()
+        for state in (linked, linked / '..' / 'state', self.windows_io_path(linked / '..' / 'state')):
+            with self.subTest(state=state):
+                with self.assertRaisesRegex(ValueError, 'Linked or non-directory'):
+                    make_snapshot(state, self.profiles, self.root / 'another-backup', 42, 'a' * 40)
+                with self.assertRaisesRegex(ValueError, 'Linked or non-directory'):
+                    restore_snapshot(self.backup, state, self.profiles)
+        self.assertEqual((inventory(self.state), inventory(self.profiles)), before)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows short path aliases')
+    def test_short_path_aliases_cannot_hide_snapshot_or_restore_overlap(self):
+        import ctypes
+        from ctypes import wintypes
+        api = ctypes.WinDLL('kernel32', use_last_error=True).GetShortPathNameW
+        api.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        api.restype = wintypes.DWORD
+        buffer = ctypes.create_unicode_buffer(32768)
+        if not api(str(self.state), buffer, len(buffer)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        alias = Path(buffer.value)
+        if alias == self.state.resolve():
+            self.skipTest('This Windows volume does not provide a distinct short path alias')
+        before = inventory(self.state), inventory(self.profiles)
+        with self.assertRaisesRegex(ValueError, 'locations must be separate'):
+            make_snapshot(self.state, self.profiles, alias / 'nested-backup', 42, 'a' * 40)
+        self.assertEqual((inventory(self.state), inventory(self.profiles)), before)
+        self.snapshot()
+        nested = self.state / 'nested-backup'
+        self.backup.rename(nested)
+        before = inventory(self.state), inventory(self.profiles)
+        with self.assertRaisesRegex(ValueError, 'locations must be separate'):
+            restore_snapshot(alias / 'nested-backup', self.state, self.profiles)
+        self.assertEqual((inventory(self.state), inventory(self.profiles)), before)
 
     def test_saved_independent_identity_is_preserved_without_writes(self):
         before = inventory(self.state)
@@ -183,7 +323,7 @@ class CandidateFilesTests(unittest.TestCase):
         fired = False
         def fail_once(source, target):
             nonlocal fired
-            if Path(target) == self.state / 'settings.json' and not fired:
+            if Path(target).name == 'settings.json' and not fired and os.path.samefile(target, self.state / 'settings.json'):
                 fired = True
                 raise OSError('Simulated locked setting file')
             return real_replace(source, target)

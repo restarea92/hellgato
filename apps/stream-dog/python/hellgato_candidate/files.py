@@ -45,7 +45,38 @@ SHA256 = re.compile(r'[a-f0-9]{64}\Z')
 SHA = re.compile(r'[a-f0-9]{40}\Z')
 
 
+def _ordinary_path(path: Path) -> Path:
+    if os.name != 'nt':
+        return Path(os.path.abspath(path))
+    value = str(path).replace('/', '\\')
+    if value.startswith('\\\\.\\'):
+        raise ValueError('Windows device namespaces are forbidden')
+    if value[:8].upper() == '\\\\?\\UNC\\':
+        value = '\\\\' + value[8:]
+    elif value.startswith('\\\\?\\'):
+        value = value[4:]
+        if not re.match(r'^[A-Za-z]:\\', value):
+            raise ValueError('Unsupported Windows extended path namespace')
+    return Path(os.path.abspath(value))
+
+
+def _io_path(path: Path) -> Path:
+    """Use extended Windows I/O without relying on the machine's long-path policy."""
+    if os.name != 'nt':
+        return path
+    value = str(_ordinary_path(path))
+    if value.startswith('\\\\'):
+        return Path('\\\\?\\UNC\\' + value[2:])
+    return Path('\\\\?\\' + value)
+
+
+def _canonical_path(path: Path) -> Path:
+    # Call only after checking original ancestors so resolution cannot hide links.
+    return _ordinary_path(_io_path(path).resolve())
+
+
 def regular(path: Path) -> None:
+    path = _io_path(path)
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode) or path.is_symlink() or getattr(info, 'st_file_attributes', 0) & 0x400:
         raise ValueError('Links and non-regular files are forbidden')
@@ -60,7 +91,7 @@ def safe_relative(value: str) -> PurePosixPath:
 
 def local_path(root: Path, relative: str) -> Path:
     parts = safe_relative(relative).parts
-    current = root
+    current = _io_path(root)
     for part in parts:
         current = current / part
         if current.exists() or current.is_symlink():
@@ -71,6 +102,7 @@ def local_path(root: Path, relative: str) -> Path:
 
 
 def digest(path: Path) -> str:
+    path = _io_path(path)
     regular(path)
     value = hashlib.sha256()
     with path.open('rb') as stream:
@@ -80,6 +112,7 @@ def digest(path: Path) -> str:
 
 
 def read_json(path: Path, limit: int = MAX_JSON) -> JsonObject:
+    path = _io_path(path)
     regular(path)
     if path.stat().st_size > limit:
         raise ValueError('JSON file size limit exceeded')
@@ -105,6 +138,7 @@ def read_json(path: Path, limit: int = MAX_JSON) -> JsonObject:
 
 
 def inventory(root: Path, exclude: Collection[str] = ()) -> list[InventoryEntry]:
+    root = _io_path(root)
     root_info = root.lstat()
     if not stat.S_ISDIR(root_info.st_mode) or root.is_symlink() or getattr(root_info, 'st_file_attributes', 0) & 0x400:
         raise ValueError('Linked or non-directory inventory root is forbidden')
@@ -151,6 +185,7 @@ def verify_inventory(root: Path, entries: object, exclude: Collection[str] = ())
 
 
 def verify_bundle(root: Path) -> JsonObject:
+    root = _io_path(root)
     manifest = read_json(root / 'candidate-manifest.json')
     if (type(manifest.get('schemaVersion')) is not int or manifest.get('schemaVersion') != 1 or manifest.get('component') != 'stream-dog-ipc-candidate'
             or manifest.get('channel') != 'experimental-ci' or manifest.get('physicalHardwareVerified') is not False
@@ -169,6 +204,7 @@ def verify_bundle(root: Path) -> JsonObject:
 
 
 def existing_identity(state: Path) -> tuple[JsonObject, JsonObject]:
+    state = _io_path(state)
     settings = read_json(state / 'settings.json', 128 * 1024)
     registry = read_json(state / 'devices.json', 1024 * 1024)
     if type(settings.get('version')) is not int or settings.get('version') != 1 or settings.get('stripMode') not in ('frame', 'panels'):
@@ -202,6 +238,7 @@ def existing_identity(state: Path) -> tuple[JsonObject, JsonObject]:
 
 
 def copy_verified(source: Path, destination: Path, expected: FileDigest) -> None:
+    source, destination = _io_path(source), _io_path(destination)
     regular(source)
     if source.stat().st_size != expected['size'] or digest(source) != expected['sha256']:
         raise ValueError('Source changed during snapshot')
@@ -214,11 +251,11 @@ def copy_verified(source: Path, destination: Path, expected: FileDigest) -> None
 def make_snapshot(state: Path, profiles: Path, destination: Path, identity: int, source_sha: str) -> BackupManifest:
     plain_directory_path(state)
     plain_directory_path(profiles.parent)
-    if profiles.exists() or profiles.is_symlink():
+    if _io_path(profiles).exists() or _io_path(profiles).is_symlink():
         plain_directory_path(profiles)
     plain_directory_path(destination.parent, missing=True)
-    state, profiles, destination = (Path(os.path.abspath(path)) for path in (state, profiles, destination))
-    if destination.exists() or destination.is_symlink():
+    state, profiles, destination = (_canonical_path(path) for path in (state, profiles, destination))
+    if _io_path(destination).exists() or _io_path(destination).is_symlink():
         raise ValueError('Snapshot destination already exists')
     if any(destination == path or destination.is_relative_to(path) or path.is_relative_to(destination)
            for path in (state, profiles)):
@@ -227,6 +264,7 @@ def make_snapshot(state: Path, profiles: Path, destination: Path, identity: int,
         raise ValueError('Invalid candidate source')
     if type(identity) is not int or not 1 <= identity <= 999999:
         raise ValueError('Invalid snapshot identity')
+    state, profiles, destination = (_io_path(path) for path in (state, profiles, destination))
     destination.parent.mkdir(parents=True, exist_ok=True)
     prepared = Path(tempfile.mkdtemp(prefix='.ipc-backup-stage-', dir=destination.parent))
     wanted = ('settings.json', 'devices.json', f'device-controls-HGMOCK{identity:06d}.json', f'display-HGMOCK{identity:06d}.json')
@@ -272,6 +310,7 @@ def make_snapshot(state: Path, profiles: Path, destination: Path, identity: int,
 
 
 def verify_snapshot(root: Path) -> BackupManifest:
+    root = _io_path(root)
     value = read_json(root / 'backup-manifest.json')
     if (type(value.get('schemaVersion')) is not int or value.get('schemaVersion') != 1 or value.get('component') != 'ipc-candidate-backup'
             or not isinstance(value.get('sourceSha'), str) or not SHA.fullmatch(value['sourceSha'])
@@ -301,6 +340,7 @@ def plain_directory_path(path: Path, *, missing: bool = False) -> None:
     """Reject every link/reparse ancestor before snapshot or restore mutations."""
     path = path.absolute()
     for current in [*reversed(path.parents), path]:
+        current = _io_path(current)
         if not current.exists() and not current.is_symlink():
             if missing:
                 continue
@@ -320,14 +360,15 @@ def restore_snapshot(backup: Path, state: Path, profiles: Path) -> Path:
     plain_directory_path(backup)
     plain_directory_path(state)
     plain_directory_path(profiles.parent)
-    if profiles.exists() or profiles.is_symlink():
+    if _io_path(profiles).exists() or _io_path(profiles).is_symlink():
         plain_directory_path(profiles)
-    backup, state, profiles = (Path(os.path.abspath(path)) for path in (backup, state, profiles))
+    backup, state, profiles = (_canonical_path(path) for path in (backup, state, profiles))
     manifest = verify_snapshot(backup)
     if state == profiles or state.is_relative_to(profiles) or profiles.is_relative_to(state):
         raise ValueError('Restore locations must be separate')
     if any(backup == path or backup.is_relative_to(path) or path.is_relative_to(backup) for path in (state, profiles)):
         raise ValueError('Backup and restore locations must be separate')
+    backup, state, profiles = (_io_path(path) for path in (backup, state, profiles))
     settings = [entry for entry in manifest['files'] if entry['path'].startswith('settings/')]
     current: dict[str, FileDigest | None] = {}
     for entry in settings:
@@ -390,7 +431,7 @@ def restore_snapshot(backup: Path, state: Path, profiles: Path) -> Path:
             name = PurePosixPath(entry['path']).name
             os.replace(prepared / 'replacement' / name, state / name)
             replaced.append(name)
-        return preserved
+        return _ordinary_path(preserved)
     except BaseException as original:
         # Restore previous contents on recoverable mid-transaction failure.
         # A failed undo must not prevent the other independent restores, and
