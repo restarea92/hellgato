@@ -21,14 +21,20 @@ class FirmwarePolicyTests(unittest.TestCase):
     def test_historical_baseline_only_never_claims_candidate_verification(self):
         policy = firmware_policy()
         self.assertEqual(policy['allowedFirmware'], [FIRMWARE])
+        self.assertIs(policy['allowUnverifiedFirmware'], True)
         self.assertEqual(policy['supportStatus'], 'experimental')
         self.assertIs(policy['physicalHardwareVerified'], False)
         self.assertEqual(policy['evidenceKind'], 'historical-product-baseline-only')
         self.assertEqual(require_candidate_firmware(FIRMWARE), FIRMWARE)
 
-    def test_exact_match_no_empty_unknown_coercion_or_version_range(self):
-        for value in [None, '', 123, [], {}, FIRMWARE.lower(), FIRMWARE + ' ',
-                      FIRMWARE + '\0', 'V4.N4 Pro E.02.011', 'V4.N4 Pro.02.010']:
+    def test_unverified_versions_are_preserved_without_coercion(self):
+        for value in [FIRMWARE.lower(), FIRMWARE + ' ', 'unknown',
+                      'V4.N4 Pro E.02.011', 'V4.N4 Pro.02.010']:
+            with self.subTest(firmware=value):
+                self.assertEqual(require_candidate_firmware(value), value)
+
+    def test_missing_malformed_or_oversized_firmware_is_rejected(self):
+        for value in [None, '', ' ', 123, [], {}, FIRMWARE + '\0', 'x' * 129]:
             with self.subTest(firmware=value), self.assertRaises(ProtocolError) as caught:
                 require_candidate_firmware(value)
             self.assertEqual(caught.exception.code, 'ERR_FIRMWARE_UNVERIFIED')
@@ -38,6 +44,7 @@ class FirmwarePolicyTests(unittest.TestCase):
         cases = [b'{', b'{"schemaVersion":1,"schemaVersion":1}', b'x' * 16385]
         for key, value in [('physicalHardwareVerified', True), ('supportStatus', 'project-supported'),
                            ('allowedFirmware', ['*']), ('allowedFirmware', [FIRMWARE, FIRMWARE]),
+                           ('allowUnverifiedFirmware', False),
                            ('schemaVersion', True), ('extra', True)]:
             cases.append(json.dumps({**policy, key: value}).encode())
         with tempfile.TemporaryDirectory() as folder:
@@ -106,8 +113,16 @@ class FirmwareProbeTests(unittest.TestCase):
         self.device.set_device.assert_not_called()
         self.backend.ownership.close.assert_not_called()
 
-    def test_unknown_or_empty_firmware_closes_probe_and_exposes_no_candidates(self):
-        for firmware in ['', 'unknown']:
+    def test_unverified_firmware_is_discovered_without_device_initialization(self):
+        self.transport.firmware = 'V4.N4 Pro.02.011'
+        result = self.backend.discover()
+        self.assertEqual(result[0]['firmware'], self.transport.firmware)
+        self.assertEqual(self.device.firmware_version, self.transport.firmware)
+        self.device.init.assert_not_called()
+        self.device.open.assert_not_called()
+
+    def test_empty_firmware_closes_probe_and_exposes_no_candidates(self):
+        for firmware in ['', ' ']:
             self.events.clear()
             self.transport.firmware = firmware
             self.backend.candidates = {'stale': self.device}

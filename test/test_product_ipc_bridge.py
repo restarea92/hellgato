@@ -103,6 +103,7 @@ class ProductIpcTest(unittest.TestCase):
                              'capabilities': descriptor()['capabilities']})
             self.assertTrue(bridge.controls.state()['available'])
             self.assertEqual(events[-1]['detail']['deviceId'], descriptor()['id'])
+            self.assertEqual(events[-1]['detail']['firmware'], 'checked')
             self.assertIsNone(bridge.select_device([descriptor('b')]))
             self.assertEqual(events[-1]['detail']['reason'], 'registered-device-mismatch')
             self.assertEqual((state / 'settings.json').read_text(), settings)
@@ -168,11 +169,11 @@ for line in sys.stdin:
                 channel.close()
             self.assertEqual(channel.process.returncode, 0)
 
-    def test_fatal_stderr_is_reduced_to_bounded_error_code(self):
+    def test_fatal_stderr_preserves_error_details_without_unrelated_fields(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             helper = root / 'helper.py'
-            helper.write_text("import sys,json\nsys.stdin.readline()\nprint(json.dumps({'state':'failed','code':'ERR_CONTRACT','private':'hidden'}),file=sys.stderr,flush=True)\n", encoding='utf-8')
+            helper.write_text("import sys,json\nsys.stdin.readline()\nprint(json.dumps({'state':'failed','code':'ERR_FIRMWARE_UNVERIFIED','message':'Missing firmware','stack':'worker trace','details':{'operation':'discover'},'private':'hidden'}),file=sys.stderr,flush=True)\n", encoding='utf-8')
             job = Mock()
             job.__enter__ = Mock(return_value=job)
             job.__exit__ = Mock()
@@ -183,8 +184,10 @@ for line in sys.stdin:
                 channel.process.wait(timeout=3)
             finally:
                 channel.close()
-            self.assertEqual(channel.failure, 'ERR_CONTRACT')
-            self.assertEqual(events, [{'state': 'failed', 'code': 'ERR_CONTRACT'}])
+            self.assertEqual(channel.failure, 'ERR_FIRMWARE_UNVERIFIED')
+            self.assertEqual(events, [{'event': 'diagnostic', 'detail': {
+                'code': 'ERR_FIRMWARE_UNVERIFIED', 'message': 'Missing firmware', 'stack': 'worker trace',
+                'details': {'operation': 'discover'}}}, {'state': 'failed', 'code': 'ERR_FIRMWARE_UNVERIFIED'}])
 
     def test_gui_consumes_private_device_event_but_redacts_identity_from_log(self):
         with patch.dict(os.environ, {'LOCALAPPDATA': str(ROOT), 'APPDATA': str(ROOT)}):
