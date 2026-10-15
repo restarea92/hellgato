@@ -139,8 +139,16 @@ class DisplayState:
             check()
             self.device.refresh()
 
+    def _stream_frame(self, image, check, *, clear_keys):
+        if clear_keys:
+            self.writer.clear_keys(check, 'screensaver')
+        self.writer.frame(image.transpose(Image.Transpose.ROTATE_180), check)
+        check()
+        self.device.refresh()
+
     def enter_idle(self, check, *, force_sleep=False):
         check()
+        first = not self.idle or not self.stream_active
         self.idle = True
         self.logo_active = False
         self.stream_active = False
@@ -155,7 +163,7 @@ class DisplayState:
                 self._fade(0)
         elif self.streamed_screensaver is not None and not force_sleep:
             self.native_active = False
-            self.writer.lcd(self.streamed_screensaver, check, 'screensaver')
+            self._stream_frame(self.streamed_screensaver, check, clear_keys=first)
             self._wake(check)
             self._fade(0)
             self.stream_active = True
@@ -230,7 +238,7 @@ class DisplayState:
             return
         first = not self.idle or not self.stream_active
         self.streamed_screensaver = image
-        self.writer.lcd(image, check, 'screensaver')
+        self._stream_frame(image, check, clear_keys=first)
         self._wake(check)
         self.idle = True
         self.logo_active = False

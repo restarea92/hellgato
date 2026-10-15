@@ -173,6 +173,39 @@ class DisplayStateTests(unittest.TestCase):
         self.advance(.1)
         self.assertEqual(self.device.transport.set_background_frame_stream.call_count, count)
 
+    def test_streamed_screensaver_uses_full_frames_without_key_or_touch_uploads(self):
+        for mode in ('frame', 'panels'):
+            with self.subTest(mode=mode):
+                device = Mock()
+                state = DisplayState(device, self.temporary.name, strip_mode=mode,
+                                     lcd_mode='stream-screensaver', clock=lambda: self.now)
+                state.output('key:0', Image.new('RGB', (120, 120), 'blue'), None, lambda: None)
+                device.reset_mock()
+                for number, color in enumerate(('red', 'green'), 1):
+                    image = Image.new('RGB', (800, 480), color)
+                    image.paste('blue', (0, 0, 100, 100))
+                    state.output('lcd', image, None, lambda: None)
+                    self.assertEqual(device.transport.set_background_frame_stream.call_count, number)
+                    self.assertEqual(device.refresh.call_count, number)
+                    data, *geometry = device.transport.set_background_frame_stream.call_args.args
+                    self.assertEqual(geometry, [800, 480, 0, 0])
+                    with Image.open(io.BytesIO(data)) as frame:
+                        self.assertGreater(frame.getpixel((750, 430))[2], 240)
+                    device.set_key_image.assert_not_called()
+                    device.set_seondscreen_image.assert_not_called()
+                state.control({'control': 'screensaver'}, lambda: None)
+                self.assertEqual(device.transport.set_background_frame_stream.call_count, 3)
+                device.clearAllIcon.assert_called_once()
+                device.set_key_image.assert_not_called()
+                device.set_seondscreen_image.assert_not_called()
+                self.assertEqual(state.keys[0].getpixel((60, 60)), (0, 0, 255))
+                self.assertEqual(state.strip.getpixel((300, 50)), (0, 0, 0))
+                self.assertEqual(state.background.getpixel((400, 240)), (0, 0, 0))
+                self.assertEqual(state.key_cache_clears, 0)
+                state.notify_input(self.now, False, lambda: None)
+                self.assertFalse(state.idle)
+                device.set_key_image.assert_called()
+
     def test_cancellation_prevents_control_and_every_individual_native_write(self):
         for control in ({'control': 'brightness', 'value': 30}, {'control': 'sleep'}, {'control': 'knobBrightness', 'value': 20}):
             with self.assertRaises(ProtocolError):

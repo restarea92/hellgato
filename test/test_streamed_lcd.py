@@ -30,6 +30,15 @@ class StreamedLcdTests(unittest.TestCase):
     def control(self, kind, **options):
         return self.state.control({'control': kind, **options}, lambda: None)
 
+    def assert_red_screensaver_frame(self):
+        data, *geometry = self.device.transport.set_background_frame_stream.call_args.args
+        self.assertEqual(geometry, [800, 480, 0, 0])
+        with Image.open(BytesIO(data)) as frame:
+            red, green, blue = frame.getpixel((400, 240))
+        self.assertGreater(red, 240)
+        self.assertLess(green, 10)
+        self.assertLess(blue, 10)
+
     def capture_keys(self):
         keys = {}
         def capture(index, path):
@@ -49,10 +58,14 @@ class StreamedLcdTests(unittest.TestCase):
         self.device.set_seondscreen_image.side_effect = capture_panel
         self.output('key:0', 'blue')
         self.output('touch', 'green', (800, 100), (0, 0, 800, 100))
+        key_writes = self.device.set_key_image.call_count
+        panel_writes = self.device.set_seondscreen_image.call_count
         self.output('lcd', 'red', (800, 480))
         self.assertTrue(self.state.idle)
         self.assertTrue(self.state.state()['screensaverActive'])
-        self.assertEqual(keys[0].getpixel((60, 60)), (255, 0, 0))
+        self.assert_red_screensaver_frame()
+        self.assertEqual(self.device.set_key_image.call_count, key_writes)
+        self.assertEqual(self.device.set_seondscreen_image.call_count, panel_writes)
         self.assertEqual(self.state.keys[0].getpixel((60, 60)), (0, 0, 255))
         self.assertEqual(self.state.background.getpixel((60, 60)), (0, 0, 0))
         self.assertEqual(self.state.strip.getpixel((60, 60)), (0, 128, 0))
@@ -87,15 +100,19 @@ class StreamedLcdTests(unittest.TestCase):
         self.output('lcd', 'red', (800, 480))
         self.state.notify_input(self.now, True, lambda: None)
         writes = self.device.set_key_image.call_count
+        frames = self.device.transport.set_background_frame_stream.call_count
         self.now = .2
         self.output('lcd', 'black', (800, 480))
         self.assertFalse(self.state.idle)
         self.assertEqual(self.device.set_key_image.call_count, writes)
+        self.assertEqual(self.device.transport.set_background_frame_stream.call_count, frames)
         self.assertEqual(keys[0].getpixel((60, 60)), (0, 0, 255))
         self.now = .4
         self.output('lcd', 'red', (800, 480))
         self.assertTrue(self.state.idle)
-        self.assertEqual(self.device.set_key_image.call_count, writes + 10)
+        self.assertEqual(self.device.set_key_image.call_count, writes)
+        self.assertEqual(self.device.transport.set_background_frame_stream.call_count, frames + 1)
+        self.assert_red_screensaver_frame()
 
     def test_full_fill_replaces_normal_caches_and_key_fill_during_stream_is_restored_on_wake(self):
         keys = self.capture_keys()
@@ -146,9 +163,11 @@ class StreamedLcdTests(unittest.TestCase):
         self.control('wake')
         self.output('key:0', 'yellow')
         self.now = 1
+        writes = self.device.set_key_image.call_count
         self.control('screensaver')
         self.assertTrue(self.state.stream_active)
-        self.assertEqual(keys[0].getpixel((60, 60)), (255, 0, 0))
+        self.assert_red_screensaver_frame()
+        self.assertEqual(self.device.set_key_image.call_count, writes)
         self.assertEqual(self.state.keys[0].getpixel((60, 60)), (255, 255, 0))
         self.control('wake')
         self.assertEqual(keys[0].getpixel((60, 60)), (255, 255, 0))
