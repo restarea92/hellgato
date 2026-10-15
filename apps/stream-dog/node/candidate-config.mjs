@@ -113,7 +113,6 @@ INVALID_OUTPUT_SEQUENCE OUTPUT_OVERFLOW SESSION_FAILED STALE_INPUT STALE_OUTPUT 
 UNSUPPORTED_INPUT UNSUPPORTED_MAPPING UNSUPPORTED_OUTPUT UNSUPPORTED_PLATFORM WORKER_DIAGNOSTIC EADDRINUSE EACCES EPERM ENOENT ENOSPC
 ERR_ABORTED ERR_BACKPRESSURE ERR_CONTRACT ERR_CONTRACT_SCHEMA ERR_DEVICE_BUSY ERR_DEVICE_CLOSED ERR_DEVICE_CLOSE ERR_DEVICE_ID
 ERR_DEVICE_NOT_FOUND ERR_DEVICE_OPEN ERR_DEVICE_OPERATION ERR_DUPLICATE_REQUEST ERR_HANDSHAKE_REQUIRED ERR_INPUT_ORDER ERR_IPC_CONFIG
-ERR_FIRMWARE_UNVERIFIED ERR_FIRMWARE_POLICY ERR_FIRMWARE_CHANGED
 ERR_IPC_PARSE ERR_IPC_PROTOCOL ERR_IPC_VERSION ERR_MESSAGE_TOO_LARGE ERR_OUTPUT_ORDER ERR_REQUEST_TIMEOUT ERR_STALE_GENERATION
 ERR_UNSUPPORTED_OPERATION ERR_WORKER_BUILD_ID ERR_WORKER_DIAGNOSTICS ERR_WORKER_DIGEST ERR_WORKER_EOF ERR_WORKER_EXIT
 ERR_WORKER_MANIFEST ERR_WORKER_OFFLINE ERR_WORKER_OPERATION ERR_WORKER_PIPE ERR_WORKER_START ERR_WORKER_STOPPED
@@ -128,23 +127,7 @@ CANDIDATE_RUNTIME_REQUIRED CANDIDATE_SCREENSAVER_MODE CANDIDATE_SESSION_ENDED CA
 CANDIDATE_START_REQUIRED CANDIDATE_START_STATE CANDIDATE_START_TIMEOUT CANDIDATE_STATE_DIRECTORY_REQUIRED CANDIDATE_STATE_IDENTITY`.split(/\s+/));
 export function diagnosticCode(error) { return DIAGNOSTIC_CODES.has(error?.code) ? error.code : 'CANDIDATE_FAILED'; }
 
-export function diagnosticError(error) {
-  const detail = { code: diagnosticCode(error) };
-  const originalCode = error?.originalCode ?? error?.code;
-  if (typeof originalCode === 'string' && /^[A-Z][A-Z0-9_]{0,80}$/.test(originalCode)) detail.originalCode = originalCode;
-  for (const [key, limit] of [['message', 1024], ['stack', 4096]]) {
-    if (typeof error?.[key] === 'string') detail[key] = error[key].slice(0, limit);
-  }
-  if (object(error?.details)) {
-    try {
-      const text = JSON.stringify(error.details);
-      if (Buffer.byteLength(text) <= 16384) detail.details = JSON.parse(text);
-    } catch {}
-  }
-  return detail;
-}
-
-/** Two bounded local files with bounded error details and connection metadata. */
+/** Two bounded files, allowlisted scalar fields only. Never write raw worker text. */
 export function createCandidateDiagnostics(path, maxBytes = 256 * 1024) {
   let bytes = 0;
   try { const stat = lstatSync(path); requireValue(stat.isFile() && !stat.isSymbolicLink(), 'CANDIDATE_DIAGNOSTICS_INVALID'); bytes = stat.size; }
@@ -154,17 +137,7 @@ export function createCandidateDiagnostics(path, maxBytes = 256 * 1024) {
     const safe = { time: new Date().toISOString(), event };
     if (detail.code) safe.code = diagnosticCode(detail);
     for (const key of ['generation', 'attempt', 'count']) if (integer(detail[key], 0, Number.MAX_SAFE_INTEGER)) safe[key] = detail[key];
-    for (const [key, limit] of [['originalCode', 81], ['firmware', 128], ['message', 1024], ['stack', 4096]]) {
-      if (typeof detail[key] === 'string') safe[key] = detail[key].slice(0, limit);
-    }
-    if (typeof detail.connected === 'boolean') safe.connected = detail.connected;
-    const error = diagnosticError(detail);
-    if (error.details) safe.details = error.details;
-    let line = JSON.stringify(safe) + '\n';
-    for (const key of ['details', 'stack', 'message', 'firmware', 'originalCode']) {
-      if (Buffer.byteLength(line) <= maxBytes) break;
-      delete safe[key]; line = JSON.stringify(safe) + '\n';
-    }
+    const line = JSON.stringify(safe) + '\n';
     if (bytes + Buffer.byteLength(line) > maxBytes) {
       try { unlinkSync(`${path}.1`); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       try { renameSync(path, `${path}.1`); } catch (error) { if (error.code !== 'ENOENT') throw error; }

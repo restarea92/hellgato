@@ -1,4 +1,4 @@
-"""Experimental firmware admission, never a claim of verified hardware support."""
+"""Exact experimental admission policy, never a claim of candidate hardware support."""
 from __future__ import annotations
 
 import json
@@ -20,7 +20,6 @@ class FirmwarePolicy(TypedDict):
     supportStatus: Literal['experimental']
     physicalHardwareVerified: Literal[False]
     allowedFirmware: list[str]
-    allowUnverifiedFirmware: Literal[True]
     evidenceKind: Literal['historical-product-baseline-only']
     sourceEvidence: str
 
@@ -43,13 +42,12 @@ def firmware_policy() -> FirmwarePolicy:
             raise ValueError('Policy size bound')
         value: object = json.loads(data.decode('utf-8'), object_pairs_hook=_unique_object)
         fields = {'schemaVersion', 'policyId', 'adapterId', 'modelId', 'supportStatus',
-                  'physicalHardwareVerified', 'allowedFirmware', 'allowUnverifiedFirmware', 'evidenceKind', 'sourceEvidence'}
+                  'physicalHardwareVerified', 'allowedFirmware', 'evidenceKind', 'sourceEvidence'}
         if (not isinstance(value, dict) or set(value) != fields
                 or type(value['schemaVersion']) is not int or value['schemaVersion'] != 1
                 or value['policyId'] != 'mirabox-n4-pro-experimental-v1'
                 or value['adapterId'] != 'mirabox-n4-pro' or value['modelId'] != 'n4-pro'
                 or value['supportStatus'] != 'experimental' or value['physicalHardwareVerified'] is not False
-                or value['allowUnverifiedFirmware'] is not True
                 or value['evidenceKind'] != 'historical-product-baseline-only'
                 or value['sourceEvidence'] != 'docs/releases/0.1.0.md'):
             raise ValueError('Unexpected firmware policy identity or evidence')
@@ -66,8 +64,8 @@ def firmware_policy() -> FirmwarePolicy:
 
 
 def require_candidate_firmware(value: object) -> str:
-    firmware_policy()
-    if (not isinstance(value, str) or not 1 <= len(value) <= 128 or not value.strip()
-            or re.search(r'[\x00-\x1f\x7f]', value)):
-        raise ProtocolError('The device did not return a valid firmware version', 'ERR_FIRMWARE_UNVERIFIED')
+    policy = firmware_policy()
+    if not isinstance(value, str) or value not in policy['allowedFirmware']:
+        raise ProtocolError('Firmware is unknown or outside the exact experimental trial policy; '
+                            'no physical candidate support has been verified', 'ERR_FIRMWARE_UNVERIFIED')
     return value

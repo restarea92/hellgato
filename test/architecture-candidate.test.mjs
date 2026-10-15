@@ -294,8 +294,7 @@ test('exhausted reconnect settles failed completion even when final cleanup reje
   f.adapter.disconnect();
   let timer;
   const report = await Promise.race([f.runner.completed, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Completion hung')), 1000); })]); clearTimeout(timer);
-  assert.equal(report.state, 'failed'); assert.equal(report.code, 'ADAPTER_DISCONNECTED');
-  assert.equal(report.error.code, 'ADAPTER_DISCONNECTED');
+  assert.equal(report.state, 'failed'); assert.equal(report.code, 'CLEANUP_FAILED');
   assert.equal(cleanupAttempts, 2);
   assert.ok(!JSON.stringify(report).includes('private cleanup details'));
   await assert.rejects(f.runner.stop());
@@ -348,26 +347,13 @@ test('special wake-clear keeps LCD-derived strip and key history with a bounded 
   journal.prepare({ type: 'control', control: 'clear' }, { normalStateEffect: 'replace-all' })(); assert.equal(journal.length, 1);
 });
 
-test('diagnostics rotate bounded files and exclude identities and image payload', () => {
+test('diagnostics rotate bounded files and exclude identities, arbitrary strings and payload', () => {
   const value = config(); const record = createCandidateDiagnostics(value.diagnosticsPath, 256);
-  for (let count = 0; count < 100; count++) record('diagnostic', { code: 'NORMAL_CODE', generation: count, serial: 'SECRET-SERIAL', payload: 'PRIVATE-IMAGE' });
+  for (let count = 0; count < 100; count++) record('diagnostic', { code: 'NORMAL_CODE', generation: count, message: 'SECRET-SERIAL', payload: 'PRIVATE-IMAGE' });
   for (const name of [value.diagnosticsPath, `${value.diagnosticsPath}.1`]) {
     const text = readFileSync(name, 'utf8'); assert.ok(Buffer.byteLength(text) <= 256); assert.ok(!/SECRET|PRIVATE/.test(text));
   }
   assert.equal(diagnosticCode({ code: 'ERR_PRIVATE_SERIAL' }), 'CANDIDATE_FAILED');
-  for (const code of ['ERR_FIRMWARE_UNVERIFIED', 'ERR_FIRMWARE_POLICY', 'ERR_FIRMWARE_CHANGED']) assert.equal(diagnosticCode({ code }), code);
-});
-
-test('diagnostics retain firmware, connection success and bounded original error details', () => {
-  const value = config(); const record = createCandidateDiagnostics(value.diagnosticsPath);
-  record('deviceReady', { firmware: 'V4.N4 Pro.02.011', connected: true, generation: 2 });
-  record('failure', { code: 'ERR_FIRMWARE_CHANGED', originalCode: 'ERR_FIRMWARE_CHANGED', message: 'Firmware changed since discovery',
-    stack: 'trace'.repeat(2000), details: { code: 'ERR_FIRMWARE_CHANGED', outcome: 'unknown' } });
-  const rows = readFileSync(value.diagnosticsPath, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.equal(rows[0].firmware, 'V4.N4 Pro.02.011'); assert.equal(rows[0].connected, true);
-  assert.equal(rows[1].code, 'ERR_FIRMWARE_CHANGED'); assert.equal(rows[1].originalCode, 'ERR_FIRMWARE_CHANGED');
-  assert.equal(rows[1].message, 'Firmware changed since discovery'); assert.equal(rows[1].stack.length, 4096);
-  assert.deepEqual(rows[1].details, { code: 'ERR_FIRMWARE_CHANGED', outcome: 'unknown' });
 });
 
 test('portable manifest rejects escape, missing executable inventory and digest mismatch before launch', () => {

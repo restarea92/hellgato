@@ -6,7 +6,6 @@
   "supportStatus": "experimental",
   "physicalHardwareVerified": false,
   "allowedFirmware": ["V4.N4 Pro E.02.010"],
-  "allowUnverifiedFirmware": true,
   "evidenceKind": "historical-product-baseline-only",
   "sourceEvidence": "docs/releases/0.1.0.md"
 }

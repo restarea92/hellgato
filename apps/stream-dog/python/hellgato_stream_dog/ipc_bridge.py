@@ -206,9 +206,6 @@ class ProductProcess:
                     value = json.loads(line.decode('utf-8'))
                 except (ValueError, UnicodeError):
                     continue
-                if isinstance(value, dict) and (value.get('state') == 'failed' or value.get('event') == 'diagnostic'):
-                    self.on_event({'event': 'diagnostic', 'detail': {key: item for key, item in value.items()
-                                   if key in ('code', 'originalCode', 'message', 'stack', 'details')}})
                 if isinstance(value, dict) and value.get('state') == 'failed':
                     code = value.get('code')
                     if isinstance(code, str) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,80}', code):
@@ -423,9 +420,7 @@ class ProductBridge:
             elif event.startswith('child.client'):
                 self.controls.host_connected = self.host_available and event == 'child.clientConnected'
             self.emit({'event': event, 'detail': {key: item for key, item in detail.items()
-                       if key in ('deviceId', 'code', 'ports', 'attempt', 'firmware')}})
-        elif event == 'diagnostic':
-            self.emit(value)
+                       if key in ('deviceId', 'code', 'ports', 'attempt')}})
         elif value.get('state') == 'failed':
             code = value.get('code')
             self.failure = code if isinstance(code, str) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,80}', code) else 'CANDIDATE_FAILED'

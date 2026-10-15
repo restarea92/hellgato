@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import { resolve, isAbsolute } from 'node:path';
-import { CandidateError, readBoundedJson, diagnosticCode, diagnosticError } from './candidate-config.mjs';
+import { CandidateError, readBoundedJson, diagnosticCode } from './candidate-config.mjs';
 
 /** The supervisor sends start only after placing this process in its Windows
  * kill-on-close job. No config file, worker or host is opened before that gate. */
@@ -25,19 +25,18 @@ export async function runCandidateCli(argv = process.argv.slice(2), { loadModule
   gate.catch(() => {});
   const write = detail => process.stdout.write(JSON.stringify(detail) + '\n');
   const stop = () => { stopping = true; abort.abort(); if (!gateResolved) gateReject(protocolError ?? new CandidateError('CANDIDATE_START_CANCELLED')); void runner?.stop().catch(() => {}); };
-  const fail = error => { protocolError ??= typeof error === 'string' ? new CandidateError(error) : error; stop(); };
-  const report = error => process.stderr.write(JSON.stringify({ schemaVersion: 1, event: 'diagnostic', ...diagnosticError(error) }) + '\n');
+  const fail = code => { protocolError ??= new CandidateError(code); stop(); };
   const hostCommand = command => {
     const pending = runner[command.command === 'hostUnavailable' ? 'pauseDevice' : 'resumeDevice']();
     if (command.command === 'hostAvailable') {
       write({ schemaVersion: 1, event: command.command, requestId: command.requestId, status: 'starting' });
       void pending.catch(error => {
-        report(error); write({ schemaVersion: 1, event: 'productFailed', state: 'failed', code: diagnosticCode(error) }); fail(error);
+        write({ schemaVersion: 1, event: 'productFailed', state: 'failed', code: diagnosticCode(error) }); fail(diagnosticCode(error));
       });
       return Promise.resolve();
     }
     return pending.then(result => write({ schemaVersion: 1, event: command.command, requestId: command.requestId, ...result }))
-      .catch(error => { report(error); write({ schemaVersion: 1, event: 'hostTransitionFailed', requestId: command.requestId, code: diagnosticCode(error) }); });
+      .catch(error => write({ schemaVersion: 1, event: 'hostTransitionFailed', requestId: command.requestId, code: diagnosticCode(error) }));
   };
   const line = bytes => {
     let command;
@@ -61,14 +60,13 @@ export async function runCandidateCli(argv = process.argv.slice(2), { loadModule
       const response = command.requestId ? { requestId: command.requestId } : {};
       void runner.control(command.control).then(result => write({ schemaVersion: 1, event: 'controlSubmitted', ...response, ...result }))
         .catch(error => {
-          report(error);
           write({ schemaVersion: 1, event: 'controlFailed', ...response, code: diagnosticCode(error) });
-          if (!productMode) fail(error);
+          if (!productMode) fail(diagnosticCode(error));
         });
     }
     else if (command.command === 'workerState' && runner && productMode && command.requestId) {
       void runner.getProductWorkerState().then(result => write({ schemaVersion: 1, event: 'workerState', requestId: command.requestId, ...result }))
-        .catch(error => { report(error); write({ schemaVersion: 1, event: 'workerStateFailed', requestId: command.requestId, code: diagnosticCode(error) }); });
+        .catch(error => write({ schemaVersion: 1, event: 'workerStateFailed', requestId: command.requestId, code: diagnosticCode(error) }));
     }
     else if (['hostUnavailable', 'hostAvailable'].includes(command.command) && runner && productMode && command.requestId) {
       void hostCommand(command);
@@ -87,7 +85,7 @@ export async function runCandidateCli(argv = process.argv.slice(2), { loadModule
   const signal = () => stop();
   process.once('SIGINT', signal); process.once('SIGTERM', signal);
   if (interactiveInput) { process.stdin.on('data', data); process.stdin.once('end', eof); process.stdin.on('error', eof); }
-  let timeout, failure;
+  let timeout;
   try {
     if (supervised) {
       timeout = setTimeout(() => { fail('CANDIDATE_START_TIMEOUT'); }, 10000);
@@ -113,28 +111,23 @@ export async function runCandidateCli(argv = process.argv.slice(2), { loadModule
       if (!pendingHostCommands.some(command => command.command === 'hostUnavailable')) await runner.start();
       for (const command of pendingHostCommands.splice(0)) await hostCommand(command);
       await runner.completed;
-      const status = runner.getStatus();
-      if (status.state === 'failed') throw Object.assign(new CandidateError(status.code), status.error);
+      if (runner.getStatus().state === 'failed') throw new CandidateError(runner.getStatus().code);
     }
     if (protocolError) throw protocolError;
   } catch (error) {
-    failure = error;
     if (productMode) write({ schemaVersion: 1, event: 'productFailed', state: 'failed', code: diagnosticCode(error) });
     throw error;
   } finally {
     clearTimeout(timeout);
-    let cleanupFailure;
-    try { await runner?.stop(); }
-    catch (error) { report(error); cleanupFailure = error; }
+    await runner?.stop();
     process.removeListener('SIGINT', signal); process.removeListener('SIGTERM', signal);
     if (interactiveInput) { process.stdin.removeListener('data', data); process.stdin.removeListener('end', eof); process.stdin.removeListener('error', eof); process.stdin.pause(); }
-    if (!failure && cleanupFailure) throw cleanupFailure;
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   runCandidateCli().catch(error => {
-    process.stderr.write(JSON.stringify({ schemaVersion: 1, engine: 'ipc-candidate', state: 'failed', ...diagnosticError(error), physicalHardwareVerified: false }) + '\n');
+    process.stderr.write(JSON.stringify({ schemaVersion: 1, engine: 'ipc-candidate', state: 'failed', code: diagnosticCode(error), physicalHardwareVerified: false }) + '\n');
     process.exitCode = 1;
   });
 }

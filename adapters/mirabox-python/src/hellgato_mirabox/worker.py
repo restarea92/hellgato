@@ -10,7 +10,6 @@ import signal
 import sys
 import threading
 import tempfile
-import traceback
 
 from . import __version__
 from .protocol import (VERSION, FEATURES, MAX_MESSAGE_BYTES, MAX_FRAME_BYTES, MAX_REQUESTS,
@@ -251,13 +250,8 @@ class Worker:
                     text = str(exc)[:1024] if isinstance(exc, ProtocolError) else 'Malformed protocol message'
                     details = self._error_details({'code': name})
                     self.send({'jsonrpc': '2.0', 'id': request_id, 'error': {'code': code, 'message': text, 'data': details}})
-                except Exception as exc:
-                    details = self._error_details({'code': 'ERR_DEVICE_OPERATION', 'outcome': 'unknown',
-                        'exceptionType': type(exc).__name__, 'message': str(exc)[:1024],
-                        'stack': traceback.format_exc(limit=8)[-4096:]})
-                    native_code = getattr(exc, 'winerror', None) or getattr(exc, 'errno', None)
-                    if type(native_code) is int:
-                        details['nativeCode'] = native_code
+                except Exception:
+                    details = self._error_details({'code': 'ERR_DEVICE_OPERATION', 'outcome': 'unknown'})
                     self.send({'jsonrpc': '2.0', 'id': request_id, 'error': {'code': -32000,
                         'message': 'Physical backend operation failed', 'data': details}})
                 finally:

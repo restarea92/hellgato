@@ -174,7 +174,7 @@ class DisplayObservationTests(unittest.TestCase):
         backend.display = None
         self.assertIsNone(backend.get_state()['displayObservations'])
 
-    def test_worker_error_reply_preserves_failed_snapshot_and_native_exception_details(self):
+    def test_worker_error_reply_carries_failed_snapshot_without_raw_exception_text(self):
         backend = FakeBackend()
         worker = Worker(backend, io.BytesIO(), io.BytesIO(), 'tests')
         deadline = int(time.time() * 1000) + 3000
@@ -198,10 +198,7 @@ class DisplayObservationTests(unittest.TestCase):
         with patch.object(worker, '_read'), patch.object(worker, 'send', side_effect=finish):
             self.assertEqual(worker.run(), 0)
         self.assertEqual(replies[0]['error']['data']['displayObservations'], snapshot)
-        self.assertEqual(replies[0]['error']['data']['message'], 'PRIVATE native error')
-        self.assertEqual(replies[0]['error']['data']['exceptionType'], 'OSError')
-        self.assertIn('OSError: PRIVATE native error', replies[0]['error']['data']['stack'])
-        self.assertLessEqual(len(replies[0]['error']['data']['stack']), 4096)
+        self.assertNotIn('PRIVATE', json.dumps(replies))
 
     def test_worker_deadline_reply_exposes_mid_lcd_submissions_and_failed_key(self):
         backend = object.__new__(MiraboxBackend)

@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 
@@ -92,39 +91,6 @@ class WorkerTests(unittest.TestCase):
         with self.assertRaises(ProtocolError) as caught:
             self.request('firmwareWrite')
         self.assertEqual(caught.exception.rpc_code, -32601)
-
-    def test_backend_failure_preserves_original_native_error_and_trace(self):
-        helper = f"""
-import sys
-sys.path.insert(0, {str(SOURCE)!r})
-from hellgato_mirabox.worker import Worker
-from hellgato_mirabox.transport.fake import FakeBackend
-backend = FakeBackend()
-def discover(*args):
-    raise OSError(5, 'USB firmware probe failed')
-backend.discover = discover
-Worker(backend, sys.stdin.buffer, sys.stdout.buffer, 'test-build').run()
-"""
-        with tempfile.TemporaryDirectory() as folder:
-            process = subprocess.Popen([sys.executable, '-c', helper], cwd=folder,
-                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            try:
-                for identifier, method, params in [('hello', 'hello', {'protocol': {'major': 1, 'minor': 0}}),
-                                                   ('probe', 'discover', {})]:
-                    params['deadlineAt'] = int(time.time() * 1000) + 3000
-                    process.stdin.write((json.dumps({'jsonrpc': '2.0', 'id': identifier, 'method': method,
-                                                    'params': params}) + '\n').encode())
-                    process.stdin.flush()
-                    response = json.loads(process.stdout.readline())
-                self.assertEqual(response['error']['data']['code'], 'ERR_DEVICE_OPERATION')
-                self.assertEqual(response['error']['data']['nativeCode'], 5)
-                self.assertIn('USB firmware probe failed', response['error']['data']['message'])
-                self.assertIn('OSError', response['error']['data']['stack'])
-            finally:
-                process.stdin.close()
-                process.wait(timeout=3)
-                process.stdout.close()
-                process.stderr.close()
 
     def test_duplicate_request_id_and_stale_generation_rejected(self):
         self.open()

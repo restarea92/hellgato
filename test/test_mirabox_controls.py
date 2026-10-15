@@ -638,22 +638,12 @@ class NativeLifecycleTests(unittest.TestCase):
         with patch('hellgato_mirabox.models.n4_pro.state.DisplayState') as display:
             with self.assertRaises(ProtocolError) as caught:
                 self.backend.open('selected', Mock())
-        self.assertEqual(caught.exception.code, 'ERR_FIRMWARE_CHANGED')
+        self.assertEqual(caught.exception.code, 'ERR_FIRMWARE_UNVERIFIED')
         display.assert_not_called()
         self.assertIsNone(self.backend.device)
         self.assertIsNone(self.backend.temporary)
         self.native_close.assert_called_once()
         self.backend.ownership.close.assert_not_called()
-
-    def test_unverified_firmware_attempts_normal_open_and_preserves_version(self):
-        firmware = 'V4.N4 Pro.02.011'
-        self.device.firmware_version = firmware
-        self.device.transport.get_firmware_version.return_value = firmware
-        result = self.backend.open('selected', Mock())
-        self.assertEqual(result['firmware'], firmware)
-        self.device.open.assert_called_once()
-        self.assertIsNotNone(self.backend.display)
-        self.backend.close()
 
     def test_even_reviewed_firmware_change_requires_new_discovery(self):
         with patch('hellgato_mirabox.transport.mirabox.require_candidate_firmware',

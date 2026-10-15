@@ -5,7 +5,7 @@ import { createSession, createSidecarAdapter, createDeviceBridge } from 'hellgat
 import { createMiraboxN4ProAdapter, createN4ProMappingProfile } from 'hellgato/adapters/mirabox-n4-pro';
 import { assertControlCommand, assertDeviceDescriptor } from '@hellgato/core/contracts';
 import { CandidateError, validateCandidateConfig, loadCandidateManifest, loadCandidateSettings,
-  saveCandidateSettings, createCandidateDiagnostics, diagnosticCode, diagnosticError, validateSettings } from './candidate-config.mjs';
+  saveCandidateSettings, createCandidateDiagnostics, diagnosticCode, validateSettings } from './candidate-config.mjs';
 import { createCandidateReadiness } from './candidate-readiness.mjs';
 import { createCandidateObservations } from './candidate-observability.mjs';
 import { createCandidateOutputQueue } from './candidate-output-queue.mjs';
@@ -201,8 +201,6 @@ export async function discoverProductDevices(input, dependencies = {}) {
     const devices = await adapter.discover(options);
     if (!Array.isArray(devices) || devices.length > 64) throw new CandidateError('INVALID_DISCOVERY');
     for (const device of devices) assertDeviceDescriptor(device);
-    const record = dependencies.record ?? createCandidateDiagnostics(config.diagnosticsPath);
-    for (const device of devices) record('firmwareDiscovered', { firmware: device.firmware });
     return clone(devices.filter(device => device.adapterId === adapter.descriptor.id && adapter.descriptor.modelIds.includes(device.modelId)));
   } finally { await adapter.stop(); }
 }
@@ -271,7 +269,7 @@ export function createCandidateRunner(input, dependencies = {}) {
   const failOutput = error => {
     if (stopping || outputFailure) return;
     outputFailure = error; hostApproved = false;
-    count('diagnostics'); record('diagnostic', { ...diagnosticError(error), generation: session.generation });
+    count('diagnostics'); record('diagnostic', { code: diagnosticCode(error), generation: session.generation });
     void session.stop().then(async () => { await closeRetainedNetwork(); terminal(error); })
       .catch(async () => { await closeRetainedNetwork().catch(() => {}); terminal(new CandidateError('CLEANUP_FAILED')); });
   };
@@ -316,7 +314,7 @@ export function createCandidateRunner(input, dependencies = {}) {
         } else network.current?.facade.emit(event, detail);
       };
       const connected = relay('clientConnected'), disconnected = relay('clientDisconnected');
-      const diagnostic = detail => { count('diagnostics'); record('diagnostic', { ...diagnosticError(detail), generation: session.generation }); };
+      const diagnostic = detail => { count('diagnostics'); record('diagnostic', { code: diagnosticCode(detail), generation: session.generation }); };
       bridge.on('output', relayOutput); bridge.on('lcdFrameStarted', saver); bridge.on('diagnostic', diagnostic);
       bridge.on('clientConnected', connected); bridge.on('clientDisconnected', disconnected);
       network.close = async () => {
@@ -382,17 +380,17 @@ export function createCandidateRunner(input, dependencies = {}) {
   let state = 'idle', stopping = false, launching = false, recovery = null, startPromise, stopPromise;
   let hostTransition = Promise.resolve(), hostRequest = 0;
   let readyGeneration = 0, disconnectedGeneration = 0;
-  let lastCode = null, lastError = null, completion;
+  let lastCode = null, completion;
   const completed = new Promise(resolve => { completion = resolve; });
   const snapshot = () => ({ schemaVersion: 1, engine: 'ipc-candidate', state, generation: session.generation,
-    code: lastCode, ...(lastError ? { error: lastError } : {}), counters: { ...counts, inputSuppressed: Math.max(0, counts.inputObserved - counts.inputForwarded - counts.inputNotDelivered) },
+    code: lastCode, counters: { ...counts, inputSuppressed: Math.max(0, counts.inputObserved - counts.inputForwarded - counts.inputNotDelivered) },
     observations: observations.snapshot(), physicalHardwareVerified: false, simulation: selfTest });
   const setState = next => {
     state = next; record(next, { generation: session.generation }); emitter.emit('state', snapshot());
     if (next === 'reconnecting') product('reconnecting', { attempt: counts.reconnectAttempts });
     else if (next === 'stopped') product('stopped');
   };
-  const terminal = error => { lastError = diagnosticError(error); lastCode = lastError.code; record('failure', lastError); setState('failed'); completion(snapshot()); };
+  const terminal = error => { lastCode = diagnosticCode(error); record('failure', { code: lastCode }); setState('failed'); completion(snapshot()); };
   const reconnect = reason => {
     if (hostSuspended) return Promise.resolve();
     if (recovery) return recovery;
@@ -407,13 +405,13 @@ export function createCandidateRunner(input, dependencies = {}) {
         catch (failure) { if (stopping || hostSuspended) return; throw failure; }
         if (stopping || hostSuspended) return;
         try { await session.reconnect(); lastCode = null; setState('ready'); return; }
-        catch (next) { record('reconnectFailed', diagnosticError(next)); error = next; }
+        catch (next) { error = next; }
       }
       if (!stopping && !hostSuspended) {
         // A failed final cleanup must still settle the supervisor's completion
         // promise. The Windows job remains responsible for any unreaped process.
         try { await session.stop(); await closeRetainedNetwork(); }
-        catch (cleanupError) { record('cleanupFailed', diagnosticError(cleanupError)); }
+        catch { error = new CandidateError('CLEANUP_FAILED'); }
         finally { terminal(error); }
         throw error;
       }
@@ -428,7 +426,6 @@ export function createCandidateRunner(input, dependencies = {}) {
       activeBridge.resumeOutput();
       if (readyGeneration !== status.generation) {
         const event = readyGeneration ? 'deviceReconnected' : 'deviceReady'; readyGeneration = status.generation;
-        record(event, { generation: status.generation, firmware: session.device?.firmware, connected: true });
         product(event, productDevice(session.device));
       }
     }
@@ -437,10 +434,10 @@ export function createCandidateRunner(input, dependencies = {}) {
   session.on('adapterState', detail => {
     if (!stopping && ['disconnected', 'failed', 'crashed'].includes(detail.state ?? detail.status) && disconnectedGeneration !== session.generation) {
       retainedNetwork?.queue.pause();
-      disconnectedGeneration = session.generation; record('deviceDisconnected', { generation: session.generation, connected: false, code: 'ADAPTER_DISCONNECTED' }); product('deviceDisconnected', { code: 'ADAPTER_DISCONNECTED' });
+      disconnectedGeneration = session.generation; product('deviceDisconnected', { code: 'ADAPTER_DISCONNECTED' });
     }
   });
-  session.on('diagnostic', detail => { count('diagnostics'); record('diagnostic', { ...diagnosticError(detail), generation: session.generation }); });
+  session.on('diagnostic', detail => { count('diagnostics'); record('diagnostic', { code: diagnosticCode(detail), generation: session.generation }); });
   session.on('input', event => { count(event.delivered ? 'inputForwarded' : 'inputNotDelivered'); if (event.delivered) adapter.inputForwarded(); });
   session.on('output', event => {
     const key = `${event.generation}:${event.sequence}`;
