@@ -1,6 +1,6 @@
 {
   "name": "hellgato",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Stream Deck network bridge for third-party hardware",
   "type": "module",
   "exports": {
