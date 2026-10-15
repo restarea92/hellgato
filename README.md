@@ -4,17 +4,16 @@
 
 <h1 align="center">Hellgato</h1>
 
-<p align="center">
-  <strong>Unofficial hardware. Official software.</strong>
-</p>
+<p align="center"><strong>Unofficial hardware. Official software.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/restarea92/hellgato/releases/download/v0.1.2/Hellgato-0.1.2-Setup.exe"><strong>Download for Windows (.exe)</strong></a> ·
-  <a href="docs/guide.md">Guide &amp; development</a> ·
+  <a href="https://github.com/restarea92/hellgato/releases/download/v0.1.3/Hellgato-0.1.3-Setup.exe"><strong>Download for Windows (.exe)</strong></a> ·
+  <a href="https://github.com/restarea92/hellgato/releases/tag/v0.1.3">Release notes &amp; SHA-256</a> ·
+  <a href="docs/guide.md">Guide</a> ·
   <a href="https://github.com/restarea92/hellgato/issues">Report an issue</a>
 </p>
 
-Hellgato is an open-source project that brings third-party hardware into the official Elgato Stream Deck app. Its Windows client, **Hellgato Stream Dog**, connects your hardware while you configure actions, profiles and plugins in Stream Deck.
+Use your **Mirabox N4 Pro with the official Elgato Stream Deck app**. Hellgato Stream Dog connects the hardware; Stream Deck runs your actions, profiles and plugins. No StreamDock app is required.
 
 <p align="center">
   <img src="app/assets/icons/stream-dog-preview.png" alt="Hellgato Stream Dog pixel-art mascot holding a controller" width="128">
@@ -25,119 +24,40 @@ Hellgato is an open-source project that brings third-party hardware into the off
   <br><sub>Example setup captured with an earlier beta.</sub>
 </p>
 
-## Why Hellgato?
-
-Use the official Stream Deck app with your Mirabox hardware without keeping StreamDock installed. In the Windows setup shown below, StreamDock's reported installation size was 1.38 GB, compared with 711 MB for Stream Deck.
-
-| Application | Version | Windows-reported installed size |
-| --- | --- | --- |
-| StreamDock | 3.10.202.0512 | 1.38 GB |
-| Elgato Stream Deck | 7.6.0.23012 | 711 MB |
-
-<p>
-  <img src="docs/images/streamdock-installed-size.png" alt="Windows installed-app entry for StreamDock 3.10.202.0512 showing 1.38 GB" width="430">
-  <img src="docs/images/stream-deck-installed-size.png" alt="Windows installed-app entry for Elgato Stream Deck 7.6.0.23012 showing 711 MB" width="430">
-</p>
-
-These are installation estimates for the shown versions. Hellgato and additional plugins require extra disk space; runtime CPU and RAM usage have not been benchmarked.
-
-## Stream Deck compatibility
-
-Targets the specifically checked Stream Deck builds below on Windows x64. A higher version number alone does not establish compatibility. Startup, USB reconnection and manual Stream Deck relaunch were verified with **7.6.0.23012**. Compatibility is checked before preparing startup support and before connecting.
-
-| Stream Deck version | Release date | Test status |
-| --- | --- | --- |
-| 7.5.1 | [2026-07-28](https://help.elgato.com/hc/en-us/articles/49238316077713-Elgato-Stream-Deck-7-5-1-Release-Notes) | Earlier beta tested |
-| 7.6.0.23012 | [2026-09-22](https://help.elgato.com/hc/en-us/articles/51156609278737-Elgato-Stream-Deck-7-6-Release-Notes) | Startup, USB reconnection and manual relaunch verified |
-
-## Supported devices
-
-Targets one registered N4 Pro at a time. Simultaneous use of multiple devices is unsupported. Hardware testing used the device and stock firmware below.
-
-| Device | Tested firmware | Controls | Platform | Status |
-| --- | --- | --- | --- | --- |
-| Mirabox N4 Pro E | `V4.N4 Pro E.02.010` | 10 LCD keys, 4 dials, touch strip | Windows x64 | Startup, reconnection and native knob brightness verified |
-
-**Version:** `0.1.2`. Other devices and firmware versions have not been validated.
-
 ## Get started
 
-1. Install the official [Stream Deck app](https://www.elgato.com/downloads).
-2. Run the [Hellgato Stream Dog installer](https://github.com/restarea92/hellgato/releases/download/v0.1.2/Hellgato-0.1.2-Setup.exe) and approve administrator permission. Setup announces that it will close Stream Deck and Hellgato, closes them, removes the verified previous installation and installs into `%ProgramFiles%\Hellgato`.
-3. On the finish page, choose whether to launch Hellgato Stream Dog now and whether to launch it at Windows sign-in.
-4. Open Stream Deck yourself, connect your N4 Pro over USB and open Hellgato Stream Dog if it is not already running.
-5. In Stream Deck, open **Network** and connect to `127.0.0.1:5343` on first use.
+1. Install the official [Stream Deck app](https://www.elgato.com/downloads), then run the **Windows installer** above as administrator. Setup closes both apps and retains existing settings and profiles.
+2. Choose Hellgato's launch options, open Stream Deck yourself and connect one N4 Pro over USB. Open Hellgato if needed.
+3. In Stream Deck, open **Network**, connect to `127.0.0.1:5343` and confirm pairing.
 
-Complete any pairing confirmation in Stream Deck when prompted.
+Runtimes and the USB SDK are bundled. See the [guide](docs/guide.md#installation-and-updates) for updates, extra plugins and **Prepare Stream Deck**.
 
-The installer bundles the runtimes and USB SDK; no source code, build tools or StreamDock app are required. Updating from an earlier installation retains your settings and profiles. Install any extra Stream Deck plugins separately.
+## Before you install
 
-The installer adds a startup DLL beside Stream Deck once. Each Stream Deck launch prepares the ten-key model before it becomes available to devices, even when N4 Pro is unplugged. Hellgato waits for Stream Deck to be opened by you, retains the network listener when Stream Deck closes and releases the USB session to native standby. A newly prepared host reconnects automatically. Reconnecting USB restores the hardware connection while keeping the virtual device connection intact.
+- Windows x64; tested with N4 Pro E firmware `V4.N4 Pro E.02.010` and Stream Deck `7.6.0.23012`. Other combinations are unverified.
+- The installer is unsigned. Startup support adjusts Stream Deck's process memory on every launch, even with N4 Pro unplugged; `StreamDeck.exe` stays unchanged on disk.
+- Simultaneous use with a genuine **Stream Deck + is unsupported** while startup support is installed.
+- Dial holds/release actions and **Advanced → Standby image** are unsupported. Read the [full limitations](docs/guide.md#compatibility-and-limitations).
 
-If preparation is needed after installation or a Stream Deck app update, close Stream Deck yourself and choose **Prepare Stream Deck** in Hellgato Stream Dog. A changed executable hash requires a new plan; unsupported internal structures are rejected. See the [guide](docs/guide.md#build-and-test) for source setup and diagnostics.
+## How it works
 
-## Features
+<p align="center">
+  <img src="docs/visuals/hellgato-network.gif" alt="Conceptual overview of N4 Pro, the Python USB worker, Hellgato SDK session and Stream Deck app" width="800">
+  <br><sub>Conceptual overview: input goes to Stream Deck; display updates return to N4 Pro. The virtual device is a logical identity.</sub>
+</p>
 
-- Configure actions, profiles, brightness and sleep timing in Stream Deck.
-- See remembered devices with their names, assigned Stream Deck serials and live USB connection status. Disconnected devices remain in the list; their physical identities are saved for future connections.
-- Adjust knob brightness below the display brightness control in Stream Deck's device settings. Drag to change it immediately; the independent value is saved when the adjustment finishes. Sleep turns knob lighting off and wake restores it.
-- Set screensavers in Stream Deck; Hellgato plays the saved originals through the N4 SDK. Sleep turns the screen off when no screensaver is set, or dims the screensaver and turns off knob lighting. Wake restores the display and brightness.
-- Export profiles as a `.hellgatoProfiles` bundle (`Ctrl+E`); import bundles or `.streamDeckProfile` files (`Ctrl+I`) after closing Stream Deck. Replaced profiles are backed up.
-- Elgato firmware updates are hidden for the virtual N4 Pro, and unsupported firmware writes are rejected by the bridge.
-- Tray operation, optional Windows sign-in startup and eleven interface languages.
+Normal images pass through the Node SDK session and USB worker; saved screensavers play from the worker's local cache. [Architecture details](docs/guide.md#how-it-works).
 
-### Planned N4 Pro controls
+## Develop and contribute
 
-- Knob RGB colors: all four together or individually, and default-effect reset.
-- Vibration on/off.
-- Existing boot video on/off.
-- Upload and reset the device-stored boot/standby logo.
+The reusable TypeScript SDK (`hellgato` and `@hellgato/core`) is separate from the Windows client.
 
-## Known limitations
-
-The installer is unsigned.
-
-Ten-key and touch-strip support adjust Stream Deck process memory at startup. The full `StreamDeck.exe` stays unchanged on disk; installation adds `version.dll`, `HellgatoStartup.plan` and the `HellgatoStartup.json` ownership manifest beside it. Uninstallation removes only files whose ownership and contents match that manifest. The ten-key model changes Stream Deck's shared Plus model, so simultaneous use with a genuine Stream Deck + is unsupported, including when the N4 is unplugged but the startup shim remains installed.
-
-N4 Pro does not report dial release events. Dial holds, actions triggered on release, press-duration detection, momentary actions, hold-to-repeat, press-and-turn, and overlapping held dial presses cannot be reproduced accurately with stock firmware.
-
-N4 Pro stores a single static boot/standby logo on the device, separate from PC-stored screensavers. It appears after the boot video and when no app is connected. Hellgato does not write, upload or reset this logo. Stream Deck's **Advanced → Standby image** setting remains unsupported and may disconnect the virtual device.
-
-Touch alignment across plugins, extended use and reboot recovery need broader hardware testing. [Report issues](https://github.com/restarea92/hellgato/issues) with your device, Stream Deck version and reproduction steps. Review logs and exported profiles for personal information before sharing.
-
-Quitting only Hellgato can leave the last screen visible for tens of seconds before native standby. Relaunching Hellgato while Stream Deck stays open requires manual network pairing; key icons work after pairing.
-
-## Documentation and contributing
-
-See the [guide](docs/guide.md) for everyday use, local data, builds and contributing, or the [Node bridge API](packages/core) for device integrations. Bug fixes, hardware reports and [translation feedback](https://github.com/restarea92/hellgato/issues/new?template=translation.yml) are welcome.
-
-## SDK architecture
-
-The app separates the reusable core, explicit adapter/session SDK, and
-Stream Dog product. Windows builds consume npm tarballs offline. The desktop app
-starts the SDK session and a separate Python USB worker automatically, retains
-the saved device identity, and connects the native preferences controls through
-its local control endpoint. The USB vendor SDK is bundled only with the worker.
-
-Streamed screensaver frames preserve normal button and touch-strip images so
-input can restore them. Changesets batches version and changelog updates into a
-reviewed PR. After an app version reaches main, automation prepares an installer
-in a GitHub draft release; the owner publishes it manually. npm publication
-remains deferred. See [version management](.changeset/README.md) and
-[Windows release operations](docs/windows-releases.md).
-The older [isolated IPC trial](docs/compatibility/ipc-trial.md) remains available
-for development; the ordinary installer now includes the worker directly.
-The device owner confirmed initial icons, USB reconnect with automatic pairing,
-native standby after Stream Deck exit, and automatic reconnect after Stream Deck
-restart, along with button/knob/touch actions, profile/page image changes,
-display/knob brightness and sleep/wake. Extended use and additional device/firmware
-combinations still require hardware testing.
-See the [architecture and staged rollout](docs/architecture/0001-device-neutral-sdk.md),
-[adapter guide](docs/adapters/contributing.md), and
-[evidence requirements](docs/compatibility/architecture-candidate.md).
+- [Build, test and contribute](docs/guide.md#build-and-test) · [Core API](packages/core) · [Adapter guide](docs/adapters/contributing.md)
+- [Features and compatibility](docs/guide.md) · [Translation feedback](https://github.com/restarea92/hellgato/issues/new?template=translation.yml)
+- [Version management](.changeset/README.md) · [Windows release operations](docs/windows-releases.md)
 
 ## License
 
-[MIT](LICENSE). Bundled dependencies keep their own licenses; see [third-party notices](installer/THIRD-PARTY-NOTICES.txt).
+[MIT](LICENSE). Bundled dependencies retain their own licenses; see [third-party notices](installer/THIRD-PARTY-NOTICES.txt).
 
 Hellgato is an independent project, not affiliated with or endorsed by Elgato or Mirabox.
