@@ -202,34 +202,45 @@ class DisplayTests(unittest.TestCase):
             mirror.tick()
             self.assertFalse(mirror.idle)
 
-    def test_full_lcd_maps_all_ten_keys_and_strip_and_keeps_action_cache(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            device = Mock()
-            rendered = {}
-            def key_image(index, path):
-                with Image.open(path) as image:
-                    rendered[index] = image.getpixel((60, 60))
-            device.set_key_image.side_effect = key_image
-            mirror = DisplayMirror(device, root, 'frame')
-            Image.new('RGB', (120, 120), 'blue').save(root / 'key-0.jpg', format='PNG')
-            mirror.apply({'event': 'keyImage', 'detail': {'keyIndex': 0}})
-            image = Image.new('RGB', (800, 480), 'black')
-            for index in range(10):
-                x, y = 13 + index % 5 * 164, 12 + index // 5 * 160
-                image.paste((index * 20, 0, 0), (x, y, x + 120, y + 120))
-            image.paste('green', (0, 380, 800, 480))
-            image.save(root / 'lcd.jpg', format='PNG')
-            mirror.apply_batch([{'event': 'lcdImage', 'detail': {'file': 'lcd.jpg'}}])
-            for index in range(10):
-                self.assertEqual(rendered[index + 1], (index * 20, 0, 0))
-            self.assertFalse((root / 'lcd.jpg').exists())
-            strip = device.transport.set_background_frame_stream.call_args.args[0]
-            with Image.open(BytesIO(strip)) as frame:
-                self.assertGreater(frame.getpixel((300, 50))[1], 100)
-            self.assertEqual(mirror.strip.getpixel((300, 50)), (0, 0, 0))
-            mirror.notify_input()
-            self.assertEqual(rendered[1], (0, 0, 255))
+    def test_streamed_screensaver_sends_one_full_frame_and_restores_action_cache(self):
+        for mode in ('frame', 'panels'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                device = Mock()
+                rendered = {}
+                def key_image(index, path):
+                    with Image.open(path) as image:
+                        rendered[index] = image.getpixel((60, 60))
+                device.set_key_image.side_effect = key_image
+                mirror = DisplayMirror(device, root, mode)
+                Image.new('RGB', (120, 120), 'blue').save(root / 'key-0.jpg', format='PNG')
+                mirror.apply({'event': 'keyImage', 'detail': {'keyIndex': 0}})
+                device.reset_mock()
+                for number, color in enumerate(('red', 'green'), 1):
+                    image = Image.new('RGB', (800, 480), color)
+                    image.paste('blue', (0, 0, 100, 100))
+                    image.save(root / 'lcd.jpg', format='PNG')
+                    mirror.apply_batch([{'event': 'lcdImage', 'detail': {'file': 'lcd.jpg'}}])
+                    self.assertFalse((root / 'lcd.jpg').exists())
+                    self.assertEqual(device.transport.set_background_frame_stream.call_count, number)
+                    self.assertEqual(device.refresh.call_count, number)
+                    data, *geometry = device.transport.set_background_frame_stream.call_args.args
+                    self.assertEqual(geometry, [800, 480, 0, 0])
+                    with Image.open(BytesIO(data)) as frame:
+                        self.assertGreater(frame.getpixel((750, 430))[2], 240)
+                    device.set_key_image.assert_not_called()
+                    device.set_seondscreen_image.assert_not_called()
+                mirror.apply({'event': 'screensaver'})
+                self.assertEqual(device.transport.set_background_frame_stream.call_count, 3)
+                device.clearAllIcon.assert_called_once()
+                device.set_key_image.assert_not_called()
+                device.set_seondscreen_image.assert_not_called()
+                self.assertEqual(mirror.keys[0].getpixel((60, 60)), (0, 0, 255))
+                self.assertEqual(mirror.strip.getpixel((300, 50)), (0, 0, 0))
+                self.assertEqual(mirror.background.getpixel((400, 240)), (0, 0, 0))
+                mirror.notify_input()
+                self.assertEqual(rendered[1], (0, 0, 255))
+                self.assertFalse(mirror.idle)
 
     def test_full_screen_then_individual_key_fill_preserves_order_and_wake_state(self):
         with tempfile.TemporaryDirectory() as directory:

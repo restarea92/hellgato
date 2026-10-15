@@ -228,9 +228,16 @@ class DisplayMirror:
             self.device.transport.set_background_frame_stream(frame, 800, 480, 0, 0)
             self.device.refresh()
 
+    def _show_screensaver_frame(self, image, *, clear_keys):
+        if clear_keys:
+            self.device.clearAllIcon()
+        self._write_frame(image.transpose(Image.Transpose.ROTATE_180))
+        self.device.refresh()
+
     def _enter_idle(self, reload=True):
         if reload:
             self._reload_screensaver(force=not self.idle)
+        first = not self.idle or not self.overlay
         self.idle = True
         self.sleep_candidate = None
         self._set_led_level(0)
@@ -244,7 +251,7 @@ class DisplayMirror:
                 self._start_fade(0)
             self.overlay = True
         elif self.screensaver is not None:
-            self._show_lcd(self.screensaver)
+            self._show_screensaver_frame(self.screensaver, clear_keys=first)
             self._wake()
             self._start_fade(0)
             self.overlay = True
@@ -393,7 +400,7 @@ class DisplayMirror:
             if image is not None:
                 first = not self.idle or not self.overlay
                 self.screensaver = image
-                self._show_lcd(image)
+                self._show_screensaver_frame(image, clear_keys=first)
                 self._wake()
                 self._set_led_level(0)
                 if first:
