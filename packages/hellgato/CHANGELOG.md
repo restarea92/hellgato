@@ -1,5 +1,22 @@
 # hellgato
 
+## 0.2.0
+
+### Minor Changes
+
+- b7c8f2d: Expose device-neutral SDK contracts and their JSON schema from `@hellgato/core`, including device descriptors, capabilities, mapping profiles, validated input events and display/control output. Add `createDeviceBridge`, `createSession` and `createSidecarAdapter` for library consumers while preserving `createBridge` and `createN4ProProfile`.
+  
+  Add the `hellgato/adapters/mirabox-n4-pro` mapping-profile entry point and `hellgato/testing` simulation/conformance helpers. The bounded Python sidecar API remains experimental; simulator results do not establish hardware compatibility.
+- 6cbc736: Generate SDK JavaScript and declaration files from strictly checked TypeScript sources, including typed bridge output/connection listeners and session events.
+  
+  Fix SDK sidecar reuse across sessions by tracking worker-process generations. Retain device ownership until close succeeds so failed cleanup can be retried safely.
+
+### Patch Changes
+
+- Updated dependencies [b7c8f2d]
+- Updated dependencies [6cbc736]
+  - @hellgato/core@0.2.0
+
 ## 0.1.0
 
 Prepared source baseline on 2026-10-13; **not published to npm** as of 2026-10-15. This entry records source changes before Changesets adoption, not a registry release. Later SDK work is tracked by pending changesets.
