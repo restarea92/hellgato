@@ -120,8 +120,11 @@ the saved device identity, and connects the native preferences controls through
 its local control endpoint. The USB vendor SDK is bundled only with the worker.
 
 Streamed screensaver frames preserve normal button and touch-strip images so
-input can restore them. Windows releases are published manually; automated releases
-and npm publication are deferred.
+input can restore them. Changesets batches version and changelog updates into a
+reviewed PR. After an app version reaches main, automation prepares an installer
+in a GitHub draft release; the owner publishes it manually. npm publication
+remains deferred. See [version management](.changeset/README.md) and
+[Windows release operations](docs/windows-releases.md).
 The older [isolated IPC trial](docs/compatibility/ipc-trial.md) remains available
 for development; the ordinary installer now includes the worker directly.
 The device owner confirmed initial icons, USB reconnect with automatic pairing,

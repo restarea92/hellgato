@@ -13,17 +13,17 @@
     "test:npm": "node scripts/verify-npm.mjs",
     "test": "node --test test/*.test.mjs",
     "changeset": "changeset",
-    "release:impact": "node scripts/check-release-impact.mjs",
-    "release:version": "node scripts/release-version.mjs",
+    "release:version": "node scripts/version-packages.mjs",
     "release:metadata": "node scripts/sync-release-metadata.mjs",
     "release:metadata:check": "node scripts/sync-release-metadata.mjs --check",
-    "release:plan:check": "node scripts/release-version.mjs --check-plan",
     "test:release": "node --test test/release-*.test.mjs",
     "pack:npm": "node scripts/pack-npm.mjs",
     "typecheck": "node scripts/build-typescript.mjs --check && tsc -p tsconfig.sdk-tests.json",
     "check:architecture": "node scripts/check-architecture.mjs",
     "stage:windows-sdk": "node scripts/stage-windows-sdk.mjs",
-    "build:types": "node scripts/build-typescript.mjs"
+    "build:types": "node scripts/build-typescript.mjs",
+    "release:status": "node scripts/version-packages.mjs --status",
+    "test:version": "node --test test/version-*.test.mjs"
   },
   "packageManager": "pnpm@11.10.0",
   "devDependencies": {
