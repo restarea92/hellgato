@@ -18,7 +18,7 @@ const workerState = { generation: 1, state: { brightness: 71, knobBrightness: 15
 const wrapper = `
 import { EventEmitter } from 'node:events';
 import { runCandidateCli } from ${JSON.stringify(runnerUrl)};
-import { diagnosticCode } from ${JSON.stringify(configUrl)};
+import { diagnosticError } from ${JSON.stringify(configUrl)};
 const write = value => process.stdout.write(JSON.stringify(value) + '\\n');
 const error = (code, message = 'PRIVATE-FIXTURE-ERROR') => Object.assign(new Error(message), { code });
 const module = {
@@ -32,6 +32,8 @@ const module = {
       async start() {
         starts++; write({ event: 'fixtureRunnerStarted' });
         if (config.scenario === 'fatal-start') throw error('PRIVATE-ERROR-CODE');
+        if (config.scenario === 'firmware-start') throw Object.assign(error('ERR_FIRMWARE_UNVERIFIED', 'Missing firmware'), { details: { operation: 'discover' } });
+        if (config.scenario === 'cleanup-failure') throw error('ERR_FIRMWARE_CHANGED', 'Firmware changed');
         state = 'ready';
         runner.emit('product', { schemaVersion: 1, event: 'bridgeReady', generation: 1 });
         runner.emit('product', { schemaVersion: 1, event: 'started', generation: 1, ports: { primary: 5343, child: 5344 } });
@@ -54,6 +56,7 @@ const module = {
         if (!starts) await runner.start(); state = 'ready'; return { status: 'ready' };
       },
       async stop() {
+        if (config.scenario === 'cleanup-failure') throw error('CLEANUP_FAILED', 'Cleanup did not close');
         if (state === 'stopped') return;
         state = 'stopped';
         runner.emit('product', { schemaVersion: 1, event: 'stopped', generation: 1 });
@@ -73,7 +76,7 @@ await runCandidateCli(process.argv.slice(2), { loadModule: async options => {
   if (process.env.HELLGATO_TEST_MODULE_DELAY_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.HELLGATO_TEST_MODULE_DELAY_MS)));
   write({ event: 'fixtureModuleLoaded', selfTest: options.selfTest }); return module;
 } }).catch(error => {
-  process.stderr.write(JSON.stringify({ event: 'fixtureCliFailed', code: diagnosticCode(error) }) + '\\n');
+  process.stderr.write(JSON.stringify({ event: 'fixtureCliFailed', ...diagnosticError(error) }) + '\\n');
   process.exitCode = 1;
 });
 `;
@@ -131,7 +134,7 @@ test('commands before the supervised start gate fail without reading missing con
   f.send({ command: 'status', requestId: 1 });
   assert.deepEqual(await f.completed, { code: 1, signal: null });
   assert.ok(!f.records.some(record => record.event === 'fixtureModuleLoaded'));
-  assert.deepEqual(JSON.parse(f.stderr), { event: 'fixtureCliFailed', code: 'CANDIDATE_START_REQUIRED' });
+  assert.equal(JSON.parse(f.stderr).code, 'CANDIDATE_START_REQUIRED');
   assert.ok(!f.stderr.includes('ENOENT'));
 });
 
@@ -177,7 +180,14 @@ test('product CLI correlates successful and failed controls and worker queries w
   assert.equal(f.closed, undefined);
   assert.ok(!f.stdout.includes('PRIVATE')); assert.ok(!f.records.some(record => record.event === 'productFailed'));
   f.send({ command: 'stop' }); assert.deepEqual(await f.completed, { code: 0, signal: null });
-  assert.equal(f.records.filter(record => record.event === 'stopped').length, 1); assert.equal(f.stderr, '');
+  assert.equal(f.records.filter(record => record.event === 'stopped').length, 1);
+  const diagnostics = f.stderr.trim().split('\n').map(JSON.parse);
+  assert.equal(diagnostics.length, 3);
+  for (const detail of diagnostics) {
+    assert.equal(detail.event, 'diagnostic'); assert.equal(detail.code, 'CANDIDATE_CONTROL_NOT_READY');
+    assert.equal(detail.originalCode, 'CANDIDATE_CONTROL_NOT_READY'); assert.equal(detail.message, 'PRIVATE-FIXTURE-ERROR');
+    assert.ok(detail.stack.includes('PRIVATE-FIXTURE-ERROR'));
+  }
 });
 
 test('host availability acknowledges immediately while an unresolved device resume leaves status pause and stop responsive', { timeout: 10000 }, async t => {
@@ -205,13 +215,27 @@ test('discovery CLI uses the discovery module with cancellation and exits after 
   assert.ok(!f.records.some(record => record.event === 'fixtureRunnerCreated')); assert.deepEqual(f.invalidLines, []); assert.equal(f.stderr, '');
 });
 
-test('fatal product startup and discovery failures expose only bounded diagnostic codes on stdout', { timeout: 10000 }, async t => {
-  for (const [scenario, args, code] of [['fatal-start', [], 'CANDIDATE_FAILED'], ['fatal-discovery', ['--discover'], 'ERR_WORKER_START']]) {
+test('fatal product failures keep bounded stdout codes and detailed original errors on stderr', { timeout: 10000 }, async t => {
+  for (const [scenario, args, code] of [['fatal-start', [], 'CANDIDATE_FAILED'], ['fatal-discovery', ['--discover'], 'ERR_WORKER_START'], ['firmware-start', [], 'ERR_FIRMWARE_UNVERIFIED']]) {
     const f = fixture(t, { config: { productMode: true, scenario }, args });
     f.send({ command: 'start' }); assert.deepEqual(await f.completed, { code: 1, signal: null });
     assert.deepEqual(f.records.filter(record => record.event === 'productFailed'),
       [{ schemaVersion: 1, event: 'productFailed', state: 'failed', code }]);
     assert.ok(Buffer.byteLength(JSON.stringify(f.records.find(record => record.event === 'productFailed'))) < 256);
-    assert.ok(!f.stdout.includes('PRIVATE')); assert.ok(!f.stderr.includes('PRIVATE')); assert.deepEqual(f.invalidLines, []);
+    const detail = JSON.parse(f.stderr);
+    assert.equal(detail.code, code); assert.ok(detail.message); assert.ok(detail.stack);
+    if (scenario === 'firmware-start') {
+      assert.equal(detail.originalCode, 'ERR_FIRMWARE_UNVERIFIED'); assert.equal(detail.message, 'Missing firmware');
+      assert.deepEqual(detail.details, { operation: 'discover' });
+    }
+    assert.ok(!f.stdout.includes('PRIVATE')); assert.deepEqual(f.invalidLines, []);
   }
+});
+
+test('CLI cleanup failure is logged without replacing the original firmware failure', { timeout: 10000 }, async t => {
+  const f = fixture(t, { config: { productMode: true, scenario: 'cleanup-failure' } });
+  f.send({ command: 'start' }); assert.deepEqual(await f.completed, { code: 1, signal: null });
+  const details = f.stderr.trim().split('\n').map(JSON.parse);
+  assert.equal(details[0].code, 'CLEANUP_FAILED'); assert.equal(details[0].message, 'Cleanup did not close');
+  assert.equal(details[1].code, 'ERR_FIRMWARE_CHANGED'); assert.equal(details[1].message, 'Firmware changed');
 });
