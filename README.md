@@ -1,6 +1,5 @@
 <p align="center">
-  <img src="app/assets/icons/hellgato-master.png" alt="Hellgato controller" width="120">
-  <img src="app/assets/icons/stream-dog-preview.png" alt="Hellgato Stream Dog pixel-art mascot holding a controller" width="96">
+  <img src="app/assets/icons/hellgato-master.png" alt="Hellgato controller" width="160">
 </p>
 
 <h1 align="center">Hellgato</h1>
@@ -15,6 +14,10 @@
 </p>
 
 Use your **Mirabox N4 Pro with the official Elgato Stream Deck app**. Hellgato Stream Dog connects the hardware; Stream Deck runs your actions, profiles and plugins. No StreamDock app is required.
+
+<p align="center">
+  <img src="app/assets/icons/stream-dog-preview.png" alt="Hellgato Stream Dog pixel-art mascot holding a controller" width="128">
+</p>
 
 <p align="center">
   <img src="docs/images/app-window.png" alt="Hellgato connected to a Mirabox N4 Pro, alongside Stream Deck and the Photoshop plugin" width="960">
