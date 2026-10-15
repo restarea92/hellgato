@@ -24,8 +24,11 @@
   "background": "#ffffff",
   "loopEndpointMatches": true,
   "gif": "hellgato-network.gif",
-  "bytes": 381461,
+  "bytes": 524923,
   "loop": 0,
   "palette": "shared 256 colors",
-  "dither": "none"
+  "dither": "none",
+  "sha256": "98dc4940b13460950f9f0df0451257171505c02811bd4f1dc5fd1b51fc0c7e55",
+  "encoder": "gifenc",
+  "scene": "hellgato-network.html"
 }

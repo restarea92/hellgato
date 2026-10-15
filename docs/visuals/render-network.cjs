@@ -9,7 +9,11 @@ const targetFps = 24;
 
 (async () => {
   await fs.mkdir(output, { recursive: true });
-  const browser = await chromium.launch({ headless: true, channel: 'msedge', args: ['--enable-unsafe-swiftshader'] });
+  // Keep Edge as the default; allow an installed browser for other platforms.
+  const browserExecutable = process.env.HELLGATO_BROWSER_EXECUTABLE;
+  const browser = await chromium.launch({ headless: true,
+    ...(browserExecutable ? { executablePath: browserExecutable } : { channel: 'msedge' }),
+    args: ['--enable-unsafe-swiftshader'] });
   try {
     const page = await browser.newPage({ viewport: { width: 832, height: 1100 }, colorScheme: 'light', reducedMotion: 'reduce', deviceScaleFactor: 1 });
     const errors = [];
