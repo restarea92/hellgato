@@ -1,14 +1,15 @@
-## Change
+## Summary
 
-Describe the user-visible change and validation.
+Describe the change and checks performed.
 
-## Release impact
+## Version impact
 
-- [ ] Windows
-- [ ] npm (`@hellgato/core` and `hellgato`, fixed together)
-- [ ] Shared CORA/upstream source (both)
-- [ ] No release: explain the exact paths and why shipped bytes/API are unchanged
+- [ ] SDK/core change: add a changeset for `@hellgato/core` or `hellgato`; the version command also bumps the bundled Windows app
+- [ ] App-only change: add a changeset for `@hellgato/windows-release`
+- [ ] No shipped change: explain why no version bump is needed
 
-Add a changeset for each affected release unit. Run `pnpm run release:impact --base <main-base-sha>` and `pnpm run release:metadata:check`.
+Run `pnpm run release:status` and `pnpm run release:metadata:check`. Keep ordinary changesets pending; the Version management workflow batches them into a separate draft version PR.
 
-Release PRs: review old/new versions, selected components, notes and base SHA. Merging an owner-approved release PR authorizes the selected release after publication setup is explicitly enabled. Do not edit generated versions or reuse unverified artifacts.
+## Verification
+
+List passed checks and anything not run, including hardware-only behavior. Version PRs and installer drafts do not publish npm or make a Windows release public.

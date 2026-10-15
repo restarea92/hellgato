@@ -1167,21 +1167,24 @@ class WorkflowContractChecks(unittest.TestCase):
         self.assertNotIn('scripts/release-ci.mjs', text)
         self.assertLess(text.index('pnpm run build:npm'), text.index('-m unittest discover'))
 
-    def test_publication_is_deferred_and_has_no_automatic_coordinator(self):
-        text = (ROOT / '.github/workflows/windows-release.yml').read_text()
-        events = text.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
-        self.assertEqual(re.findall(r'^  ([a-z_]+):', events, re.MULTILINE), ['workflow_dispatch'])
-        self.assertIn('default: false', events)
-        publisher = text.split('\n  publish:\n', 1)[1]
-        self.assertRegex(publisher, r'(?m)^    if: false$')
-        workflows = ROOT / '.github/workflows'
-        self.assertFalse((workflows / 'release-pr.yml').exists())
-        self.assertFalse((workflows / 'release.yml').exists())
-        for path in workflows.glob('*.yml'):
+    def test_versioning_and_installer_drafts_do_not_publish(self):
+        versions = (ROOT / '.github/workflows/versions.yml').read_text()
+        self.assertIn('changesets/action/version@', versions)
+        self.assertIn('source-sha: ${{ needs.prepare.outputs.source-sha }}', versions)
+        self.assertIn("steps.status.outputs.has_changesets == 'true'", versions)
+        self.assertNotIn('id-token: write', versions)
+        windows = (ROOT / '.github/workflows/windows-release.yml').read_text()
+        self.assertIn('draft-windows-release.mjs', windows)
+        self.assertIn('workflow_dispatch:', windows)
+        self.assertIn('cancel-in-progress: false', windows)
+        for path in (ROOT / '.github/workflows').glob('*.yml'):
             source = path.read_text()
-            self.assertNotIn('changesets/action', source)
+            self.assertNotIn('windows_release.py publish', source)
             self.assertNotIn('npm-release.mjs publish', source)
-            self.assertNotIn('gh workflow run', source)
+            self.assertNotIn('changeset publish', source)
+            self.assertNotIn('npm publish', source)
+            self.assertNotIn('pull_request_target:', source)
+            self.assertNotIn('scripts/release.mjs', source)
 
     def test_build_script_derives_filename_without_changing_hash_generation(self):
         text = (ROOT / 'scripts/build-windows.ps1').read_text()

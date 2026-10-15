@@ -1,0 +1,100 @@
+name: Version management
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only main can refresh the one version PR. Its own commits cannot re-trigger
+# this workflow. Serialize refreshes and their exact-source build reports.
+concurrency:
+  group: hellgato-versions
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'restarea92/hellgato' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      pr-number: ${{ steps.version.outputs.pr-number }}
+      source-sha: ${{ steps.source.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind the local Changesets base to this exact checkout
+        run: git branch --force main "$GITHUB_SHA"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:version
+      - name: Check for accumulated version changes
+        id: status
+        run: pnpm run release:status
+      - name: Refuse stale reruns before refreshing the version branch
+        if: steps.status.outputs.has_changesets == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/version-pr.mjs current
+      - name: Create or refresh the version PR (never publish)
+        if: steps.status.outputs.has_changesets == 'true'
+        id: version
+        uses: changesets/action/version@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2, Changesets 3
+        with:
+          script: pnpm run release:version
+          commit-message: 'chore: prepare package and app versions'
+          pr-title: 'chore: prepare package and app versions'
+          pr-draft: always
+          pr-base-branch: main
+          push-with-git-cli: false
+      - name: Clarify review scope and resolve the exact PR source
+        if: steps.version.outputs.pr-number != ''
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_PR_NUMBER: ${{ steps.version.outputs.pr-number }}
+        run: node scripts/version-pr.mjs prepare
+
+  validate-windows:
+    needs: prepare
+    if: needs.prepare.outputs.source-sha != ''
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows-build.yml
+    with:
+      source-sha: ${{ needs.prepare.outputs.source-sha }}
+
+  report:
+    needs: [prepare, validate-windows]
+    if: always() && needs.prepare.outputs.source-sha != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - name: Record the build result on its exact version PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_PR_NUMBER: ${{ needs.prepare.outputs.pr-number }}
+          VERSION_SOURCE_SHA: ${{ needs.prepare.outputs.source-sha }}
+          BUILD_RESULT: ${{ needs.validate-windows.result }}
+        run: node scripts/version-pr.mjs report

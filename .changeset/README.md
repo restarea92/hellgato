@@ -1,13 +1,29 @@
-# Changesets
+# Changesets and version review
 
-Include a changeset in the same PR as each release-affecting change. Use `pnpm changeset`; write the user-facing summary in English. `patch` is a compatible fix, `minor` adds a compatible feature, and `major` changes the public contract. This also applies before 1.0: a `major` input remains a major bump.
+Add a changeset with `pnpm changeset` for a shipped change. Summaries are user-facing English. Use `patch` for a compatible fix, `minor` for a compatible feature, or `major` for a breaking public contract, including before 1.0.
 
-- Windows: `@hellgato/windows-release`
-- npm: `@hellgato/core` and `hellgato` form a fixed group; selecting either releases both at the same version.
-- Shared `app/cora/**`, upstream preparation, licensing, and shared build inputs require both components.
+- `@hellgato/core` and `hellgato` are one fixed SDK group. Select either; both receive the same SDK version.
+- `@hellgato/windows-release` is the private Windows app version marker, with its own independent version number.
+- An SDK version bump automatically adds an app patch because the app bundles that SDK. An explicit app minor/major wins over the automatic patch.
+- App-only changes select only `@hellgato/windows-release`; SDK versions stay unchanged.
+- Documentation, tests and automation-only changes need no version bump. An explanatory empty changeset is optional.
 
-Run `pnpm release:impact --base origin/main --working-tree` before finishing a PR. Unknown paths and unknown workspaces fail closed; classify them explicitly. Documentation/test-only work requires an empty changeset with an explanatory body or an explicit scoped no-release exception. Policy-only work requires a scoped exception in `.release/no-release/<id>.json`: `schemaVersion: 1`, the exact `baseSha`, a meaningful `reason`, and exact changed `paths`. Exceptions are part of the review; a label alone is insufficient. Exceptions never permit unknown paths, a new workspace, manual version edits, or an arbitrary release plan.
+Changesets accumulate on `main`. The **Version management** workflow maintains one draft PR on `changeset-release/main`, refreshed from current main, instead of merging a version on every commit. Multiple pending changes use their largest requested bump, rather than adding one bump per commit.
 
-`pnpm release:version` is the only normal version command. It consumes changesets with the pinned Changesets CLI, generates metadata/notes/lockfile and a verifiable release plan. Do not edit generated versions or plans by hand. `pnpm release:plan:check --base <main-sha>` replays the operation from that exact base.
+Review and merge that version PR when the batch is ready. It contains package versions, changelogs, the lockfile, app metadata and Windows release notes. Its Windows build runs automatically against the exact generated PR SHA; the PR comment links the result and identifies that SHA. A refresh returns the PR to draft for review again.
 
-The initial adoption intentionally contains no pending release changeset and no active `.release/plan.json`. Windows 0.1.2 is prepared, not automatically published. A separately approved bootstrap PR can run `pnpm release:version --bootstrap windows --from 0.1.1 --base <main-sha>` to record the existing 0.1.2 and its preserved notes without bumping to 0.1.3. npm bootstrap additionally requires owner verification of registry/ownership; the currently verified public baseline is `0.0.1-beta`, so use `--bootstrap npm --from 0.0.1-beta` in that separately reviewed PR after rechecking registry state. `--from 0.0.0` is reserved for a genuinely unpublished package baseline. Bootstrap does not publish or configure access.
+Local equivalent:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run release:status
+pnpm run release:version
+pnpm run release:metadata:check
+pnpm run test:version
+```
+
+`release:version` consumes the pending changesets using the pinned Changesets CLI and generates `app/release.json`, `installer/version.iss`, and `docs/releases/<app-version>.md`. Running it again with no pending changes is a no-op. Do not manually edit version fields or generated metadata. If generation fails, inspect the error and restore only its uncommitted generated files/consumed changesets before starting again from a clean checkout.
+
+Version preparation never publishes npm, pushes tags or creates a public release. After a reviewed app version reaches main, the separate Windows workflow builds that merged source and prepares an unpublished installer draft. The owner publishes that draft manually. npm publication remains disabled and will be connected separately later.
+
+The old release-plan/bootstrap/channel-handoff commands are not part of this workflow. Their offline artifact-validation helpers remain for compatibility with existing packaging code; no active workflow invokes the old coordinator or its publication commands. See [Windows release operations](../docs/windows-releases.md).

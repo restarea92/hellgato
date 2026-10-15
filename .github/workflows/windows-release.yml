@@ -1,79 +1,102 @@
-name: Windows release
+name: Windows installer draft
 
 on:
+  push:
+    branches: [main]
+    paths: ['packages/windows-release/package.json']
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Existing stable tag at this main commit (vMAJOR.MINOR.PATCH)'
+      source_sha:
+        description: 'Retry the full 40-character merged Windows version commit SHA'
         required: true
         type: string
-      confirm:
-        description: 'Prepare this explicitly selected stable version'
+      version:
+        description: 'Exact stable version at that commit (MAJOR.MINOR.PATCH)'
         required: true
-        type: boolean
-        default: false
+        type: string
 
 permissions:
   contents: read
 
+# Serialize draft preparation, but never cancel a half-uploaded release.
 concurrency:
-  group: windows-release
+  group: windows-draft-release
   cancel-in-progress: false
 
 jobs:
   preflight:
-    if: github.repository == 'restarea92/hellgato' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm
+    if: github.repository == 'restarea92/hellgato' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      should-release: ${{ steps.version.outputs.should-release }}
+      source-sha: ${{ steps.version.outputs.source-sha }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          python-version: '3.13.7'
-      - name: Validate the selected version without publishing
+          node-version: '24.19.0'
+      - name: Validate merged version-only commit before building
+        id: version
         env:
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          version=$(python scripts/windows_release.py version)
-          test "$RELEASE_TAG" = "v$version"
-          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$(git rev-parse HEAD)"
+          RELEASE_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+          RELEASE_EXPECTED_VERSION: ${{ inputs.version }}
+        run: node scripts/draft-windows-release.mjs preflight
 
   build:
     needs: preflight
+    if: needs.preflight.outputs.should-release == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/windows-build.yml
+    with:
+      source-sha: ${{ needs.preflight.outputs.source-sha }}
 
-  publish:
-    # Publication is deferred until application integration is complete.
-    if: false
+  publish-to-draft:
     needs: [preflight, build]
+    if: needs.preflight.outputs.should-release == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    # This is the only job with write permission or GH_TOKEN. It can append only
+    # to a checked draft; the script has no public-publish/update/delete path.
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          python-version: '3.13.7'
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+          node-version: '24.19.0'
+      - name: Download the immutable reusable-build artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          # Name and ID are mutually exclusive in this pinned action. Use the
+          # original ID; the script verifies needs.build.outputs.artifact-name.
+          # Never recompute run_attempt here: failed-job retries reuse the build.
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
           skip-decompress: false
           digest-mismatch: error
-          name: windows-installer-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist
-      - name: Publish the explicitly selected installer
+      - name: Prepare installer, SHA-256, and changelog in a draft only
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_CONFIRM: ${{ inputs.confirm }}
-        run: python scripts/windows_release.py publish
+          RELEASE_SOURCE_SHA: ${{ needs.preflight.outputs.source-sha }}
+          RELEASE_EXPECTED_VERSION: ${{ inputs.version }}
+          BUILD_SOURCE_SHA: ${{ needs.build.outputs.source-sha }}
+          BUILD_VERSION: ${{ needs.build.outputs.version }}
+          BUILD_ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+          BUILD_ARTIFACT_NAME: ${{ needs.build.outputs.artifact-name }}
+          BUILD_ARTIFACT_DIGEST: ${{ needs.build.outputs.artifact-digest }}
+        run: node scripts/draft-windows-release.mjs prepare
