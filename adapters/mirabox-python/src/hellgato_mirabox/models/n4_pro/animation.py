@@ -57,15 +57,19 @@ class NativeAnimation:
                     raise ValueError('Screensaver has too many image pixels')
                 # Animated WebP publishes this frame's duration when it is loaded.
                 frame.load()
+                check()
                 duration = max(1, int(frame.info.get('duration') or 100))
                 rgba = frame.convert('RGBA')
+                check()
                 if rgba.size != FRAME_SIZE:
                     rgba = ImageOps.contain(rgba, FRAME_SIZE, Image.Resampling.LANCZOS)
+                check()
                 canvas = Image.new('RGB', FRAME_SIZE, 'black')
                 canvas.paste(rgba, ((800 - rgba.width) // 2, (480 - rgba.height) // 2), rgba)
                 encoded = BytesIO()
                 canvas.transpose(Image.Transpose.ROTATE_180).save(
                     encoded, format='JPEG', quality=95, subsampling=0)
+                check()
                 data = encoded.getvalue()
                 encoded_bytes += len(data)
                 if encoded_bytes > MAX_ENCODED_BYTES:

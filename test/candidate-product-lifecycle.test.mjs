@@ -38,6 +38,12 @@ function fixture(extra = {}) {
     capabilities: { keys: 2, dials: 1, touch: null, dialPress: 'native', dialRelease: 'native',
       displays: [{ id: 'key:0', width: 4, height: 4, format: 'rgb888', partial: true }, { id: 'key:1', width: 4, height: 4, format: 'rgb888', partial: true }],
       features: Object.fromEntries(['brightness', 'knobBrightness', 'followDisplayBrightness', 'sleepDuration', 'clear', 'fill', 'sleep', 'wake', 'screensaver', 'showLogo'].map(key => [key, { status: 'emulated' }])) } };
+  if (extra.fullProfile) Object.assign(device.capabilities, {
+    keys: 10, dials: 4, touch: { width: 800, height: 100 },
+    displays: [...Array.from({ length: 10 }, (_, index) => ({ id: `key:${index}`, width: 120, height: 120, format: 'rgb888', partial: false })),
+      { id: 'touch', width: 800, height: 100, format: 'rgb888', partial: true },
+      { id: 'lcd', width: 4, height: 4, format: 'rgb888', partial: false }],
+  });
   const adapter = createSimulator({ device });
   const initial = () => ({ brightness: 100, knobBrightness: 100, followDisplayBrightness: true, sleepDuration: 0, idle: false, sleeping: false });
   let settings = initial();
@@ -61,7 +67,7 @@ function fixture(extra = {}) {
   const value = config({ productMode: true, ...extra.config });
   const readiness = async ({ profile }) => ({ ready: true, targetId: profile.target.id, profileId: profile.id,
     host: { pid: 12, creationTime: 'fresh', executableDigest: 'a'.repeat(64) }, preparation: ['streamdeck-plus-ten-key'] });
-  const runner = createCandidateRunner(value, { selfTest: true, adapter, readiness: extra.readiness ?? readiness,
+  const runner = createCandidateRunner(value, { selfTest: !extra.fullProfile, adapter, readiness: extra.readiness ?? readiness,
     bridgeFactory: options => {
       const bridge = new EventEmitter(); bridge.options = options; bridge.inputs = []; bridge.sequence = 0;
       bridge.startCount = 0; bridge.stopCount = 0; bridge.releaseCount = 0; bridge.heldKeys = new Set();
@@ -171,6 +177,85 @@ test('listening events include bridge ports and device readiness waits for resto
     assert.equal(f.events.filter(event => event.event === 'deviceReady').length, 1);
   } finally { release?.(); await f.runner.stop(); await started.catch(() => {}); }
   assert.equal(f.events.at(-1).event, 'stopped');
+});
+
+test('a primary probe disconnect during USB open still publishes device readiness before fresh host approval', async () => {
+  const f = fixture();
+  let release;
+  const open = f.adapter.open.bind(f.adapter);
+  f.adapter.open = async (...args) => {
+    const result = await open(...args);
+    await new Promise(resolve => { release = resolve; });
+    return result;
+  };
+  const started = f.runner.start();
+  try {
+    await waitUntil(() => release !== undefined);
+    const bridge = f.bridges[0];
+    bridge.emit('clientConnected', { role: 'primary' });
+    bridge.emit('clientDisconnected', { role: 'primary' });
+    bridge.output(frame('key:0', 7));
+    release(); await started;
+    assert.equal(f.events.filter(event => event.event === 'deviceReady').length, 1);
+    assert.equal(f.runner.getStatus().state, 'ready');
+    assert.equal(f.runner.getStatus().counters.frameWrites, 0);
+    assert.equal((await f.runner.getProductWorkerState()).state.brightness, 100);
+    await assert.rejects(f.runner.control({ control: 'brightness', value: 50 }), { code: 'CANDIDATE_CONTROL_NOT_READY' });
+    bridge.emit('clientConnected', { role: 'child' });
+    await tick(); bridge.output(frame('key:0', 8));
+    await waitUntil(() => f.runner.getStatus().counters.frameWrites === 1);
+    assert.equal(f.adapter.outputs.at(-1).data, frame('key:0', 8).data);
+    assert.equal(f.events.filter(event => event.event === 'deviceReady').length, 1);
+    assert.equal(f.events.filter(event => event.event === 'deviceReconnected').length, 0);
+    assert.equal(bridge.startCount, 1); assert.equal(bridge.stopCount, 0);
+  } finally { release?.(); await f.runner.stop(); await started.catch(() => {}); }
+});
+
+test('acknowledged saved-source changes switch whole LCD relay without restarting or journaling saver frames', async () => {
+  for (const initialMode of ['native', 'stream']) {
+    const f = fixture({ fullProfile: true, config: { screensaverMode: initialMode } });
+    let workerSaver = { screensaverReady: initialMode === 'native', screensaverRevision: 0, screensaverLoading: false, screensaverError: null };
+    const getState = f.adapter.getState.bind(f.adapter);
+    f.adapter.getState = async () => ({ ...await getState(), ...workerSaver });
+    const image = (surfaceId, width, height) => ({ type: 'frame', surfaceId, format: 'rgb888', width, height,
+      data: Buffer.alloc(width * height * 3, 7).toString('base64') });
+    try {
+      await f.runner.start();
+      const bridge = f.bridges[0];
+      bridge.output(image('key:0', 120, 120));
+      await tick(); assert.equal(f.runner.getStatus().state, 'ready', JSON.stringify(f.runner.getStatus()));
+      await waitUntil(() => f.runner.getStatus().counters.frameWrites === 1);
+      const sendSaver = async native => {
+        const previous = native ? f.adapter.controls.length : f.adapter.outputs.length;
+        bridge.emit('lcdFrameStarted'); bridge.output(image('lcd', 4, 4));
+        await tick(); assert.equal(f.runner.getStatus().state, 'ready', JSON.stringify(f.runner.getStatus()));
+        await waitUntil(() => (native ? f.adapter.controls.length : f.adapter.outputs.length) > previous);
+        await tick();
+        if (native) assert.equal(f.adapter.controls.at(-1).control, 'screensaver');
+        else assert.equal(f.adapter.outputs.at(-1).surfaceId, 'lcd');
+      };
+      await sendSaver(initialMode === 'native');
+      for (const ready of [false, true, false]) {
+        const previousReady = workerSaver.screensaverReady;
+        workerSaver = { ...workerSaver, screensaverReady: ready, screensaverRevision: workerSaver.screensaverRevision + 1 };
+        await sendSaver(previousReady);
+        assert.equal((await f.runner.getProductWorkerState()).state.screensaverReady, ready);
+        await sendSaver(ready);
+      }
+      workerSaver = { ...workerSaver, screensaverLoading: true };
+      await f.runner.getProductWorkerState(); await sendSaver(false);
+      workerSaver = { ...workerSaver, screensaverLoading: false, screensaverError: 'ERR_ASSET_INVALID' };
+      assert.equal((await f.runner.getProductWorkerState()).state.screensaverError, 'ERR_ASSET_INVALID');
+      await sendSaver(false);
+      assert.equal(f.runner.getStatus().generation, 1);
+      assert.equal(bridge.startCount, 1); assert.equal(bridge.stopCount, 0);
+      assert.equal(f.adapter.calls.filter(call => call === 'open').length, 1);
+      await f.runner.reconnect();
+      const restored = f.adapter.outputs.filter(value => value.generation === 2);
+      assert.deepEqual(restored.map(value => value.surfaceId), ['key:0']);
+      assert.equal(bridge.startCount, 1); assert.equal(bridge.stopCount, 0);
+    } finally { await f.runner.stop(); }
+  }
 });
 
 test('primary and child pairing events remain distinct while fresh child readiness gates controls and inputs', async () => {
@@ -444,17 +529,22 @@ test('product worker queries expose bounded controls and state without private w
     await f.runner.start();
     const getState = f.adapter.getState.bind(f.adapter);
     f.adapter.getState = async () => ({ ...await getState(), connected: true, screensaverActive: false, screensaverReady: true, logoActive: false,
+      screensaverRevision: 3, screensaverLoading: false, screensaverError: null,
       screenBrightness: 100, knobBrightnessLevel: 100, stripMode: 'panels', privateText: 'PRIVATE-LOG', data: 'PRIVATE-IMAGE',
       displayObservations: { privateVendorDetails: 'PRIVATE-VENDOR' } });
     const query = await f.runner.getProductWorkerState();
     assert.deepEqual(query.state, { brightness: 100, knobBrightness: 100, followDisplayBrightness: true, sleepDuration: 0,
       connected: true, idle: false, sleeping: false, screensaverActive: false, screensaverReady: true, logoActive: false,
+      screensaverRevision: 3, screensaverLoading: false, screensaverError: null,
       screenBrightness: 100, knobBrightnessLevel: 100, stripMode: 'panels' });
     assert.ok(!JSON.stringify(query).includes('PRIVATE'));
     assert.ok(!Object.hasOwn(query.state, 'deviceId')); assert.ok(Buffer.byteLength(JSON.stringify(query)) < 2048);
     query.state.brightness = 3; query.capabilities.features.brightness.status = 'unavailable';
     assert.equal((await f.runner.getProductWorkerState()).state.brightness, 100);
     assert.equal((await f.runner.getProductWorkerState()).capabilities.features.brightness.status, 'emulated');
+    f.adapter.getState = async () => ({ ...await getState(), screensaverRevision: -1, screensaverLoading: 'true', screensaverError: 'C:/PRIVATE/source.png' });
+    const invalid = (await f.runner.getProductWorkerState()).state;
+    for (const key of ['screensaverRevision', 'screensaverLoading', 'screensaverError']) assert.ok(!Object.hasOwn(invalid, key));
     f.adapter.getState = async () => ({ ...await getState(), brightness: 101 });
     await assert.rejects(f.runner.getProductWorkerState(), { code: 'CANDIDATE_SETTINGS_INVALID' });
   } finally { await f.runner.stop(); }

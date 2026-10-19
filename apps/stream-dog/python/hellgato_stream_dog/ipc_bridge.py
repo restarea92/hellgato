@@ -100,7 +100,7 @@ def runtime_paths(root=ROOT):
     return node.resolve(), runner.resolve(), worker.resolve(), manifest['buildId']
 
 
-def configuration(root, state, settings, controls, device_id=None, saver=None):
+def configuration(root, state, settings, controls, device_id=None, saver=None, screensaver_config=None):
     from hellgato_host.startup_install import default_executable, startup_dll
     node, runner, worker, build_id = runtime_paths(root)
     script = root / 'apps/stream-dog/python/hellgato_stream_dog/ipc_bridge.py'
@@ -114,6 +114,8 @@ def configuration(root, state, settings, controls, device_id=None, saver=None):
                     '--strip-mode', settings['stripMode'], '--logo-path', str(root / 'app/assets/icons/hellgato-front-64.png')]
     if saver is not None:
         runtime_args.extend(('--screensaver-path', str(saver)))
+    if screensaver_config is not None:
+        runtime_args.extend(('--screensaver-config', str(screensaver_config)))
     value = {'schemaVersion': 1, 'productMode': True,
              'identity': {'dockSerial': f'HGDOCK{dock:06d}', 'childSerial': serial,
                           'macAddress': [2, 0, 0, (dock >> 16) & 255, (dock >> 8) & 255, dock & 255]},
@@ -370,6 +372,8 @@ class ProductBridge:
         self.host_commands = queue.Queue(maxsize=16)
         self.parent_closed = False
         self.command_failure = None
+        self.screensaver_revision = 0
+        self.pending_screensaver = None
 
     def read_host_commands(self, stream):
         try:
@@ -464,8 +468,12 @@ class ProductBridge:
 
     @contextmanager
     def channel(self, *, discover=False, saver=None):
+        saver_config = None if discover else self.state_root / f'screensaver-{self.serial}.json'
+        if saver_config is not None:
+            self.screensaver_revision = 0
+            self.update_screensaver(saver, initial=True)
         config, command = configuration(self.root, self.state_root, self.settings, self.controls.settings,
-                                        None if discover else self.selected['id'], saver)
+                                        None if discover else self.selected['id'], saver, saver_config)
         config_path = self.state_root / 'ipc-config.json'
         write_json(config_path, config)
         channel = self.process_factory(command, config_path, self.on_event, discover=discover)
@@ -476,6 +484,27 @@ class ProductBridge:
             self.controls.network_listening = False
             channel.close()
             config_path.unlink(missing_ok=True)
+            if saver_config is not None:
+                saver_config.unlink(missing_ok=True)
+
+    def update_screensaver(self, path, *, initial=False):
+        self.screensaver_revision = 0 if initial else self.screensaver_revision + 1
+        self.pending_screensaver = {'version': 1, 'revision': self.screensaver_revision,
+                                   'path': None if path is None else str(path)}
+        self.flush_screensaver(required=initial)
+
+    def flush_screensaver(self, *, required=False):
+        if self.pending_screensaver is None:
+            return
+        try:
+            write_json(self.state_root / f'screensaver-{self.serial}.json', self.pending_screensaver)
+        except OSError:
+            # Windows readers can briefly deny atomic replacement. Retry the
+            # latest selection without closing the active device or network.
+            if required:
+                raise
+        else:
+            self.pending_screensaver = None
 
     def discover(self, server):
         while not self.discovered.empty():
@@ -548,7 +577,8 @@ class ProductBridge:
                         if self.host_available and now >= next_saver:
                             next_saver = now + 1
                             if saver.reload():
-                                break
+                                self.update_screensaver(saver.path)
+                        self.flush_screensaver()
                         time.sleep(.05)
                 self.controls.channel = None
                 self.controls.connected = self.controls.host_connected = False

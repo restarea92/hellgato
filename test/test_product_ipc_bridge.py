@@ -157,6 +157,14 @@ class ProductIpcTest(unittest.TestCase):
             self.assertIn('--inspect-host', config['readiness']['args'])
             self.assertEqual(config['screensaverMode'], 'stream')
             self.assertEqual(command[1], str((root / 'work/stream-dog-sdk/candidate-runner.mjs').resolve()))
+            saver = root / 'saved animation.webp'
+            reload_config = root / 'screensaver-HGMOCK000023.json'
+            with patch.dict(os.environ, {'ProgramFiles': str(root)}):
+                config, _ = configuration(root, root, settings, {}, descriptor()['id'], saver, reload_config)
+            args = config['runtime']['args']
+            self.assertEqual(args[args.index('--screensaver-config') + 1], str(reload_config))
+            self.assertEqual(args[args.index('--screensaver-path') + 1], str(saver))
+            self.assertEqual(config['screensaverMode'], 'native')
 
     def test_process_job_assignment_precedes_start_and_correlates_requests(self):
         with TemporaryDirectory() as directory:
@@ -304,6 +312,86 @@ for line in sys.stdin:
             bridge.read_host_commands(BytesIO(b'{"command":"hostUnavailable","reason":"untrusted"}\n'))
             with self.assertRaises(OSError):
                 bridge.pump_host_commands(channel)
+
+    def test_screensaver_changes_keep_the_same_usb_and_network_session(self):
+        import device_control_server
+        import screensaver
+        with TemporaryDirectory() as directory:
+            state = Path(directory)
+            bridge = self.make_bridge(state)
+            selected = bridge.registry.prepare_descriptor(descriptor())
+            channel = Mock(failure=None)
+            channel.process.poll.return_value = None
+            channel.request.return_value = {'event': 'workerState', 'state': {'connected': True}}
+            source = Mock()
+            paths = iter([state / 'original.webp', state / 'changed.webp', None, state / 'changed.webp'])
+            def reload_source():
+                try:
+                    source.path = next(paths)
+                    return True
+                except StopIteration:
+                    bridge.stop_file.touch()
+                    return False
+            source.reload.side_effect = reload_source
+            updates = []
+            original_update = bridge.update_screensaver
+            def update(path, **kwargs):
+                original_update(path, **kwargs)
+                updates.append(json.loads((state / f'screensaver-{bridge.serial}.json').read_text(encoding='utf-8')))
+                self.assertTrue(bridge.controls.connected)
+                self.assertTrue(bridge.controls.host_connected)
+            @contextmanager
+            def active(**kwargs):
+                bridge.on_event({'event': 'deviceReady', 'deviceId': selected['id'],
+                                 'capabilities': descriptor()['capabilities']})
+                bridge.on_event({'event': 'child.clientConnected', 'hostConnected': True})
+                bridge.update_screensaver(kwargs['saver'], initial=True)
+                yield channel
+                self.assertTrue(bridge.stop_file.exists())
+            timer = iter(range(100))
+            with patch.object(bridge, 'discover', return_value=selected) as discover, \
+                    patch.object(bridge, 'channel', side_effect=active) as channels, \
+                    patch.object(bridge, 'update_screensaver', side_effect=update), \
+                    patch.object(device_control_server, 'DeviceControlServer'), \
+                    patch.object(screensaver, 'ScreensaverSource', return_value=source), \
+                    patch('hellgato_stream_dog.ipc_bridge.time.monotonic', side_effect=lambda: next(timer)), \
+                    patch('hellgato_stream_dog.ipc_bridge.time.sleep'):
+                bridge.run()
+            self.assertEqual(discover.call_count, 1)
+            self.assertEqual(channels.call_count, 1)
+            self.assertEqual([item['revision'] for item in updates], [0, 1, 2, 3])
+            self.assertEqual([item['path'] for item in updates],
+                             [str(state / 'original.webp'), str(state / 'changed.webp'), None, str(state / 'changed.webp')])
+            self.assertFalse(list(state.glob('*.tmp')))
+
+    def test_screensaver_write_failure_retries_only_the_latest_selection(self):
+        with TemporaryDirectory() as directory:
+            state = Path(directory)
+            bridge = self.make_bridge(state)
+            bridge.update_screensaver(state / 'initial.png', initial=True)
+            target = state / f'screensaver-{bridge.serial}.json'
+            with patch('hellgato_stream_dog.ipc_bridge.write_json', side_effect=PermissionError('Sharing violation')):
+                bridge.update_screensaver(state / 'stale.png')
+                bridge.update_screensaver(None)
+                self.assertEqual(json.loads(target.read_text())['revision'], 0)
+            bridge.flush_screensaver()
+            self.assertEqual(json.loads(target.read_text()), {'version': 1, 'revision': 2, 'path': None})
+            self.assertIsNone(bridge.pending_screensaver)
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows file sharing contract')
+    def test_open_config_reader_does_not_interrupt_screensaver_updates(self):
+        with TemporaryDirectory() as directory:
+            state = Path(directory)
+            bridge = self.make_bridge(state)
+            bridge.update_screensaver(state / 'initial.png', initial=True)
+            target = state / f'screensaver-{bridge.serial}.json'
+            with target.open('rb') as reader:
+                bridge.update_screensaver(state / 'replacement.png')
+                self.assertEqual(json.load(reader)['revision'], 0)
+                self.assertIsNotNone(bridge.pending_screensaver)
+            bridge.flush_screensaver()
+            self.assertEqual(json.loads(target.read_text())['revision'], 1)
+            self.assertFalse(list(state.glob('*.tmp')))
 
     def test_confirmed_host_absence_does_not_start_discovery_worker(self):
         import device_control_server

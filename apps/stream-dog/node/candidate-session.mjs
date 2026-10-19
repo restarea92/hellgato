@@ -184,7 +184,7 @@ function runtimeAdapter(config, { selfTest = false, adapter } = {}) {
   if (adapter) return adapter;
   const manifest = loadCandidateManifest(config.runtime);
   const options = { command: config.runtime.command, args: [...config.runtime.args, '--backend', selfTest ? 'fake' : 'mirabox',
-    '--lcd-mode', config.screensaverMode === 'stream' ? 'stream-screensaver' : 'normal'],
+    '--lcd-mode', config.productMode || config.screensaverMode === 'stream' ? 'stream-screensaver' : 'normal'],
     cwd: dirname(config.statePath), manifest, requestTimeoutMs: 5000, stopTimeoutMs: 1000 };
   return selfTest ? createSidecarAdapter({ ...options,
     descriptor: { id: 'hellgato.fake-sidecar', version: '0.1.0', modelIds: ['buttons-dial'], platforms: ['any'], architectures: ['any'], apiVersion: 1, protocol: { major: 1, minor: 0 } } }) : createMiraboxN4ProAdapter(options);
@@ -218,8 +218,12 @@ function productDevice(device) {
 function productWorkerState(value) {
   const settings = validateSettings(Object.fromEntries(SETTINGS.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])));
   const state = { ...settings };
-  for (const key of ['connected', 'idle', 'sleeping', 'screensaverActive', 'screensaverReady', 'logoActive']) {
+  for (const key of ['connected', 'idle', 'sleeping', 'screensaverActive', 'screensaverReady', 'screensaverLoading', 'logoActive']) {
     if (typeof value[key] === 'boolean') state[key] = value[key];
+  }
+  if (Number.isSafeInteger(value.screensaverRevision) && value.screensaverRevision >= 0) state.screensaverRevision = value.screensaverRevision;
+  if (value.screensaverError === null || typeof value.screensaverError === 'string' && /^[A-Z][A-Z0-9_]{0,80}$/.test(value.screensaverError)) {
+    state.screensaverError = value.screensaverError;
   }
   for (const key of ['screenBrightness', 'knobBrightnessLevel']) {
     if (value[key] === null || Number.isInteger(value[key]) && value[key] >= 0 && value[key] <= 100) state[key] = value[key];
@@ -255,12 +259,12 @@ export function createCandidateRunner(input, dependencies = {}) {
     'restoredWrites', 'unconfirmedWrites', 'simulationWrites', 'inputObserved', 'inputForwarded', 'inputNotDelivered', 'diagnostics', 'cleanStops'].map(key => [key, 0]));
   const count = key => { counts[key] = Math.min(Number.MAX_SAFE_INTEGER, counts[key] + 1); };
   const raw = runtimeAdapter(config, dependencies);
-  let hostSuspended = false, recoveryAbort;
+  let hostSuspended = false, recoveryAbort, screensaverMode = config.screensaverMode;
   const adapter = restoringAdapter(raw, { controls, persist: settings => {
     saveCandidateSettings(config, settings); product('settingsChanged', { settings: { ...settings } });
   }, persistControl: payload => pendingOutputs.get(`${payload.generation}:${payload.sequence}`)?.persist !== false,
     releaseReason: () => hostSuspended ? 'host-exit' : undefined, count, record,
-    journal: createDisplayJournal({ lcdMode: config.screensaverMode === 'stream' ? 'stream-screensaver' : 'normal' }), observations });
+    journal: createDisplayJournal({ lcdMode: config.productMode || config.screensaverMode === 'stream' ? 'stream-screensaver' : 'normal' }), observations });
   let activeBridge, retainedNetwork, hostApproved = false, hostEpoch = 0, outputFailure;
   let pendingControlCount = 0;
   const pendingOutputs = new Map();
@@ -302,8 +306,8 @@ export function createCandidateRunner(input, dependencies = {}) {
           if (!stopping && !['CANDIDATE_HOST_DISCONNECTED', 'CANDIDATE_SESSION_ENDED'].includes(error.code)) failOutput(error);
         });
       };
-      const relayOutput = payload => { if (config.screensaverMode !== 'native' || payload.surfaceId !== 'lcd') output(payload); };
-      const saver = () => { if (config.screensaverMode === 'native') output({ type: 'control', control: 'screensaver' }); };
+      const relayOutput = payload => { if (screensaverMode !== 'native' || payload.surfaceId !== 'lcd') output(payload); };
+      const saver = () => { if (screensaverMode === 'native') output({ type: 'control', control: 'screensaver' }); };
       const relay = event => detail => {
         const role = detail?.role === 'primary' ? 'primary' : 'child';
         product(`${role}.${event}`, { hostConnected: bridge.primaryConnected === true && bridge.childConnected === true });
@@ -422,10 +426,10 @@ export function createCandidateRunner(input, dependencies = {}) {
   };
   session.on('state', status => {
     if (['stopping', 'stopped', 'failed'].includes(status.state)) { hostApproved = false; rejectOutputs(new CandidateError('CANDIDATE_SESSION_ENDED')); }
-    // Start ACK timers only after the SDK accepts readiness and completes device restoration.
-    if (status.state === 'ready' && !status.lastError && hostApproved && !hostSuspended && !stopping && !outputFailure &&
+    // USB readiness enables local pairing even when the host socket disconnected during open.
+    if (status.state === 'ready' && !status.lastError && !hostSuspended && !stopping && !outputFailure &&
       activeBridge?.generation === status.generation) {
-      activeBridge.resumeOutput();
+      if (hostApproved) activeBridge.resumeOutput();
       if (readyGeneration !== status.generation) {
         const event = readyGeneration ? 'deviceReconnected' : 'deviceReady'; readyGeneration = status.generation;
         record(event, { generation: status.generation, firmware: session.device?.firmware, connected: true });
@@ -534,7 +538,9 @@ export function createCandidateRunner(input, dependencies = {}) {
       const observed = await adapter.getState();
       if (stopping || state !== 'ready' || generation !== session.generation || observed.generation !== generation || observed.deviceId !== config.deviceId ||
         !SETTINGS.every(key => Object.hasOwn(observed, key))) throw new CandidateError('CANDIDATE_CONTROL_NOT_READY');
-      return { generation, state: productWorkerState(observed), capabilities: productDevice(session.device).capabilities };
+      const workerState = productWorkerState(observed);
+      if (typeof workerState.screensaverReady === 'boolean') screensaverMode = workerState.screensaverReady ? 'native' : 'stream';
+      return { generation, state: workerState, capabilities: productDevice(session.device).capabilities };
     },
     // Exposed only to the local product self-test, never the console protocol.
     getWorkerState: () => adapter.getState(),

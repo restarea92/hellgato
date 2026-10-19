@@ -10,11 +10,12 @@ from PIL import Image
 from ...protocol import ProtocolError, require
 from .animation import NativeAnimation
 from .display import DisplayWriter, increment
+from .screensaver_config import ScreensaverConfig
 
 
 class DisplayState:
     def __init__(self, device, images_dir, *, screensaver_path=None, logo_path=None, strip_mode='panels', led_writer=None,
-                 clock=time.monotonic, check=lambda: None, lcd_mode='normal'):
+                 clock=time.monotonic, check=lambda: None, lcd_mode='normal', screensaver_config=None):
         if lcd_mode not in ('normal', 'stream-screensaver'):
             raise ValueError('Unknown N4 LCD output mode')
         self.device = device
@@ -23,14 +24,25 @@ class DisplayState:
         self.clock = clock
         self.led_writer = led_writer
         self.animation = NativeAnimation()
+        self.screensaver_config = (ScreensaverConfig(screensaver_config, screensaver_path)
+                                   if screensaver_config is not None else None)
+        if self.screensaver_config is not None and self.screensaver_config.initial_request is not None:
+            screensaver_path = self.screensaver_config.initial_request[1]
+        self.screensaver_ready = False
         if screensaver_path is not None:
             try:
                 self.animation.load(screensaver_path, check)
             except ProtocolError:
                 raise
             except (OSError, ValueError, Image.DecompressionBombError) as error:
-                raise ProtocolError('Saved screensaver asset is invalid or exceeds its bounds', 'ERR_ASSET_INVALID') from error
-        self.screensaver_ready = screensaver_path is not None
+                if self.screensaver_config is None:
+                    raise ProtocolError('Saved screensaver asset is invalid or exceeds its bounds', 'ERR_ASSET_INVALID') from error
+                self.screensaver_config.error = 'ERR_ASSET_INVALID'
+            else:
+                self.screensaver_ready = True
+        if (self.screensaver_config is not None and self.screensaver_config.initial_request is not None
+                and self.screensaver_config.error is None):
+            self.screensaver_config.applied(self.screensaver_config.initial_request[0])
         self.logo = None
         if logo_path is not None:
             check()
@@ -68,6 +80,29 @@ class DisplayState:
         self.streamed_screensaver = None
         self.fade = None
         self.next_fade_update = 0
+
+    def close(self):
+        if self.screensaver_config is not None:
+            self.screensaver_config.close()
+
+    def _update_screensaver(self, check):
+        if self.screensaver_config is None:
+            return
+        prepared = self.screensaver_config.poll()
+        if prepared is None:
+            return
+        revision, animation = prepared
+        check()
+        previous = self.animation
+        self.animation = animation if animation is not None else NativeAnimation()
+        self.screensaver_ready = animation is not None
+        previous.clear()
+        if self.idle:
+            self.native_active = self.stream_active = False
+            # Host LCD images observed before this replacement are stale fallback.
+            self.streamed_screensaver = None
+            self.enter_idle(check)
+        self.screensaver_config.applied(revision)
 
     def initialize(self, check):
         """Reset volatile display state after an admitted open, like legacy init.
@@ -220,6 +255,7 @@ class DisplayState:
             self.restore(check)
 
     def tick(self, check):
+        self._update_screensaver(check)
         now = self.clock()
         if self.idle:
             if self.native_active:
@@ -389,6 +425,9 @@ class DisplayState:
                 'brightness': self.brightness, 'screenBrightness': self.screen_level,
                 'sleepDuration': self.sleep_seconds, 'idle': self.idle, 'sleeping': self.sleeping,
                 'screensaverReady': self.screensaver_ready, 'screensaverActive': self.native_active or self.stream_active,
+                'screensaverRevision': self.screensaver_config.revision if self.screensaver_config else 0,
+                'screensaverLoading': self.screensaver_config.loading if self.screensaver_config else False,
+                'screensaverError': self.screensaver_config.error if self.screensaver_config else None,
                 'logoActive': self.logo_active,
                 'knobBrightness': self.brightness if self.knob_brightness is None else self.knob_brightness,
                 'followDisplayBrightness': self.knob_brightness is None, 'knobBrightnessLevel': self.led_level,

@@ -303,14 +303,20 @@ def main(argv=None):
                         help='Interpret streamed host LCD images as screensaver overlays when explicitly selected')
     parser.add_argument('--logo-path', type=Path, help='Explicit absolute software display PNG; never boot-logo/firmware')
     parser.add_argument('--screensaver-path', type=Path, help='Explicit absolute saved image/animation; never modifies the file')
+    parser.add_argument('--screensaver-config', type=Path, help='Explicit absolute local screensaver revision file')
     parser.add_argument('--build-id', default='source-candidate', help='Build ID provided by verified runtime manifest')
     parser.add_argument('--fake-write-delay-ms', type=int, default=0)
     parser.add_argument('--fake-input-count', type=int, default=0)
     args = parser.parse_args(argv)
     if args.logo_path is not None and (args.backend != 'mirabox' or not args.logo_path.is_absolute() or not args.logo_path.is_file()):
         parser.error('--logo-path requires an existing absolute local PNG and physical backend')
-    if args.screensaver_path is not None and (args.backend != 'mirabox' or not args.screensaver_path.is_absolute() or not args.screensaver_path.is_file()):
+    if args.screensaver_path is not None and (args.backend != 'mirabox' or not args.screensaver_path.is_absolute()
+            or args.screensaver_config is None and not args.screensaver_path.is_file()):
         parser.error('--screensaver-path requires an existing absolute local file and physical backend')
+    if args.screensaver_config is not None:
+        from .models.n4_pro.screensaver_config import local_path
+        if args.backend != 'mirabox' or not local_path(str(args.screensaver_config)) or not args.screensaver_config.is_file():
+            parser.error('--screensaver-config requires an existing absolute local file and physical backend')
     if not 0 < len(args.build_id) <= 128 or not 0 <= args.fake_write_delay_ms <= 10_000 or not 0 <= args.fake_input_count <= 10_000:
         parser.error('Invalid bounded worker arguments')
     with physical_working_directory(args.backend == 'mirabox'):
@@ -324,7 +330,8 @@ def main(argv=None):
             from .transport.mirabox import MiraboxBackend
             if args.sdk_path is None or not args.sdk_path.is_absolute() or not args.sdk_path.is_dir():
                 parser.error('--sdk-path must name an explicit prepared absolute SDK directory')
-            backend = MiraboxBackend(args.sdk_path, args.screensaver_path, args.logo_path, args.strip_mode, args.lcd_mode)
+            backend = MiraboxBackend(args.sdk_path, args.screensaver_path, args.logo_path, args.strip_mode, args.lcd_mode,
+                                     screensaver_config=args.screensaver_config)
         worker = Worker(backend, sys.stdin.buffer, protocol_stdout, args.build_id)
         for name in ('SIGTERM', 'SIGINT'):
             if hasattr(signal, name):
