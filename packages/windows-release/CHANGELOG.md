@@ -1,5 +1,13 @@
 # @hellgato/windows-release
 
+## 0.1.6
+
+### Patch Changes
+
+- 48dff31: Update the selected screensaver without restarting the USB worker or Stream Deck network connection. Prepare replacement animations in the background and keep the previous display available until they are ready.
+  
+  Keep USB readiness independent of an interrupted initial network connection so automatic reconnection can continue.
+
 ## 0.1.5
 
 ### Patch Changes
