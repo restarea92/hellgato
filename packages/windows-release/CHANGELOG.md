@@ -1,5 +1,16 @@
 # @hellgato/windows-release
 
+## 0.1.5
+
+### Patch Changes
+
+- Bundle @hellgato/core and hellgato 0.2.1 in the Windows application.
+  
+  Included SDK changes:
+  
+  Recover incomplete Stream Deck child pairing by refreshing its capabilities, then resetting only the stalled dock connection if necessary. Limit retries, preserve regular unpairing after a stable session, and cancel recovery when the bridge stops.
+- ab1a725: After initial pairing, retry the local Stream Deck connection while both apps and the USB device are available, without opening a pairing window or launching or closing either app. Automatic host rescan is verified for Stream Deck 7.6.0.23012. Keep USB and network connection status separate, stop retries after an explicit disconnect, and prevent repeated saved-screensaver announcements from overflowing the output queue.
+
 ## 0.1.4
 
 ### Patch Changes

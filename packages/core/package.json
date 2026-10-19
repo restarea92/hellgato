@@ -1,6 +1,6 @@
 {
   "name": "@hellgato/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Node.js bridge for Stream Deck network input and display events",
   "type": "module",
   "exports": {

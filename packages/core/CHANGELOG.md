@@ -1,5 +1,11 @@
 # @hellgato/core
 
+## 0.2.1
+
+### Patch Changes
+
+- ab1a725: Recover incomplete Stream Deck child pairing by refreshing its capabilities, then resetting only the stalled dock connection if necessary. Limit retries, preserve regular unpairing after a stable session, and cancel recovery when the bridge stops.
+
 ## 0.2.0
 
 ### Minor Changes
