@@ -7,8 +7,8 @@
 <p align="center"><strong>Unofficial hardware. Official software.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/restarea92/hellgato/releases/download/v0.1.5/Hellgato-0.1.5-Setup.exe"><strong>Download for Windows (.exe)</strong></a> ·
-  <a href="https://github.com/restarea92/hellgato/releases/tag/v0.1.5">Release notes &amp; SHA-256</a> ·
+  <a href="https://github.com/restarea92/hellgato/releases/download/v0.1.6/Hellgato-0.1.6-Setup.exe"><strong>Download for Windows (.exe)</strong></a> ·
+  <a href="https://github.com/restarea92/hellgato/releases/tag/v0.1.6">Release notes &amp; SHA-256</a> ·
   <a href="docs/guide.md">Guide</a> ·
   <a href="https://github.com/restarea92/hellgato/issues">Report an issue</a>
 </p>
