@@ -278,6 +278,24 @@ test('saved-source policy forwards saver control and suppresses host LCD only in
   assert.equal(f.adapter.outputs.length, 0); await f.runner.stop();
 });
 
+test('product connection events require both dock and device sockets', async () => {
+  const f = fixture({ config: { productMode: true } }), events = [];
+  f.runner.on('product', event => events.push(event));
+  await f.runner.start();
+  const bridge = f.bridges[0];
+  bridge.primaryConnected = false; bridge.childConnected = true;
+  bridge.emit('clientConnected', { role: 'child' });
+  assert.equal(events.at(-1).hostConnected, false);
+  bridge.primaryConnected = true;
+  bridge.emit('clientConnected', { role: 'primary' });
+  assert.equal(events.at(-1).hostConnected, true);
+  bridge.primaryConnected = false;
+  bridge.emit('clientDisconnected', { role: 'primary' });
+  assert.equal(events.at(-1).hostConnected, false);
+  assert.equal(events.at(-1).event, 'primary.clientDisconnected');
+  await f.runner.stop();
+});
+
 test('automatic recovery has a total bounded budget across repeated successful recoveries', async () => {
   const f = fixture(); await f.runner.start();
   f.adapter.disconnect(); await waitUntil(() => f.runner.getStatus().generation === 2 && f.runner.getStatus().state === 'ready');

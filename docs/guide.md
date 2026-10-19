@@ -104,7 +104,7 @@ Elgato firmware updates do not apply to N4 Pro. Update controls and firmware-lab
 
 Closing Stream Deck releases the USB device with its native close notification while leaving Hellgato's network listener available for the next user-initiated Stream Deck launch. Hellgato resumes USB use after the new Stream Deck process passes preparation checks. Exiting or disconnecting Hellgato stops its workers. USB removal closes the physical device handles while preserving the virtual network connection. Held inputs are released and are never replayed. Cached display state is restored when the USB worker reconnects. Return to the device's standalone screen on Stream Deck exit was physically confirmed in IPC build `bb51866`.
 
-Two Hellgato-only limitations were observed in `bb51866`: quitting Hellgato leaves the last screen visible for tens of seconds before native standby, and relaunching Hellgato while Stream Deck remains open requires manual network pairing. Key icons work after pairing.
+Quitting Hellgato can leave the last screen visible for tens of seconds before native standby. After the first manual pairing, Hellgato automatically requests a network rescan while both apps and USB are available. This private host integration is verified for Stream Deck 7.6.0.23012 with Qt 6.11.1; other builds keep manual pairing. It does not launch or close either app, or open a pairing window. Connection retries stop after an explicit Hellgato disconnect. A stalled primary-only handshake also receives a bounded protocol recovery attempt.
 
 ## How it works
 

@@ -290,9 +290,11 @@ class ProductControls:
         self.settings = validate_settings(controls)
         self.observed = {}
         self.connected = self.host_connected = self.knob_supported = False
+        self.network_listening = False
         self.firmware = None
         self.channel = None
         self.stop_guard = lambda: None
+        self.connection_desired = lambda: True
         self.lock = threading.RLock()
 
     def state(self):
@@ -300,7 +302,9 @@ class ProductControls:
             current = {**self.settings, **self.observed}
             return {'serial': self.serial, 'model': 'Mirabox N4 Pro', 'firmware': self.firmware,
                     'available': self.connected and self.knob_supported, 'connected': self.connected,
-                    'hostConnected': self.host_connected, 'knobBrightness': current.get('knobBrightness', current.get('brightness', 100)),
+                    'hostConnected': self.host_connected, 'networkListening': self.network_listening,
+                    'connectionDesired': self.connection_desired(),
+                    'knobBrightness': current.get('knobBrightness', current.get('brightness', 100)),
                     'followDisplayBrightness': current.get('followDisplayBrightness', True),
                     'capabilities': {'knobBrightness': self.connected and self.knob_supported}}
 
@@ -356,6 +360,7 @@ class ProductBridge:
         self.registry = DeviceRegistry(state, self.settings['identity'], self.settings['dockIdentity'])
         self.controls = ProductControls(state, self.serial, initial_controls(state, self.serial))
         self.controls.stop_guard = self.check_running
+        self.controls.connection_desired = lambda: not self.stopped()
         self.emit = emit or (lambda value: print(json.dumps(value, separators=(',', ':')), flush=True))
         self.process_factory = process_factory
         self.discovered = queue.Queue(maxsize=1)
@@ -420,10 +425,17 @@ class ProductBridge:
                 self.controls.knob_supported = features.get('knobBrightness', {}).get('status') == 'native'
             elif event == 'deviceDisconnected':
                 self.controls.connected = False
-            elif event.startswith('child.client'):
-                self.controls.host_connected = self.host_available and event == 'child.clientConnected'
+            elif event == 'started':
+                ports = detail.get('ports', {})
+                self.controls.network_listening = ports.get('primary') == 5343 and ports.get('child') == 5344
+            elif event.startswith(('child.client', 'primary.client')):
+                connected = detail.get('hostConnected')
+                if type(connected) is bool:
+                    self.controls.host_connected = self.host_available and connected
+                elif event.endswith('Disconnected'):
+                    self.controls.host_connected = False
             self.emit({'event': event, 'detail': {key: item for key, item in detail.items()
-                       if key in ('deviceId', 'code', 'ports', 'attempt', 'firmware')}})
+                       if key in ('deviceId', 'code', 'ports', 'attempt', 'firmware', 'hostConnected')}})
         elif event == 'diagnostic':
             self.emit(value)
         elif value.get('state') == 'failed':
@@ -461,6 +473,7 @@ class ProductBridge:
             channel.start()
             yield channel
         finally:
+            self.controls.network_listening = False
             channel.close()
             config_path.unlink(missing_ok=True)
 
@@ -491,7 +504,8 @@ class ProductBridge:
         self.state_root.mkdir(parents=True, exist_ok=True)
         # Existing product preference files are authoritative at each GUI start.
         (self.state_root / f'ipc-state-{self.serial}.json').unlink(missing_ok=True)
-        server = DeviceControlServer(self.state_root, self.serial, self.controls.state, self.controls.apply)
+        server = DeviceControlServer(self.state_root, self.serial, self.controls.state, self.controls.apply,
+                                     auto_reconnect=True)
         saver = ScreensaverSource(self.serial)
         try:
             self.emit({'event': 'bridgeReady'})

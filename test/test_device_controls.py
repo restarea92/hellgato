@@ -148,6 +148,16 @@ class DeviceControlTests(unittest.TestCase):
 
 
 class DeviceControlServerTests(unittest.TestCase):
+    def test_native_automatic_reconnect_is_disabled_unless_the_product_enables_it(self):
+        config = json.loads(self.server.config_path.read_text())
+        self.assertFalse(config['autoReconnect'])
+        with tempfile.TemporaryDirectory() as directory:
+            server = DeviceControlServer(directory, SERIAL, lambda: {}, Mock(), port=0, auto_reconnect=True)
+            try:
+                self.assertTrue(json.loads(server.config_path.read_text())['autoReconnect'])
+            finally:
+                server.close()
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

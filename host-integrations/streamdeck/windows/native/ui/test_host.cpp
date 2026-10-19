@@ -6,6 +6,7 @@
 #include <QTextStream>
 #include <QAction>
 #include <QDialog>
+#include <QCheckBox>
 
 class ESDDeviceComboBox : public QWidget {
     Q_OBJECT
@@ -13,8 +14,64 @@ public:
     using QWidget::QWidget;
 };
 
+class ESDCoraDocksManagerEx : public QObject {
+    Q_OBJECT
+public:
+    using QObject::QObject;
+    int requests = 0;
+public slots:
+    void onRescan() { ++requests; }
+};
+
+int reconnectContract(QApplication &app) {
+    QJsonObject results;
+    ESDCoraDocksManagerEx manager;
+    auto flush = [&] { app.processEvents(); app.processEvents(); };
+    {
+        LocalDockReconnect reconnect(&app, [&] { return &manager; });
+        reconnect.poll(false, false, 0); reconnect.poll(true, true, 1000); flush();
+        results["noRescanWithoutNeed"] = manager.requests == 0;
+        reconnect.poll(true, false, 5000); flush();
+        results["directRescanWithoutPairingDialog"] = manager.requests == 1 && QApplication::topLevelWidgets().isEmpty();
+        reconnect.poll(true, true, 6000); reconnect.poll(true, true, 9000); flush();
+        results["connectedStopsRetries"] = manager.requests == 1;
+        reconnect.poll(true, false, 11000); flush();
+        reconnect.poll(true, false, 11999); flush();
+        results["failedAttemptBacksOff"] = manager.requests == 2;
+        reconnect.poll(true, false, 12000); flush();
+        reconnect.poll(true, false, 13999); flush();
+        results["retryDelayIncreases"] = manager.requests == 3;
+        reconnect.poll(true, false, 14000); reconnect.poll(false, false, 14001); flush();
+        results["backendStopCancelsQueuedRescan"] = manager.requests == 3;
+    }
+    {
+        LocalDockReconnect reconnect(&app, [&] { return &manager; });
+        QDialog userDialog;
+        userDialog.show();
+        const int before = manager.requests;
+        reconnect.poll(true, false, 20000); flush(); reconnect.poll(false, false, 20100);
+        results["userDialogUntouched"] = manager.requests == before + 1 && userDialog.isVisible();
+    }
+    {
+        QObject unknown;
+        LocalDockReconnect reconnect(&app, [&] { return &unknown; });
+        const int before = manager.requests;
+        reconnect.poll(true, false, 30000); flush();
+        results["unknownManagerDoesNotRun"] = manager.requests == before && !reconnect.status()["supported"].toBool();
+    }
+    {
+        LocalDockReconnect reconnect(&app);
+        reconnect.poll(true, false, 40000); flush();
+        results["differentHostImageDoesNotRun"] = !reconnect.status()["supported"].toBool() && reconnect.status()["attempts"].toInt() == 0;
+    }
+    QTextStream(stdout) << QJsonDocument(results).toJson(QJsonDocument::Compact) << '\n';
+    for (const auto &value : results) if (!value.toBool()) return 1;
+    return 0;
+}
+
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
+    if (app.arguments().contains("--reconnect-contract")) return reconnectContract(app);
     QString token(40, 'x');
     QTcpServer server;
     if (!server.listen(QHostAddress::LocalHost, 0)) return 2;

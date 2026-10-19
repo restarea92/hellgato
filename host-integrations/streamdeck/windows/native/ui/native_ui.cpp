@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QFile>
+#include <QElapsedTimer>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -25,6 +26,8 @@
 
 #include <memory>
 #include <vector>
+
+#include "local_dock_reconnect.h"
 
 namespace {
 QJsonObject inspectObject(QObject *object, int depth) {
@@ -109,7 +112,8 @@ struct DeviceControls {
 
 class NativeUi : public QObject {
 public:
-    explicit NativeUi(const QJsonObject &config) : QObject(qApp), config_(config), network_(this) {
+    explicit NativeUi(const QJsonObject &config) : QObject(qApp), config_(config), network_(this), reconnect_(this) {
+        clock_.start();
         setObjectName("hellgatoNativeBrightnessRowV2");
         qApp->installEventFilter(this);
         auto *timer = new QTimer(this);
@@ -131,6 +135,7 @@ public:
     }
 
     void configure(const QJsonObject &config) {
+        ++configEpoch_;
         config_ = config;
         state_ = QJsonObject();
         refresh();
@@ -188,9 +193,11 @@ private:
     void readState() {
         if (statePending_) return;
         statePending_ = true;
+        const auto epoch = configEpoch_;
         auto *reply = network_.get(request("/state"));
-        connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        connect(reply, &QNetworkReply::finished, this, [this, reply, epoch] {
             statePending_ = false;
+            if (epoch != configEpoch_) { reply->deleteLater(); return; }
             const auto document = QJsonDocument::fromJson(reply->readAll());
             state_ = reply->error() == QNetworkReply::NoError && document.isObject() ? document.object() : QJsonObject();
             reply->deleteLater();
@@ -349,6 +356,10 @@ private:
     }
 
     void refresh() {
+        const bool eligible = !config_["diagnosticsOnly"].toBool() && config_["autoReconnect"].toBool() &&
+            state_["serial"].toString() == config_["serial"].toString() && state_["connected"].toBool() &&
+            state_["connectionDesired"].toBool() && state_["networkListening"].toBool() && state_["hostConnected"].isBool();
+        reconnect_.poll(eligible, state_["hostConnected"].toBool(), clock_.elapsed());
         if (!config_["diagnosticsOnly"].toBool()) {
             for (auto *window : QApplication::topLevelWidgets()) {
                 for (auto *row : window->findChildren<QWidget *>("brightnessRow")) {
@@ -373,7 +384,8 @@ private:
                 QSaveFile output(diagnostics);
                 if (output.open(QIODevice::WriteOnly)) {
                     output.write(QJsonDocument(QJsonObject{{"event", "nativeUiReady"}, {"qtVersion", qVersion()},
-                        {"serial", config_["serial"]}, {"controls", count}, {"connected", ready()}}).toJson());
+                        {"serial", config_["serial"]}, {"controls", count}, {"connected", ready()},
+                        {"reconnect", reconnect_.status()}}).toJson());
                     output.commit();
                 }
             }
@@ -382,6 +394,9 @@ private:
     QJsonObject config_;
     QJsonObject state_;
     QNetworkAccessManager network_;
+    LocalDockReconnect reconnect_;
+    QElapsedTimer clock_;
+    quint64 configEpoch_ = 0;
     std::vector<std::unique_ptr<DeviceControls>> controls_;
     bool statePending_ = false;
     bool controlPending_ = false;
@@ -402,7 +417,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI HellgatoInitialize(void *argument)
     if (endpoint.scheme() != "http" || endpoint.host() != "127.0.0.1" || endpoint.port() != 5345 ||
         !endpoint.path().isEmpty() || endpoint.hasQuery() || endpoint.hasFragment() || !endpoint.userInfo().isEmpty() ||
         settings["token"].toString().size() < 32 || settings["token"].toString().contains(QRegularExpression("\\s")) ||
-        !QRegularExpression("^HGMOCK[0-9]{6}$").match(settings["serial"].toString()).hasMatch()) return 5;
+        !QRegularExpression("^HGMOCK[0-9]{6}$").match(settings["serial"].toString()).hasMatch() ||
+        settings.contains("autoReconnect") && !settings["autoReconnect"].isBool()) return 5;
     return QMetaObject::invokeMethod(qApp, [settings] {
         auto *existing = qApp->findChild<QObject *>("hellgatoNativeBrightnessRowV2", Qt::FindDirectChildrenOnly);
         if (existing) static_cast<NativeUi *>(existing)->configure(settings);

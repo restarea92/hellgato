@@ -8,6 +8,19 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const tick = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
 const observe = promise => promise.then(value => ({ value }), error => ({ error }));
 
+test('saved screensaver announcements stay bounded during animation bursts and preserve wake order', async () => {
+  const submitted = [], queue = createCandidateOutputQueue({ submit: async payload => { submitted.push(payload); return { status: 'applied' }; } });
+  const saver = { type: 'control', control: 'screensaver' };
+  const requests = [];
+  for (let index = 0; index < 1000; index++) requests.push(queue.enqueue(saver));
+  requests.push(queue.enqueue({ type: 'control', control: 'wake' }));
+  for (let index = 0; index < 1000; index++) requests.push(queue.enqueue(saver));
+  assert.equal(queue.getStatus().closed, false);
+  assert.equal(queue.getStatus().pendingCount, 3);
+  queue.resume(); await Promise.all(requests);
+  assert.deepEqual(submitted.map(payload => payload.control), ['screensaver', 'wake', 'screensaver']);
+});
+
 test('stalled host admission compacts a repeated full-frame burst before any submission', async () => {
   const submitted = [], queue = createCandidateOutputQueue({ submit: async payload => { submitted.push(payload); return { status: 'submitted' }; } });
   const replies = [];

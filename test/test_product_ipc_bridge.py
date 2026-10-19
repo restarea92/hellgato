@@ -24,6 +24,37 @@ def descriptor(identifier='a'):
 
 
 class ProductIpcTest(unittest.TestCase):
+    def test_primary_network_loss_does_not_claim_usb_was_disconnected(self):
+        with TemporaryDirectory() as directory:
+            bridge = self.make_bridge(Path(directory))
+            bridge.selected = bridge.select_device([descriptor()])
+            bridge.on_event({'event': 'deviceReady', 'deviceId': descriptor()['id'],
+                             'capabilities': descriptor()['capabilities']})
+            bridge.on_event({'event': 'started', 'ports': {'primary': 5343, 'child': 5344}})
+            bridge.on_event({'event': 'child.clientConnected', 'hostConnected': True})
+            self.assertTrue(bridge.controls.state()['hostConnected'])
+            bridge.on_event({'event': 'primary.clientDisconnected', 'hostConnected': False})
+            state = bridge.controls.state()
+            self.assertTrue(state['connected'])
+            self.assertTrue(state['networkListening'])
+            self.assertFalse(state['hostConnected'])
+            self.assertFalse(bridge.emit.call_args.args[0]['detail']['hostConnected'])
+            self.assertTrue(state['connectionDesired'])
+            bridge.stop_file.touch()
+            self.assertFalse(bridge.controls.state()['connectionDesired'])
+
+    def test_gui_requires_both_network_channels_after_usb_recovers(self):
+        from hellgato_stream_dog.launcher import Session
+        session = Session(queue.Queue())
+        session.device_ready.set()
+        session.connected.set()
+        for event, connected in (('primary.clientDisconnected', False), ('child.clientConnected', False),
+                                  ('primary.clientConnected', True)):
+            session.log_bridge(StringIO(json.dumps({'event': event, 'detail': {'hostConnected': connected}}) + '\n'), StringIO())
+            self.assertEqual(session.connected.is_set(), connected)
+            self.assertTrue(session.device_ready.is_set())
+            self.assertEqual(session.phase, 'connected' if connected else 'pairing')
+
     def test_worker_descriptor_registration_reuses_identity_and_refuses_replacement(self):
         with TemporaryDirectory() as directory:
             registry = DeviceRegistry(directory, 23, 7)

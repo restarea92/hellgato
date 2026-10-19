@@ -35,7 +35,7 @@ class ControlRequest:
 
 class DeviceControlServer:
     def __init__(self, state_root, serial, get_state, apply_control, *, port=5345,
-                 timeout=10, clock=time.monotonic, token=None):
+                 timeout=10, clock=time.monotonic, token=None, auto_reconnect=False):
         self.serial = serial
         self.get_state = get_state
         self.apply_control = apply_control
@@ -52,6 +52,7 @@ class DeviceControlServer:
         endpoint = f'http://127.0.0.1:{self.port}'
         self.config_path.write_text(json.dumps({'version': 1, 'serial': serial,
                                                'endpoint': endpoint, 'url': endpoint,
+                                               'autoReconnect': auto_reconnect,
                                                'diagnosticsPath': str(Path(state_root) / 'native-ui-diagnostics.log'),
                                                'token': self.token}) + '\n', encoding='utf-8')
         self.thread = threading.Thread(target=lambda: self.http.serve_forever(poll_interval=.05),

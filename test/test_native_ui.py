@@ -40,6 +40,12 @@ class NativeUiTest(unittest.TestCase):
             with self.assertRaises(native_ui.NativeUiError):
                 native_ui.pe_machine(dll)
 
+    def test_automatic_pairing_is_an_explicit_boolean_option(self):
+        self.assertTrue(native_ui.validate_config({**self.config(), 'autoReconnect': True})['autoReconnect'])
+        for value in ('true', 1, None):
+            with self.subTest(value=value), self.assertRaises(native_ui.NativeUiError):
+                native_ui.validate_config({**self.config(), 'autoReconnect': value})
+
     @unittest.skipUnless(os.name == 'nt', 'Windows process loader')
     def test_refuses_another_process_before_remote_thread(self):
         with tempfile.TemporaryDirectory() as folder:

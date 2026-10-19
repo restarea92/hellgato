@@ -182,15 +182,23 @@ class Session:
                 self.status('detail.device_mismatch', 'waiting')
             elif event.get('event') == 'started':
                 self.listening.set()
-            elif event.get('event') == 'child.clientConnected':
-                self.connected.set()
-                if self.device_ready.is_set():
-                    self.status('detail.connected', 'connected')
+            elif event.get('event') in ('child.clientConnected', 'child.clientDisconnected',
+                                        'primary.clientConnected', 'primary.clientDisconnected'):
+                connected = event.get('detail', {}).get('hostConnected')
+                if type(connected) is not bool:
+                    if event['event'] == 'primary.clientConnected':
+                        continue
+                    connected = event['event'] == 'child.clientConnected'
+                if connected:
+                    self.connected.set()
                 else:
+                    self.connected.clear()
+                if connected and self.device_ready.is_set():
+                    self.status('detail.connected', 'connected')
+                elif connected:
                     self.status('detail.waiting', 'waiting')
-            elif event.get('event') == 'child.clientDisconnected':
-                self.connected.clear()
-                self.status('detail.pairing', 'pairing')
+                else:
+                    self.status('detail.pairing', 'pairing')
             elif event.get('event') == 'ipcFailed':
                 logging.error('SDK product runtime failed: %s', event.get('detail', {}).get('code'))
                 self.status('error.device', 'error')

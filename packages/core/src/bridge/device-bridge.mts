@@ -37,6 +37,7 @@ class DeviceBridge extends EventEmitter implements Bridge {
   #options: ResolvedOptions;
   #primary: PrimaryTransport | undefined;
   #child: ChildTransport | undefined;
+  #disposeTransport: (() => void) | undefined;
   #hasStarted = false;
   #state: BridgeState['state'] = 'idle';
   #operation = Promise.resolve();
@@ -132,7 +133,7 @@ class DeviceBridge extends EventEmitter implements Bridge {
       this.#setState('starting');
       try {
         const transport = await createStreamDeckTransport(this.#options.target, this.#options);
-        this.#primary = transport.primary; this.#child = transport.child;
+        this.#primary = transport.primary; this.#child = transport.child; this.#disposeTransport = transport.dispose;
         this.#bind();
         await this.#child.start();
         this.#primary.childPort = this.ports.child;
@@ -148,6 +149,7 @@ class DeviceBridge extends EventEmitter implements Bridge {
   }
 
   async #cleanup() {
+    this.#disposeTransport?.(); this.#disposeTransport = undefined;
     this.releaseInputs();
     for (const socket of this.#sockets) socket.destroy();
     this.#sockets.clear();

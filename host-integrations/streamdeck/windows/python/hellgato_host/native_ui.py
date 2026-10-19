@@ -17,6 +17,8 @@ class NativeUiError(RuntimeError):
 def validate_config(config):
     if not isinstance(config, dict):
         raise NativeUiError('Native UI configuration must be an object')
+    if 'autoReconnect' in config and type(config['autoReconnect']) is not bool:
+        raise NativeUiError('Automatic reconnect must be a boolean')
     endpoint = urlsplit(config.get('endpoint', ''))
     if (endpoint.scheme != 'http' or endpoint.hostname != '127.0.0.1' or endpoint.port != 5345 or
             endpoint.path or endpoint.query or endpoint.fragment or endpoint.username or endpoint.password):

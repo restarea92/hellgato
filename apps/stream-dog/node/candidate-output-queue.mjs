@@ -79,6 +79,13 @@ export function createCandidateOutputQueue({ submit, observeFrame = () => {}, ma
       try { value = queuedPayload(payload); bytes = Buffer.byteLength(JSON.stringify(value)); }
       catch (error) { return Promise.reject(error); }
       if (value.type === 'frame') observeFrame('received', value.surfaceId);
+      // Each host animation frame announces the same saved screensaver. Keep
+      // one pending announcement without crossing a wake or other control.
+      if (value.type === 'control' && value.control === 'screensaver' &&
+          pending.at(-1)?.payload.control === 'screensaver' &&
+          JSON.stringify(pending.at(-1).payload) === JSON.stringify(value)) {
+        return Promise.resolve({ status: 'superseded' });
+      }
       let barrier = -1;
       for (let index = pending.length - 1; index >= 0; index--) {
         if (pending[index].payload.type === 'control') { barrier = index; break; }

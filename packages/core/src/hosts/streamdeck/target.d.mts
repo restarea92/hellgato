@@ -13,6 +13,8 @@ export interface TransportServer extends EventEmitter {
 export interface PrimaryTransport extends TransportServer {
     childPort: number | null;
     setDeviceConfig(config: DeviceConfig): void;
+    pushChildCapabilities(): void;
+    dropClient(): void;
 }
 export interface ChildTransport extends TransportServer {
     sleepSeconds: number;
@@ -26,6 +28,10 @@ export type PrimaryConstructor = new (geometry: Geometry, port: number, child: b
     childPort: number;
 }) => PrimaryTransport;
 export type ChildConstructor = new (geometry: Geometry, port: number, config: DeviceConfig, primary: boolean) => ChildTransport;
+/** A stalled child probe leaves Stream Deck attached only to its dock. Refresh
+ * the advertised child once before resetting that primary socket. A regular
+ * unpair after a stable child session must remain under the host's control. */
+export declare function watchStreamDeckPairing(primary: PrimaryTransport, child: TransportServer): () => void;
 export declare function validateStreamDeckTarget(input: unknown): HostTarget;
 export declare function createStreamDeckTransport(target: HostTarget, { port, childPort, sleepDuration }: {
     port: number;
@@ -34,4 +40,5 @@ export declare function createStreamDeckTransport(target: HostTarget, { port, ch
 }): Promise<{
     primary: PrimaryTransport;
     child: ChildTransport;
+    dispose: () => void;
 }>;

@@ -61,6 +61,14 @@ Import and construction are inert: runtime loading and server creation happen at
 acquired listener/socket and can be retried. `state`, `getState()`, `state` and
 `connection` events expose lifecycle separately from primary/child host connectivity.
 
+When a primary connection has no child, the bridge waits three seconds, refreshes
+the child capabilities, then resets only that primary socket if the child is still
+absent three seconds later. An aborted child session shorter than two seconds uses
+the same recovery, capped at three attempts per failure streak. A stable child
+session resets the budget when it ends; its normal unpair does not trigger recovery.
+Stopping the bridge cancels pending recovery. This cannot initiate a connection
+from a host that has never contacted the primary listener.
+
 `deviceId`, `sessionId` and `generation` have distinct fields. Generation increments
 when a bridge that reached ready is stopped and restarted. Use the current getter
 for new input; stale identities, generations and duplicate/nonincreasing sequences

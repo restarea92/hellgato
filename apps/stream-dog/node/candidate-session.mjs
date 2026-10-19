@@ -306,7 +306,7 @@ export function createCandidateRunner(input, dependencies = {}) {
       const saver = () => { if (config.screensaverMode === 'native') output({ type: 'control', control: 'screensaver' }); };
       const relay = event => detail => {
         const role = detail?.role === 'primary' ? 'primary' : 'child';
-        product(`${role}.${event}`);
+        product(`${role}.${event}`, { hostConnected: bridge.primaryConnected === true && bridge.childConnected === true });
         const primaryLost = config.productMode && role === 'primary' && event === 'clientDisconnected';
         const primaryReturned = config.productMode && role === 'primary' && event === 'clientConnected' && bridge.childConnected === true;
         if (role === 'child' || primaryLost || primaryReturned) {
