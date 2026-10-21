@@ -1,5 +1,11 @@
 # @hellgato/windows-release
 
+## 0.1.7
+
+### Patch Changes
+
+- d23b4e1: Bound connection and installer logs, rotate current diagnostics, and periodically prune inactive historical traces without changing settings, profiles or images.
+
 ## 0.1.6
 
 ### Patch Changes
