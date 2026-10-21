@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'app'))
 from hellgato import INCOMPATIBLE, Session, WindowLifecycle
 from i18n import Message
+from presence import HostAmbiguousError
 import hellgato
 
 
@@ -127,6 +128,30 @@ class LifecycleTest(unittest.TestCase):
         self.assertEqual([call.args[0] for call in session.bridge.stdin.write.call_args_list],
                          ['{"command":"hostUnavailable"}\n'])
         inspect.assert_not_called()
+
+    def test_uri_forwarding_duplicate_keeps_only_the_existing_prepared_host(self):
+        old = SimpleNamespace(pid=1, created='old', executable=Path('known.exe'))
+        forwarding = SimpleNamespace(pid=2, created='forwarding', executable=Path('known.exe'))
+        result, session, spawn, inspect = self.run_host_sequence(
+            [old, HostAmbiguousError([old, forwarding]), old], [])
+        self.assertTrue(result)
+        spawn.assert_called_once()
+        inspect.assert_not_called()
+        session.bridge.stdin.write.assert_not_called()
+        self.assertEqual([call.args[0] for call in session.prepare_native_ui.call_args_list], [1])
+
+    def test_duplicate_new_hosts_pause_the_absent_old_host_until_one_remains(self):
+        new = SimpleNamespace(pid=2, created='new', executable=Path('known.exe'))
+        duplicate = SimpleNamespace(pid=3, created='other', executable=Path('known.exe'))
+        result, session, spawn, inspect = self.run_host_sequence(
+            [HostAmbiguousError([new, duplicate]), HostAmbiguousError([new, duplicate]), new],
+            [SimpleNamespace(state=2, ready=True)])
+        self.assertTrue(result)
+        spawn.assert_called_once()
+        inspect.assert_called_once_with(new)
+        self.assertEqual([call.args[0] for call in session.bridge.stdin.write.call_args_list],
+                         ['{"command":"hostUnavailable"}\n', '{"command":"hostAvailable"}\n'])
+        self.assertEqual([call.args[0] for call in session.prepare_native_ui.call_args_list], [2])
 
 
 if __name__ == '__main__':

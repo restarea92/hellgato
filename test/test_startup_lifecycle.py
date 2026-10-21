@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'app'))
 import hellgato
 from i18n import Message
-from presence import HostProcess
+from presence import HostAmbiguousError, HostProcess, SystemPresence
 from startup_status import RECORD, StartupStatus, decode_status
 
 
@@ -49,6 +49,30 @@ class StartupLifecycleTest(unittest.TestCase):
         self.run_once(None)
         messages = list(self.session.events.queue)
         self.assertIn(Message('detail.host_waiting'), messages)
+
+    def test_multiple_hosts_wait_without_choosing_or_launching_either(self):
+        other = HostProcess(32, 54321, self.host.executable)
+        presence = SystemPresence(process_reader=lambda: [self.host, other])
+        self.session.stop.wait = Mock(side_effect=lambda seconds: self.session.stop.set())
+        with patch.object(hellgato, 'installed', return_value=True), \
+                patch.object(hellgato, 'SystemPresence', return_value=presence), \
+                patch('settings.load_settings'), \
+                patch.object(hellgato, 'read_status') as inspect, \
+                patch.object(hellgato.subprocess, 'Popen') as popen, \
+                patch.object(hellgato.subprocess, 'run') as run:
+            self.session.run()
+        self.assertIn(Message('detail.host_waiting'), list(self.session.events.queue))
+        inspect.assert_not_called()
+        popen.assert_not_called()
+        run.assert_not_called()
+        self.assertEqual(self.session.phase, 'idle')
+
+    def test_presence_reports_all_candidates_without_selecting_a_duplicate(self):
+        other = HostProcess(32, 54321, self.host.executable)
+        presence = SystemPresence(process_reader=lambda: [self.host, other])
+        with self.assertRaises(HostAmbiguousError) as raised:
+            presence.host()
+        self.assertEqual(raised.exception.candidates, (self.host, other))
 
     def test_existing_unprepared_host_requires_user_reopen_without_late_patch(self):
         self.run_once(self.host)

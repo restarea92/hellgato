@@ -21,6 +21,39 @@ test('saved screensaver announcements stay bounded during animation bursts and p
   assert.deepEqual(submitted.map(payload => payload.control), ['screensaver', 'wake', 'screensaver']);
 });
 
+test('paused native screensaver announcements coalesce across key frames without crossing wake', async () => {
+  const submitted = [], queue = createCandidateOutputQueue({ submit: async payload => { submitted.push(payload); return { status: 'applied' }; } });
+  const saver = { type: 'control', control: 'screensaver' }, replies = [];
+  replies.push(observe(queue.enqueue(frame('key:0', 'before'))));
+  for (let index = 0; index < 1000; index++) {
+    replies.push(observe(queue.enqueue(saver)));
+    replies.push(observe(queue.enqueue(frame(`key:${index % 10}`, String(index)))));
+  }
+  replies.push(observe(queue.enqueue({ type: 'control', control: 'wake' })));
+  for (let index = 1000; index < 2000; index++) {
+    replies.push(observe(queue.enqueue(saver)));
+    replies.push(observe(queue.enqueue(frame(`key:${index % 10}`, String(index)))));
+  }
+  assert.equal(queue.getStatus().closed, false);
+  assert.equal(queue.getStatus().pendingCount, 24);
+  queue.resume();
+  assert.ok((await Promise.all(replies)).every(reply => !reply.error));
+  assert.deepEqual(submitted.filter(payload => payload.type === 'control').map(payload => payload.control), ['screensaver', 'wake', 'screensaver']);
+  assert.deepEqual(submitted.filter(payload => payload.type === 'frame').map(payload => payload.data),
+    ['before', ...Array.from({ length: 10 }, (_, index) => String(990 + index)), ...Array.from({ length: 10 }, (_, index) => String(1990 + index))]);
+  queue.close();
+});
+
+test('running output keeps screensaver announcements separated by frames', async () => {
+  const submitted = [], queue = createCandidateOutputQueue({ submit: async payload => { submitted.push(payload); return {}; } });
+  const saver = { type: 'control', control: 'screensaver' };
+  queue.resume();
+  const replies = [queue.enqueue(saver), queue.enqueue(frame('key:0')), queue.enqueue(saver)];
+  await Promise.all(replies);
+  assert.deepEqual(submitted, [saver, frame('key:0'), saver]);
+  queue.close();
+});
+
 test('stalled host admission compacts a repeated full-frame burst before any submission', async () => {
   const submitted = [], queue = createCandidateOutputQueue({ submit: async payload => { submitted.push(payload); return { status: 'submitted' }; } });
   const replies = [];
@@ -79,6 +112,9 @@ test('irreducible entry and byte overload cancels pending work with an explicit 
   await assert.rejects(queue.enqueue(control(32)), { code: 'OUTPUT_OVERFLOW' });
   assert.equal(queue.getStatus().retainedCount, 0); assert.equal(queue.getStatus().closed, true);
   assert.ok((await Promise.all(replies)).every(result => result.error.code === 'OUTPUT_OVERFLOW'));
+  assert.deepEqual((await replies[0]).error.details, { paused: false, pendingEntries: 32,
+    pendingBytes: Array.from({ length: 32 }, (_, value) => Buffer.byteLength(JSON.stringify(control(value)))).reduce((a, b) => a + b),
+    pendingFrames: 0, inFlight: false, incomingType: 'control', incomingBytes: Buffer.byteLength(JSON.stringify(control(32))), limit: 'entries' });
   assert.deepEqual(submitted, []);
 
   const partials = createCandidateOutputQueue({ submit: async () => ({}) });

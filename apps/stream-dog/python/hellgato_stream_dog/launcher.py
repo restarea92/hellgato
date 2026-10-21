@@ -43,7 +43,7 @@ sys.path.insert(0, str(ROOT / 'app/n4'))
 sys.path.insert(0, str(ROOT / 'host-integrations/streamdeck/windows/python'))
 from hellgato_host.compatibility import INCOMPATIBLE
 from .i18n import Message, Translator
-from hellgato_host.presence import SystemPresence
+from hellgato_host.presence import HostAmbiguousError, SystemPresence
 from hellgato_host.startup_install import default_executable, installed, startup_dll
 from hellgato_host.startup_status import read_status
 
@@ -228,7 +228,12 @@ class Session:
                 return
             presence = SystemPresence()
             while not self.stop.is_set():
-                host = presence.host()
+                try:
+                    host = presence.host()
+                except HostAmbiguousError:
+                    self.status('detail.host_waiting', 'pairing')
+                    self.stop.wait(.5)
+                    continue
                 if host is None:
                     self.status('detail.host_waiting', 'pairing')
                     self.stop.wait(.5)
@@ -286,6 +291,16 @@ class Session:
                         break
                     try:
                         current = presence.host()
+                    except HostAmbiguousError as error:
+                        # URI forwarding briefly starts a second process. Never select it.
+                        if observed_host is not None and observed_host not in error.candidates:
+                            self.send_bridge_command('hostUnavailable')
+                            observed_host, prepared_host = None, None
+                            native_ui_ready, attempts, next_ui = False, 0, 0
+                            notified, started = False, time.monotonic()
+                            self.connected.clear()
+                            self.status('detail.host_waiting', 'pairing')
+                        continue
                     except OSError:
                         # A denied or transient snapshot is not evidence of exit.
                         logging.warning('Host observation failed; preserving the current bridge', exc_info=True)

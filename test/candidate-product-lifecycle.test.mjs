@@ -387,6 +387,39 @@ test('host pause releases the worker with the host-exit reason while its bridge 
   assert.equal(f.bridges[0].stopCount, 1);
 });
 
+test('host restart readiness accepts interleaved saved screensaver and key redraw bursts', async () => {
+  let checks = 0, approve;
+  const f = fixture({ fullProfile: true, config: { screensaverMode: 'native' }, readiness: ({ profile }) => {
+    const report = { ready: true, targetId: profile.target.id, profileId: profile.id,
+      host: { pid: 12, creationTime: String(++checks), executableDigest: 'a'.repeat(64) }, preparation: ['streamdeck-plus-ten-key'] };
+    return checks === 1 ? report : new Promise(resolve => { approve = () => resolve(report); });
+  } });
+  let resumed;
+  try {
+    await f.runner.start();
+    const bridge = f.bridges[0];
+    await f.runner.pauseDevice();
+    resumed = f.runner.resumeDevice();
+    await waitUntil(() => approve !== undefined);
+    for (let update = 0; update < 100; update++) {
+      bridge.emit('lcdFrameStarted');
+      bridge.output({ type: 'frame', surfaceId: `key:${update % 10}`, format: 'rgb888', width: 120, height: 120,
+        data: Buffer.alloc(120 * 120 * 3, update).toString('base64') });
+    }
+    await tick();
+    assert.equal(f.runner.getStatus().state, 'starting');
+    assert.equal(f.runner.getStatus().counters.frameWrites, 0);
+    approve(); await resumed;
+    await waitUntil(() => f.runner.getStatus().counters.frameWrites === 10);
+    assert.equal(f.runner.getStatus().state, 'ready');
+    assert.equal(f.runner.getStatus().generation, 2);
+    assert.equal(f.adapter.controls.filter(value => value.control === 'screensaver').length, 1);
+    assert.deepEqual(f.adapter.outputs.map(value => Buffer.from(value.data, 'base64')[0]), Array.from({ length: 10 }, (_, index) => 90 + index));
+    assert.equal(f.bridges.length, 1);
+    assert.equal(bridge.startCount, 1); assert.equal(bridge.stopCount, 0);
+  } finally { approve?.(); await resumed?.catch(() => {}); await f.runner.stop(); }
+});
+
 test('host pause cancels a pending USB recovery delay until an explicit resume', async () => {
   const f = fixture({ config: { reconnect: { maxAttempts: 1, delayMs: 200 } } });
   try {

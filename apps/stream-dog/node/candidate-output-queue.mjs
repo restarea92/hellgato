@@ -79,16 +79,16 @@ export function createCandidateOutputQueue({ submit, observeFrame = () => {}, ma
       try { value = queuedPayload(payload); bytes = Buffer.byteLength(JSON.stringify(value)); }
       catch (error) { return Promise.reject(error); }
       if (value.type === 'frame') observeFrame('received', value.surfaceId);
-      // Each host animation frame announces the same saved screensaver. Keep
-      // one pending announcement without crossing a wake or other control.
-      if (value.type === 'control' && value.control === 'screensaver' &&
-          pending.at(-1)?.payload.control === 'screensaver' &&
-          JSON.stringify(pending.at(-1).payload) === JSON.stringify(value)) {
-        return Promise.resolve({ status: 'superseded' });
-      }
       let barrier = -1;
       for (let index = pending.length - 1; index >= 0; index--) {
         if (pending[index].payload.type === 'control') { barrier = index; break; }
+      }
+      // During readiness, key frames may interleave identical saver announcements.
+      // Keep one pending announcement without crossing a wake or other control.
+      const lastControl = pending[paused ? barrier : pending.length - 1]?.payload;
+      if (value.type === 'control' && value.control === 'screensaver' &&
+          lastControl?.control === 'screensaver' && JSON.stringify(lastControl) === JSON.stringify(value)) {
+        return Promise.resolve({ status: 'superseded' });
       }
       const removed = pending.filter((item, index) => index > barrier && supersedes(value, item.payload));
       const removedSet = new Set(removed);
@@ -96,6 +96,10 @@ export function createCandidateOutputQueue({ submit, observeFrame = () => {}, ma
       const nextBytes = pendingBytes - removed.reduce((total, item) => total + item.bytes, 0) + bytes;
       if (retained.length + 1 + (active ? 1 : 0) > maxEntries || nextBytes + (active?.bytes ?? 0) > maxBytes) {
         const error = new CandidateError('OUTPUT_OVERFLOW');
+        error.details = { paused, pendingEntries: pending.length, pendingBytes,
+          pendingFrames: pending.filter(item => item.payload.type === 'frame').length,
+          inFlight: Boolean(active), incomingType: value.type, incomingBytes: bytes,
+          limit: retained.length + 1 + (active ? 1 : 0) > maxEntries ? 'entries' : 'bytes' };
         queue.close(error);
         return Promise.reject(error);
       }

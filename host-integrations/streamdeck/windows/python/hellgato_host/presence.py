@@ -13,6 +13,12 @@ class HostProcess:
     executable: Path
 
 
+class HostAmbiguousError(RuntimeError):
+    def __init__(self, candidates):
+        super().__init__('More than one Stream Deck process is running')
+        self.candidates = tuple(candidates)
+
+
 class ProcessEntry(c.Structure):
     _fields_ = [('size', w.DWORD), ('usage', w.DWORD), ('pid', w.DWORD),
                 ('heap', c.c_size_t), ('module', w.DWORD), ('threads', w.DWORD),
@@ -79,5 +85,5 @@ class SystemPresence:
     def host(self):
         candidates = self.process_reader()
         if len(candidates) > 1:
-            raise RuntimeError('More than one Stream Deck process is running')
+            raise HostAmbiguousError(candidates)
         return candidates[0] if candidates else None
