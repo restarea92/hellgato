@@ -90,7 +90,7 @@ export function stageWindowsSdk({ root = ROOT, artifactDir, planPath, sourceChan
     // product does not install anything; keep only runtime files and fixed packages.
     writeFileSync(resolve(stage, 'package.json'), JSON.stringify({ name: 'stream-dog-runtime', private: true, type: 'module' }) + '\n');
     rmSync(resolve(stage, 'node_modules/.package-lock.json'), { force: true });
-    for (const name of ['legacy-server.mjs', 'display-state.mjs', 'profiles.mjs']) cpSync(resolve(root, 'apps/stream-dog/node', name), resolve(stage, name));
+    for (const name of ['legacy-server.mjs', 'trace-log.mjs', 'display-state.mjs', 'profiles.mjs']) cpSync(resolve(root, 'apps/stream-dog/node', name), resolve(stage, name));
     for (const name of readdirSync(resolve(root, 'apps/stream-dog/node')).filter(name => /^candidate.*\.mjs$/.test(name))) {
       cpSync(resolve(root, 'apps/stream-dog/node', name), resolve(stage, name));
     }

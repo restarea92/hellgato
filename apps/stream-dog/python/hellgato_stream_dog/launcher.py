@@ -15,7 +15,9 @@ import time
 
 
 from .paths import ROOT
+from .log_policy import BoundedLog, cleanup_logs, configure_logging, run_logged
 STATE = Path(os.environ.get('HELLGATO_STATE_DIR', Path(os.environ['LOCALAPPDATA']) / 'Hellgato'))
+BRIDGE_LOG = BoundedLog(STATE / 'bridge.log')
 def read_release_metadata(root):
     """Use the same packaged metadata in source and PyInstaller execution."""
     metadata = json.loads((root / 'app/release.json').read_text(encoding='utf-8'))
@@ -215,10 +217,9 @@ class Session:
             if node.exists():
                 environment['HELLGATO_NODE'] = str(node)
             if prepare:
-                with (STATE / 'bridge.log').open('a', encoding='utf-8') as log:
-                    result = subprocess.run(command('scripts/setup-startup.py', '--install', '--elevate'),
-                                            cwd=ROOT, env=environment, stdout=log, stderr=log,
-                                            creationflags=subprocess.CREATE_NO_WINDOW)
+                with BRIDGE_LOG as log:
+                    result = run_logged(command('scripts/setup-startup.py', '--install', '--elevate'),
+                                        log, cwd=ROOT, env=environment)
                 if result.returncode:
                     self.status('error.startup_setup', 'setup')
                     return
@@ -266,7 +267,7 @@ class Session:
         for signal in (self.listening, self.connected, self.device_ready, self.bridge_ready):
             signal.clear()
         self.status('detail.device', 'starting')
-        with (STATE / 'bridge.log').open('a', encoding='utf-8') as log:
+        with BRIDGE_LOG as log:
             logging.info('Starting bridge for prepared host pid=%s created=%s', host.pid, host.created)
             self.bridge = subprocess.Popen(command('apps/stream-dog/python/hellgato_stream_dog/ipc_bridge.py', '--init'),
                                            cwd=STATE, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -345,11 +346,10 @@ class Session:
 
     def prepare_native_ui(self, app_pid, environment, log):
         try:
-            result = subprocess.run(
+            result = run_logged(
                 command('scripts/load-native-ui.py', '--pid', str(app_pid),
                         '--config', str(STATE / 'native-ui.json')),
-                cwd=ROOT, env=environment, stdout=log, stderr=log,
-                timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
+                log, cwd=ROOT, env=environment, timeout=20)
             if result.returncode:
                 logging.warning('Native device controls were not prepared (code %s)', result.returncode)
             return result.returncode == 0
@@ -382,8 +382,6 @@ def main():
     import pystray
     from PIL import Image
     STATE.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(filename=STATE / 'bridge.log', encoding='utf-8', level=logging.INFO,
-                        format='%(asctime)s %(levelname)s %(message)s')
     translator = Translator(STATE)
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
     kernel.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
@@ -398,6 +396,15 @@ def main():
         kernel.CloseHandle.argtypes = [ctypes.c_void_p]
         kernel.CloseHandle(mutex)
         return
+    configure_logging(STATE, BRIDGE_LOG)
+    cleanup_logs(STATE)
+
+    def maintain_logs():
+        while True:
+            time.sleep(300)
+            cleanup_logs(STATE)
+
+    threading.Thread(target=maintain_logs, daemon=True).start()
     stop_request = STATE / 'launcher.stop'
     stop_request.unlink(missing_ok=True)
     show_request.unlink(missing_ok=True)

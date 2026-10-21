@@ -140,13 +140,17 @@ The SDK output queue combines replaceable updates to each display surface. The d
 | `%APPDATA%\Elgato\StreamDeck\Assets` | Screen saver originals saved by Stream Deck; the selection is in its per-device Windows registry settings |
 | `%LOCALAPPDATA%\Hellgato\bridge.log` | Connection and error logs |
 | `%LOCALAPPDATA%\Hellgato\setup.log` | Installer migration and startup-option logs |
-| `%LOCALAPPDATA%\Hellgato\traces` and `images` | Local device events and received display images |
+| `%LOCALAPPDATA%\Hellgato\ipc-diagnostics.jsonl` | Current SDK connection/error diagnostics |
+| `%LOCALAPPDATA%\Hellgato\traces` | Historical compatibility-engine traces |
+| `%LOCALAPPDATA%\Hellgato\images` | Previously received display images (preserved) |
 | `%LOCALAPPDATA%\Hellgato\profile-import-backups` | Profiles replaced during import |
 | Stream Deck installation directory: `version.dll`, `HellgatoStartup.plan`, `HellgatoStartup.json` | Startup DLL, executable-specific plan and ownership manifest |
 
 Version 0.1.0 moves the application from `%LOCALAPPDATA%\Programs\Hellgato` to `%ProgramFiles%\Hellgato`. Run the installer as the same Windows user to update; setup removes the verified previous installation automatically. Per-user data remains under `%LOCALAPPDATA%\Hellgato`; settings, device identity and Stream Deck profiles are retained.
 
 The device registry keeps the existing assigned identity from `settings.json` and binds it to the physical device. A device with a hardware serial keeps that binding after reconnection, restarting the client or changing USB ports. Devices without a hardware serial use a USB-path fingerprint, so recognition after a port change is not guaranteed. Another physical device cannot reuse an already assigned virtual identity. Saved records do not enable simultaneous multi-device operation.
+
+Product text logs (`bridge.log`, `startup-setup.log`, `setup.log`) retain at most two 2 MiB files each. IPC diagnostics retain two 256 KiB files. Writes rotate before exceeding the limit; oversized individual records are omitted. The launcher checks known log files at startup and every five minutes, removing inactive helper logs and rotated logs older than seven days or exceeding their per-file limit. The current bridge and IPC files are retained until their writers rotate them. Historical `traces/*-<numeric-run-id>.jsonl[.1]` files have a 4 MiB per-file, 16 MiB combined and seven-day retention limit; oldest eligible files are removed first. Files modified within ten minutes and locked files are skipped and retried, so these temporary exceptions can exceed the retention budget. Unknown files, links, profiles, settings and images are preserved. Native UI diagnostics overwrite a single current-state snapshot rather than appending. The current SDK engine does not create historical traces or image captures. Compatibility-engine traces also rotate at 4 MiB when explicitly run from source.
 
 Use **Help → Open logs** to access the data folder, or **Help → About Hellgato Stream Dog** for version and license information. Uninstallation runs startup cleanup before removing the bundled helper. Cleanup removes only startup files whose ownership and hashes match `HellgatoStartup.json`; it preserves foreign or modified files and leaves `StreamDeck.exe` unchanged. If cleanup fails, uninstallation stops and retains the helper; close Stream Deck yourself, check the logs and retry. Uninstalling keeps settings and backups. Existing device identities and profile formats remain compatible.
 

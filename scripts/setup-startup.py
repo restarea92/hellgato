@@ -13,6 +13,8 @@ import traceback
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(ROOT / 'app/n4'))
+sys.path.insert(0, str(ROOT / 'apps/stream-dog/python'))
+from hellgato_stream_dog.log_policy import BoundedLog
 from compatibility import INCOMPATIBLE, IncompatibleError
 from startup_install import default_executable, install, installed, remove, startup_dll
 
@@ -81,7 +83,7 @@ if __name__ == '__main__':
     state = Path(os.environ.get('HELLGATO_STATE_DIR', Path(os.environ['LOCALAPPDATA']) / 'Hellgato'))
     state.mkdir(parents=True, exist_ok=True)
     # Elevated helpers have no inherited console; retain their result for the UI.
-    with (state / 'startup-setup.log').open('a', encoding='utf-8') as log:
+    with BoundedLog(state / 'startup-setup.log') as log:
         from contextlib import redirect_stdout, redirect_stderr
         with redirect_stdout(log), redirect_stderr(log):
             try:

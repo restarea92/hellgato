@@ -13,6 +13,18 @@ function Assert-Throws([scriptblock]$Action, [string]$Message) {
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('hellgato-installer-test-' + [Guid]::NewGuid())
 [IO.Directory]::CreateDirectory($fixture) | Out-Null
 try {
+    $script:PersistentLog = Join-Path $fixture 'setup.log'
+    [IO.File]::WriteAllText($script:PersistentLog, ('x' * (3 * 1024 * 1024)))
+    for ($i = 0; $i -lt 300; $i++) { Write-SetupLog ('event ' + ('x' * 16000)) }
+    foreach ($logFile in @(Get-Item -LiteralPath $script:PersistentLog, ($script:PersistentLog + '.1'))) {
+        Assert-True ($logFile.Length -le 2 * 1024 * 1024) 'Installer logs must remain within the per-file budget.'
+    }
+    $held = [IO.File]::Open($script:PersistentLog, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    try { Write-SetupLog 'locked' } finally { $held.Dispose() }
+    Write-SetupLog 'retry'
+    Assert-True ([IO.File]::ReadAllText($script:PersistentLog).Contains('retry')) 'A locked log must recover on the next write.'
+    $script:PersistentLog = $null
+
     $localData = Join-Path $fixture 'Local'
     $legacy = Join-Path $localData 'Programs\Hellgato'
     $destination = Join-Path $fixture 'Program Files\Hellgato'

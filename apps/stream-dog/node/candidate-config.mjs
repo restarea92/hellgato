@@ -167,7 +167,7 @@ export function createCandidateDiagnostics(path, maxBytes = 256 * 1024) {
     }
     if (bytes + Buffer.byteLength(line) > maxBytes) {
       try { unlinkSync(`${path}.1`); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      try { renameSync(path, `${path}.1`); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      try { if (bytes > maxBytes) unlinkSync(path); else renameSync(path, `${path}.1`); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       bytes = 0;
     }
     appendFileSync(path, line, { mode: 0o600 }); bytes += Buffer.byteLength(line);

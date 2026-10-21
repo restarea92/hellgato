@@ -1,11 +1,12 @@
 import { createInterface } from 'node:readline';
-import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 // The compatibility product engine consumes only the SDK's public entry point.
 // The sidecar session engine remains a candidate until physical N4 parity is recorded.
 import { createBridge } from 'hellgato';
 import { createLegacyProductProfile } from './profiles.mjs';
+import { createTraceWriter } from './trace-log.mjs';
 import { loadDisplayState, saveDisplayState } from './display-state.mjs';
 
 const name = process.argv[2] ?? 'target';
@@ -20,9 +21,10 @@ const bridge = await createBridge({ geometry, config, sleepDuration: savedDispla
 const runId = process.env.HELLGATO_RUN_ID ?? String(Date.now());
 if (!/^\d+$/.test(runId)) throw new Error('HELLGATO_RUN_ID must contain decimal digits only');
 const trace = new URL(`traces/${name}-${runId}.jsonl`, stateRoot);
+const writeTrace = createTraceWriter(trace);
 function record(event, detail) {
   const line = JSON.stringify({ time: new Date().toISOString(), profile: name, event, detail });
-  appendFileSync(trace, line + '\n');
+  writeTrace(line + '\n');
   if (!event.endsWith('.comm') && !event.endsWith('.log')) console.log(line);
 }
 for (const event of ['clientConnected', 'clientDisconnected', 'log', 'comm', 'operationRejected']) {

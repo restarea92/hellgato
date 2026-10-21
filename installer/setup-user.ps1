@@ -13,7 +13,27 @@ function Write-SetupLog([string]$Message) {
     if ($ContextFile) { $paths += $ContextFile + '.log' }
     if ($script:PersistentLog) { $paths += $script:PersistentLog }
     foreach ($path in $paths) {
-        try { [IO.File]::AppendAllText($path, $line + "`r`n", [Text.Encoding]::UTF8) } catch {}
+        try {
+            $limit = 2 * 1024 * 1024
+            if ($line.Length -gt 16384) { $line = $line.Substring(0, 16384) }
+            foreach ($candidate in @($path, ($path + '.1'))) {
+                if ((Test-Path -LiteralPath $candidate) -and ((Get-Item -LiteralPath $candidate).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                    throw 'Linked log destination'
+                }
+            }
+            if (Test-Path -LiteralPath ($path + '.1')) {
+                $backup = Get-Item -LiteralPath ($path + '.1')
+                if ($backup.Length -gt $limit -or $backup.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddDays(-7)) {
+                    Remove-Item -LiteralPath $backup.FullName
+                }
+            }
+            if ((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path).Length + [Text.Encoding]::UTF8.GetByteCount($line + "`r`n") -gt $limit)) {
+                if (Test-Path -LiteralPath ($path + '.1')) { Remove-Item -LiteralPath ($path + '.1') }
+                if ((Get-Item -LiteralPath $path).Length -gt $limit) { Remove-Item -LiteralPath $path }
+                else { Move-Item -LiteralPath $path -Destination ($path + '.1') }
+            }
+            [IO.File]::AppendAllText($path, $line + "`r`n", [Text.Encoding]::UTF8)
+        } catch {}
     }
 }
 
