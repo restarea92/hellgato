@@ -48,14 +48,14 @@ class BoundedLog:
             data = b'[oversized log record omitted]\n'
         with self.lock:
             try:
-                if linked_parent(self.path.parent):
+                if self.path.is_symlink() or linked_parent(self.path.parent):
                     return len(text)
                 if self.path.exists():
                     if not regular(self.path):
                         return len(text)
                     if self.path.stat().st_size + len(data) > self.max_bytes:
                         backup = self.path.with_name(self.path.name + '.1')
-                        if backup.exists() and not regular(backup):
+                        if backup.is_symlink() or backup.exists() and not regular(backup):
                             return len(text)
                         if self.path.stat().st_size > self.max_bytes:
                             self.path.unlink()
