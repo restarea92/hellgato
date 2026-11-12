@@ -4,3 +4,4 @@ pub mod tray;
 pub mod chrome;
 pub mod process;
 pub mod backend;
+pub mod ui;
