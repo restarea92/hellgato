@@ -94,5 +94,5 @@ pub fn device_descriptor(id: &str, simulation: bool) -> Value {
         "displayName":if simulation {"Simulated N4 Pro E"} else {"Mirabox N4 Pro E"},
         "capabilities":{"keys":10,"dials":4,"touch":{"width":800,"height":100},
             "displays":displays,"dialPress":"pulse","dialRelease":"unavailable",
-            "features":{"brightness":{"status":"native"},"sleep":{"status":"native"},"wake":{"status":"native"}}}})
+            "features":{"brightness":{"status":"native"},"knobBrightness":{"status":"native"},"sleep":{"status":"native"},"wake":{"status":"native"}}}})
 }

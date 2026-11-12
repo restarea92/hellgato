@@ -75,6 +75,8 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
     droppedSaverFrames: 0, screensaverActive: false, screensaverEntries: 0, screensaverRestores: 0,
     framesSubmitted: 0, inputObserved: 0, inputForwarded: 0, keyInputObserved: 0, keyInputForwarded: 0,
     errors: [], fullFrameOnly: true, maxFps: config.maxFps ?? 60,
+    brightness: config.brightness ?? 52, knobBrightness: config.knobBrightness ?? config.brightness ?? 52,
+    followDisplayBrightness: config.knobBrightness == null, knobBrightnessSupported: false,
     everHostConnected: false, hostConnections: 0, touchRegions: {}, lastSubmitMs: null, timings: {} };
   const measure = (name, ms) => {
     const value = state.timings[name] ??= { count: 0, meanMs: 0, maxMs: 0, lastMs: 0 };
@@ -152,6 +154,14 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
   }
   async function control(payload) {
     log('display-control', { control: payload.control, surface: payload.surfaceId, value: payload.value, color: payload.color });
+    if (payload.control === 'knobBrightness') {
+      if (!state.knobBrightnessSupported || !Number.isInteger(payload.value) || payload.value < 0 || payload.value > 100) {
+        throw new Error('Knob brightness is unavailable or invalid');
+      }
+      await scheduler.barrier(() => adapter.request('control', { control: 'knobBrightness', value: payload.value }));
+      state.knobBrightness = payload.value; state.followDisplayBrightness = false;
+      return;
+    }
     if (['clear', 'fill'].includes(payload.control)) {
       const color = payload.color ?? [0, 0, 0];
       if ((!payload.surfaceId || payload.surfaceId === 'lcd') && saver.consumeWakeClear(color)) {
@@ -178,6 +188,8 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
         if (payload.control === 'brightness') await adapter.request('control', { control: 'brightness', value: payload.value });
       });
       if (payload.control === 'brightness') normalBrightness = payload.value;
+      state.brightness = normalBrightness;
+      if (state.followDisplayBrightness) state.knobBrightness = normalBrightness;
       sleeping = false;
       if (mustWake) scheduler.invalidate();
       scheduler.resume();
@@ -260,6 +272,10 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
     const opened = await adapter.request('open', { deviceId: device.id, brightness: config.brightness ?? 52, generation, sessionId });
     checkpoint();
     if (opened.firmware) device.firmware = opened.firmware;
+    state.knobBrightnessSupported = device.capabilities?.features?.knobBrightness?.status === 'native';
+    if (state.knobBrightnessSupported && config.knobBrightness != null) {
+      await adapter.request('control', { control: 'knobBrightness', value: config.knobBrightness });
+    }
     layout = opened.layout ?? metadata.layout;
     state.deviceConnected = true;
     renderer = new RenderWorker(layout, Boolean(preview));
@@ -332,6 +348,7 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
       if (state.stopping) return Promise.reject(new Error('Session is stopping'));
       const operation = sourceOps.then(async () => {
         if (settings.brightness !== undefined) await control({ control: 'brightness', value: settings.brightness });
+        if (settings.knobBrightness !== undefined) await control({ control: 'knobBrightness', value: settings.knobBrightness });
         if (settings.maxFps !== undefined) { scheduler.setMaxFps(settings.maxFps); state.maxFps = settings.maxFps; }
         publish();
       });

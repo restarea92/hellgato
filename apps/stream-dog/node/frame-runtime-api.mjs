@@ -17,7 +17,7 @@ export async function createFrameRuntimeApi({ manager, token, port = 5345, onShu
     }
     if (request.method === 'GET' && request.url === '/state') { reply(200, manager.nativeState()); return; }
     if (request.method === 'GET' && request.url === '/api/state') { reply(200, manager.getState()); return; }
-    if (request.method !== 'POST' || request.url !== '/api/command') { reply(404, { error: 'Unknown runtime route' }); return; }
+    if (request.method !== 'POST' || !['/api/command', '/control'].includes(request.url)) { reply(404, { error: 'Unknown runtime route' }); return; }
     try {
       let bytes = 0; const chunks = [];
       for await (const chunk of request) {
@@ -28,6 +28,7 @@ export async function createFrameRuntimeApi({ manager, token, port = 5345, onShu
       const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.action !== 'string' ||
           value.params !== undefined && (!value.params || typeof value.params !== 'object' || Array.isArray(value.params))) throw new Error('Invalid management command');
+      if (request.url === '/control') { reply(200, await manager.command('native-control', value)); return; }
       if (value.action === 'shutdown') { reply(200, { stopping: true }); setImmediate(onShutdown); return; }
       reply(200, { result: await manager.command(value.action, value.params ?? {}) });
     } catch (error) { if (!response.writableEnded) reply(400, { error: error.message }); }

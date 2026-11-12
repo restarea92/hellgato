@@ -35,7 +35,7 @@ Each stdin line is a request with a string or nonnegative safe-integer `id`, a
 | `discover` | `{}` | `{devices:[{id,adapterId,modelId,displayName}]}` |
 | `open` | `{deviceId,brightness?,generation?,sessionId?}` | Open session and exact firmware |
 | `frame` | `{jpeg,width:800,height:480}` | Native `submitted` / `unconfirmed` result |
-| `control` | `{control:"brightness",value:0..100}` or `{control:"sleep"}` / `{control:"wake"}` | Native submission |
+| `control` | `{control:"brightness",value:0..100}`, `{control:"knobBrightness",value:0..100}` (N4 Pro), or `{control:"sleep"}` / `{control:"wake"}` | Native submission |
 | `close` | `{}` | Confirmed native handle release |
 
 `jpeg` is canonical base64 containing one baseline RGB JPEG, at most 1 MiB.
@@ -45,6 +45,9 @@ It never rotates again, crops images, writes individual keys/panels, or writes
 stored images. `open` clears key overlays once. Every frame is one volatile
 `transport_set_background_frame_stream(...,800,480,0,0,0)` followed by refresh.
 Native success describes submission, not hardware readback or displayed FPS.
+N4 Pro knob LEDs follow screen brightness until independently set. Sleep turns
+them off; wake restores the selected level. Native discovery advertises this
+control only when the vendor DLL exports `transport_set_led_brightness`.
 Optional `deviceId`, `generation`, and `sessionId` on frame/control requests must
 match the current open session. Fake responses use `applied` / `simulation`.
 

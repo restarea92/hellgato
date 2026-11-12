@@ -40,9 +40,26 @@ pub trait Backend {
     fn close(&mut self) -> Result<()>;
 }
 
+#[derive(Clone, Copy, Default)]
+struct LightState {
+    display: u8,
+    knob: Option<u8>,
+    sleeping: bool,
+}
+
+impl LightState {
+    fn led_level(self) -> u8 {
+        if self.sleeping {
+            0
+        } else {
+            self.knob.unwrap_or(self.display)
+        }
+    }
+}
+
 #[cfg(windows)]
 mod windows_backend {
-    use super::Backend;
+    use super::{Backend, LightState};
     use crate::{
         model::{self, Model},
         AdapterError, Result,
@@ -107,6 +124,7 @@ mod windows_backend {
         firmware: Firmware,
         wake: Simple,
         brightness: Brightness,
+        knob_brightness: Option<Brightness>,
         clear: Simple,
         frame: Frame,
         refresh: Simple,
@@ -160,6 +178,15 @@ mod windows_backend {
                 firmware: symbol!("transport_get_firmware_version", Firmware),
                 wake: symbol!("transport_wakeup_screen", Simple),
                 brightness: symbol!("transport_set_key_brightness", Brightness),
+                knob_brightness: {
+                    let address =
+                        unsafe { GetProcAddress(module, c"transport_set_led_brightness".as_ptr()) };
+                    if address.is_null() {
+                        None
+                    } else {
+                        Some(unsafe { std::mem::transmute::<*mut c_void, Brightness>(address) })
+                    }
+                },
                 clear: symbol!("transport_clear_all_keys", Simple),
                 frame: symbol!("transport_set_background_frame_stream", Frame),
                 refresh: symbol!("transport_refresh", Simple),
@@ -256,6 +283,7 @@ mod windows_backend {
         read_compat_reported: bool,
         heartbeat_at: Instant,
         compat_cache: HashMap<u8, Vec<u8>>,
+        lights: LightState,
     }
 
     impl NativeBackend {
@@ -271,6 +299,7 @@ mod windows_backend {
                 read_compat_reported: false,
                 heartbeat_at: Instant::now(),
                 compat_cache: HashMap::new(),
+                lights: LightState::default(),
             }
         }
         fn load(&mut self) -> Result<()> {
@@ -299,6 +328,17 @@ mod windows_backend {
             self.library
                 .as_ref()
                 .ok_or_else(|| AdapterError::new("ERR_RUNTIME", "Runtime is unavailable"))
+        }
+        fn write_led(&self, lights: LightState) -> Result<()> {
+            if model::current() == Model::Pro {
+                if let Some(writer) = self.require_open()?.knob_brightness {
+                    Self::checked(
+                        unsafe { writer(self.handle, lights.led_level()) },
+                        "knob-brightness",
+                    )?;
+                }
+            }
+            Ok(())
         }
     }
 
@@ -379,7 +419,14 @@ mod windows_backend {
             let mut result: Vec<Value> = self
                 .devices
                 .keys()
-                .map(|id| crate::device_descriptor(id, false))
+                .map(|id| {
+                    let mut device = crate::device_descriptor(id, false);
+                    if model::current() == Model::Pro && library.knob_brightness.is_none() {
+                        device["capabilities"]["features"]["knobBrightness"]["status"] =
+                            serde_json::json!("unsupported");
+                    }
+                    device
+                })
                 .collect();
             result.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
             Ok(result)
@@ -461,6 +508,14 @@ mod windows_backend {
                     "brightness",
                 )?;
                 if model::current() == Model::Pro {
+                    if let Some(writer) = library.knob_brightness {
+                        Self::checked(
+                            unsafe { writer(self.handle, brightness) },
+                            "knob-brightness",
+                        )?;
+                    }
+                }
+                if model::current() == Model::Pro {
                     Self::checked(
                         unsafe { (library.clear)(self.handle) },
                         "clear-key-overlays",
@@ -476,6 +531,10 @@ mod windows_backend {
             self.heartbeat_at = Instant::now() + Duration::from_secs(8);
             self.read_compat_reported = false;
             self.compat_cache.clear();
+            self.lights = LightState {
+                display: brightness,
+                ..LightState::default()
+            };
             Ok(())
         }
         fn frame(&mut self, jpeg: &[u8]) -> Result<()> {
@@ -533,18 +592,42 @@ mod windows_backend {
                 self.compat_cache.clear();
             }
             let library = self.require_open()?;
+            let mut lights = self.lights;
             match name {
-                "brightness" => Self::checked(
-                    unsafe { (library.brightness)(self.handle, value.unwrap()) },
-                    "brightness",
-                ),
-                "sleep" => Self::checked(unsafe { (library.sleep)(self.handle) }, "sleep"),
-                "wake" => Self::checked(unsafe { (library.wake)(self.handle) }, "wake"),
-                _ => Err(AdapterError::new(
-                    "ERR_UNSUPPORTED",
-                    "Unsupported volatile control",
-                )),
+                "brightness" => {
+                    lights.display = value.unwrap();
+                    Self::checked(
+                        unsafe { (library.brightness)(self.handle, lights.display) },
+                        "brightness",
+                    )?;
+                }
+                "knobBrightness" => {
+                    if model::current() != Model::Pro || library.knob_brightness.is_none() {
+                        return Err(AdapterError::new(
+                            "ERR_UNSUPPORTED",
+                            "Checked knob brightness is unavailable",
+                        ));
+                    }
+                    lights.knob = value;
+                }
+                "sleep" => {
+                    Self::checked(unsafe { (library.sleep)(self.handle) }, "sleep")?;
+                    lights.sleeping = true;
+                }
+                "wake" => {
+                    Self::checked(unsafe { (library.wake)(self.handle) }, "wake")?;
+                    lights.sleeping = false;
+                }
+                _ => {
+                    return Err(AdapterError::new(
+                        "ERR_UNSUPPORTED",
+                        "Unsupported volatile control",
+                    ))
+                }
             }
+            self.write_led(lights)?;
+            self.lights = lights;
+            Ok(())
         }
         fn poll(&mut self) -> Result<Vec<Vec<u8>>> {
             if self.handle.is_null() || !self.admitted || self.close_failed {
@@ -705,6 +788,26 @@ impl Backend for NativeBackend {
 #[cfg(test)]
 mod read_tests {
     use super::*;
+
+    #[test]
+    fn knob_level_follows_display_until_overridden_and_restores_after_sleep() {
+        let mut lights = LightState {
+            display: 52,
+            ..LightState::default()
+        };
+        assert_eq!(lights.led_level(), 52);
+        lights.knob = Some(70);
+        lights.display = 20;
+        assert_eq!(lights.led_level(), 70);
+        lights.sleeping = true;
+        assert_eq!(lights.led_level(), 0);
+        lights.knob = Some(35);
+        assert_eq!(lights.led_level(), 0);
+        lights.sleeping = false;
+        assert_eq!(lights.led_level(), 35);
+        lights.knob = Some(0);
+        assert_eq!(lights.led_level(), 0);
+    }
 
     #[test]
     fn read_failed_requires_positive_writable_status_and_is_not_a_timeout() {

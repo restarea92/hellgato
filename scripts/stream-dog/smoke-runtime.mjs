@@ -42,10 +42,26 @@ try {
   const require = createRequire(resolve(bundle, 'runtime/package.json'));
   const metadata = await require('sharp')(jpeg).metadata();
   assert.deepEqual([metadata.width, metadata.height], [connected.display.width, connected.display.height]);
+  const knobControls = devices[0].capabilities?.features?.knobBrightness?.status === 'native';
+  if (knobControls) {
+    const headers = { Authorization: `Bearer ${runtime.descriptor.token}` };
+    assert.equal((await (await fetch(runtime.descriptor.endpoint + '/state', { headers })).json()).available, true);
+    const knob = async (value, persist) => {
+      const response = await fetch(runtime.descriptor.endpoint + '/control', { method: 'POST', headers,
+        body: JSON.stringify({ serial: initial.childSerial, action: 'knobBrightness', value, persist }) });
+      const result = await response.json(); assert.equal(response.status, 200, JSON.stringify(result));
+      assert.equal(result.ok, true); assert.equal(result.state.knobBrightness, value);
+    };
+    await knob(29, false);
+    assert.equal(runtime.manager.getState().settings.knobBrightness, null);
+    await knob(61, true);
+    assert.equal(runtime.manager.getState().settings.knobBrightness, 61);
+  }
   const oldPid = connected.adapterPid, oldAttempt = connected.runtime.attempt;
   process.kill(oldPid);
   const recovered = await waitFor(runtime, state => state.runtime.state === 'running' && state.runtime.attempt > oldAttempt && state.adapterPid !== oldPid && state.screensaverRestores >= 1);
   assert.ok(recovered.adapterPid > 0);
+  if (knobControls) assert.equal(runtime.manager.nativeState().knobBrightness, 61);
   await command('settings', { brightness: 65, maxFps: 30 });
   const configured = await waitFor(runtime, state => state.runtime.state === 'running' && state.settings.brightness === 65 && state.maxFps === 30);
   assert.equal(configured.runtime.attempt, recovered.runtime.attempt);
@@ -53,6 +69,7 @@ try {
   runtime = await startFrameRuntime(config);
   const resumed = await waitFor(runtime, state => state.runtime.state === 'running' && state.screensaverRestores >= 1);
   assert.deepEqual(resumed.settings.identity, initial);
+  if (knobControls) assert.equal(runtime.manager.nativeState().knobBrightness, 61);
   await command('disconnect');
   const attempt = runtime.manager.getState().runtime.attempt;
   await new Promise(resolveWait => setTimeout(resolveWait, 800));
@@ -60,7 +77,7 @@ try {
   assert.equal(runtime.manager.getState().runtime.desired, false);
   writeFileSync(resolve(stateDir, 'preview.jpg'), jpeg);
   const report = { adapterId, image: [metadata.width, metadata.height], recovery: true, savedSettings: true,
-    identityPreserved: true, disconnectCancelsRetry: true, stateDir };
+    identityPreserved: true, disconnectCancelsRetry: true, nativeKnobControls: knobControls, stateDir };
   writeFileSync(resolve(stateDir, 'smoke-result.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report));
 } finally { await runtime.close(); }
