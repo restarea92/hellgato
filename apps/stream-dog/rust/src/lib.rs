@@ -5,3 +5,5 @@ pub mod chrome;
 pub mod process;
 pub mod backend;
 pub mod ui;
+pub mod smoke;
+pub mod ui_qa;
