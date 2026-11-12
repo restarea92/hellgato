@@ -3,6 +3,7 @@ pub mod frame;
 pub mod input;
 pub mod model;
 pub mod native;
+pub mod protocol;
 
 use serde::Serialize;
 use serde_json::{json, Value};
