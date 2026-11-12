@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 jobs:
-  draft:
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.head_ref != 'changeset-release/main'
+  source:
+    if: github.event_name != 'workflow_dispatch' && github.head_ref != 'changeset-release/main'
     runs-on: windows-latest
     timeout-minutes: 5
     defaults:
@@ -28,8 +28,8 @@ jobs:
           node-version: '24.19.0'
       - name: Check changed source syntax
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           git diff --check $env:BASE_SHA $env:HEAD_SHA
           if ($LASTEXITCODE) { throw 'Whitespace check failed' }
@@ -40,7 +40,7 @@ jobs:
             if ($LASTEXITCODE) { throw "Syntax check failed: $file" }
           }
   test:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft || github.head_ref == 'changeset-release/main'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'changeset-release/main'
     runs-on: windows-latest
     timeout-minutes: 15
     defaults:

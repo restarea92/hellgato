@@ -32,7 +32,7 @@ permissions:
 
 jobs:
   build:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft || github.head_ref == 'changeset-release/main'
+    if: github.event_name == 'workflow_dispatch' || inputs.source-sha != '' || github.head_ref == 'changeset-release/main'
     runs-on: windows-2022
     timeout-minutes: 45
     outputs:
