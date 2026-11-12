@@ -1,6 +1,7 @@
 # Device-neutral SDK extraction
 
-Status: integrated into the Windows product. Normal N4 Pro operation and the
+Status: previous stable Python product. The Node/Rust beta uses
+[the full-frame architecture](0002-full-frame-runtime.md). Normal N4 Pro operation and the
 connection scenarios below have passed physical checks; broader hardware support
 and the complete endurance recipe remain unverified.
 
