@@ -1,9 +1,16 @@
 {
   "schemaVersion": 1,
   "baseSha": "ee8607ed642e5123427d6fb60c6f18444a55f926",
-  "reason": "Remove the unused standalone IPC trial packager and its frozen executable specification. Active Windows builds use stage-product-worker.py and hellgato.spec; product runtime behavior and published SDK packages are unchanged.",
+  "reason": "Remove unused standalone IPC trial packaging and repository-level native build forwarding wrappers. Active Windows builds already call stage-product-worker.py, hellgato.spec and host-integrations/streamdeck/windows/native directly. Product runtime behavior, bundled files and published SDK packages are unchanged.",
   "paths": [
     "scripts/stage-ipc-candidate.py",
-    "installer/ipc-candidate.spec"
+    "installer/ipc-candidate.spec",
+    "native/hellgato-startup/README.md",
+    "native/hellgato-startup/build.py",
+    "native/hellgato-ui/CMakeLists.txt",
+    "native/hellgato-ui/README.md",
+    "native/hellgato-ui/build.py",
+    "native/hellgato-ui/prepare.py",
+    "host-integrations/streamdeck/windows/README.md"
   ]
 }

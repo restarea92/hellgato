@@ -5,9 +5,7 @@ structural compatibility, startup plan/ownership, native readiness, and optional
 native UI loading. The old `app/n4` helper names are import aliases to these same
 module objects, retained for the legacy product and its test patch points.
 The native C++ implementations and isolated fixtures are canonical under
-`native/startup` and `native/ui` in this host boundary. The old repository-level
-`native/hellgato-startup` and `native/hellgato-ui` Python/CMake entries are thin
-compatibility launchers, preserving existing build commands and output paths.
+`native/startup` and `native/ui` in this host boundary. Build directly with the scripts in those directories.
 
 ## Read-only candidate readiness
 
