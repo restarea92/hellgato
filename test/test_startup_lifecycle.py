@@ -94,6 +94,7 @@ class StartupLifecycleTest(unittest.TestCase):
         presence.host.side_effect = [self.host, None, None]
         child = Mock()
         child.stdin = io.StringIO()
+        child.stdin.close = Mock()
         child.stdout = io.StringIO('\n'.join(__import__('json').dumps({'event': event}) for event in
                                            ['bridgeReady', 'deviceReady', 'child.clientConnected',
                                             'deviceDisconnected', 'deviceReconnected']))
@@ -119,6 +120,7 @@ class StartupLifecycleTest(unittest.TestCase):
         self.assertEqual(presence.host.call_count, 3)
         self.assertEqual(child.stdin.getvalue(), '{"command":"hostUnavailable"}\n')
         child.wait.assert_called_once_with(timeout=12)
+        child.stdin.close.assert_called_once_with()
         run.assert_not_called()
         self.assertTrue(self.session.stop_file.exists())
 

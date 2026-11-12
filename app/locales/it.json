@@ -30,6 +30,7 @@
   "detail.waiting": "Collega un N4 Pro tramite USB. La connessione inizierà automaticamente.",
   "detail.starting": "Preparazione di Stream Deck. Potrebbe richiedere qualche istante.",
   "detail.reconnecting": "Riconnessione a Stream Deck. Le impostazioni del dispositivo sono mantenute.",
+  "detail.runtime_retry": "Il servizio di connessione si è arrestato in modo imprevisto. Nuovo tentativo automatico tra {seconds} s.",
   "detail.first_pairing": "In Stream Deck, apri Network e connettiti a 127.0.0.1:5343.",
   "detail.disconnected": "USB scollegato. Ricollega il dispositivo per riprendere automaticamente.",
   "detail.stopped": "Connessione interrotta. I profili e le impostazioni del dispositivo sono mantenuti.",

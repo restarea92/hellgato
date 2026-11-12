@@ -36,12 +36,21 @@ function supersedes(next, previous) {
 /** Product-only admission and pacing. Pending frames are not acknowledged
  * restoration history; the SDK still checks readiness and owns its output bound.
  */
-export function createCandidateOutputQueue({ submit, observeFrame = () => {}, maxEntries = 32, maxBytes = 8 * 1024 * 1024 } = {}) {
-  if (typeof submit !== 'function' || typeof observeFrame !== 'function' || !positive(maxEntries) || !positive(maxBytes)) {
+export function createCandidateOutputQueue({ submit, observeFrame = () => {}, observeState = () => {}, maxEntries = 32, maxBytes = 8 * 1024 * 1024 } = {}) {
+  if (typeof submit !== 'function' || typeof observeFrame !== 'function' || typeof observeState !== 'function' || !positive(maxEntries) || !positive(maxBytes)) {
     throw new CandidateError('CANDIDATE_CONFIG_INVALID');
   }
   let pending = [], pendingBytes = 0, active = null;
   let paused = true, closed = false, scheduled = false, epoch = 0;
+  const setPaused = (value, reason) => {
+    if (paused === value) return;
+    paused = value;
+    observeState({ paused, reason, epoch, closed, pendingCount: pending.length, inFlight: Boolean(active) });
+  };
+  const summarize = payload => ({ type: payload.type,
+    ...(typeof payload.control === 'string' ? { control: payload.control.slice(0, 80) } : {}),
+    ...(typeof payload.surfaceId === 'string' ? { surfaceId: payload.surfaceId.slice(0, 80) } : {}),
+    ...(payload.region ? { region: { x: payload.region.x, y: payload.region.y, width: payload.region.width, height: payload.region.height } } : {}) });
 
   const settle = (item, method, value) => {
     if (item.settled) return;
@@ -81,11 +90,13 @@ export function createCandidateOutputQueue({ submit, observeFrame = () => {}, ma
       if (value.type === 'frame') observeFrame('received', value.surfaceId);
       let barrier = -1;
       for (let index = pending.length - 1; index >= 0; index--) {
-        if (pending[index].payload.type === 'control') { barrier = index; break; }
+        const entry = pending[index].payload;
+        if (entry.type === 'control' && !['brightness', 'sleepDuration'].includes(entry.control)) { barrier = index; break; }
       }
       // During readiness, key frames may interleave identical saver announcements.
       // Keep one pending announcement without crossing a wake or other control.
-      const lastControl = pending[paused ? barrier : pending.length - 1]?.payload;
+      const lastControlIndex = paused ? pending.findLastIndex(item => item.payload.type === 'control') : pending.length - 1;
+      const lastControl = pending[lastControlIndex]?.payload;
       if (value.type === 'control' && value.control === 'screensaver' &&
           lastControl?.control === 'screensaver' && JSON.stringify(lastControl) === JSON.stringify(value)) {
         return Promise.resolve({ status: 'superseded' });
@@ -99,7 +110,8 @@ export function createCandidateOutputQueue({ submit, observeFrame = () => {}, ma
         error.details = { paused, pendingEntries: pending.length, pendingBytes,
           pendingFrames: pending.filter(item => item.payload.type === 'frame').length,
           inFlight: Boolean(active), incomingType: value.type, incomingBytes: bytes,
-          limit: retained.length + 1 + (active ? 1 : 0) > maxEntries ? 'entries' : 'bytes' };
+          limit: retained.length + 1 + (active ? 1 : 0) > maxEntries ? 'entries' : 'bytes',
+          pending: pending.slice(0, 32).map(item => summarize(item.payload)), incoming: summarize(value) };
         queue.close(error);
         return Promise.reject(error);
       }
@@ -114,10 +126,10 @@ export function createCandidateOutputQueue({ submit, observeFrame = () => {}, ma
       schedule();
       return result;
     },
-    pause() { paused = true; },
-    resume() { if (!closed) { paused = false; schedule(); } },
+    pause(reason = 'pause') { setPaused(true, reason); },
+    resume(reason = 'resume') { if (!closed) { setPaused(false, reason); schedule(); } },
     reset(reason = new CandidateError('CANDIDATE_HOST_DISCONNECTED'), { retainPending = false } = {}) {
-      epoch++; paused = true;
+      epoch++; setPaused(true, reason.code ?? 'reset');
       if (retainPending) {
         for (const item of pending) item.epoch = epoch;
         if (active) settle(active, 'reject', reason);
@@ -125,7 +137,7 @@ export function createCandidateOutputQueue({ submit, observeFrame = () => {}, ma
     },
     close(reason = new CandidateError('CANDIDATE_SESSION_ENDED')) {
       if (closed) return;
-      closed = true; paused = true; epoch++; discard(reason);
+      closed = true; epoch++; setPaused(true, reason.code ?? 'close'); discard(reason);
     },
     getStatus() {
       return { pendingCount: pending.length, inFlight: Boolean(active), bytes: pendingBytes + (active?.bytes ?? 0),

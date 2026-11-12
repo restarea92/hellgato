@@ -153,11 +153,15 @@ export function createCandidateDiagnostics(path, maxBytes = 256 * 1024) {
     requireValue(/^[a-z][a-zA-Z]{0,40}$/.test(event), 'CANDIDATE_DIAGNOSTICS_INVALID');
     const safe = { time: new Date().toISOString(), event };
     if (detail.code) safe.code = diagnosticCode(detail);
-    for (const key of ['generation', 'attempt', 'count']) if (integer(detail[key], 0, Number.MAX_SAFE_INTEGER)) safe[key] = detail[key];
-    for (const [key, limit] of [['originalCode', 81], ['firmware', 128], ['message', 1024], ['stack', 4096]]) {
+    for (const key of ['generation', 'attempt', 'count', 'epoch', 'currentEpoch', 'currentGeneration', 'pendingCount']) {
+      if (integer(detail[key], 0, Number.MAX_SAFE_INTEGER)) safe[key] = detail[key];
+    }
+    for (const [key, limit] of [['originalCode', 81], ['firmware', 128], ['message', 1024], ['stack', 4096], ['reason', 80]]) {
       if (typeof detail[key] === 'string') safe[key] = detail[key].slice(0, limit);
     }
-    if (typeof detail.connected === 'boolean') safe.connected = detail.connected;
+    for (const key of ['connected', 'accepted', 'ready', 'paused', 'closed', 'inFlight']) {
+      if (typeof detail[key] === 'boolean') safe[key] = detail[key];
+    }
     const error = diagnosticError(detail);
     if (error.details) safe.details = error.details;
     let line = JSON.stringify(safe) + '\n';

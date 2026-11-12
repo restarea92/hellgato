@@ -18,6 +18,17 @@ from .paths import ROOT
 from .log_policy import BoundedLog, cleanup_logs, configure_logging, run_logged
 STATE = Path(os.environ.get('HELLGATO_STATE_DIR', Path(os.environ['LOCALAPPDATA']) / 'Hellgato'))
 BRIDGE_LOG = BoundedLog(STATE / 'bridge.log')
+TERMINAL_BRIDGE_FAILURES = frozenset((
+    'PRODUCT_IPC_FAILED', 'CANDIDATE_ARGUMENTS', 'CANDIDATE_BACKEND_RESERVED',
+    'CANDIDATE_CONFIG_INVALID', 'CANDIDATE_CONFIG_REQUIRED', 'CANDIDATE_DEVICE_REQUIRED',
+    'CANDIDATE_IDENTITY_REQUIRED', 'CANDIDATE_JSON_INVALID', 'CANDIDATE_MANIFEST_INVALID',
+    'CANDIDATE_MANIFEST_PATH', 'CANDIDATE_EXECUTABLE_NOT_INVENTORIED', 'CANDIDATE_PATH_INVALID',
+    'CANDIDATE_PATH_REQUIRED', 'CANDIDATE_PORT_INVALID', 'CANDIDATE_READINESS_REQUIRED',
+    'CANDIDATE_READINESS_IDENTITY', 'CANDIDATE_RECONNECT_INVALID', 'CANDIDATE_RUNTIME_REQUIRED',
+    'CANDIDATE_SCREENSAVER_MODE', 'CANDIDATE_SETTINGS_INVALID', 'CANDIDATE_STATE_DIRECTORY_REQUIRED',
+    'CANDIDATE_STATE_IDENTITY', 'ERR_IPC_CONFIG', 'ERR_WORKER_BUILD_ID', 'ERR_WORKER_DIGEST',
+    'ERR_WORKER_MANIFEST', 'HOST_IDENTITY_MISMATCH', 'HOST_IDENTITY_REQUIRED',
+))
 def read_release_metadata(root):
     """Use the same packaged metadata in source and PyInstaller execution."""
     metadata = json.loads((root / 'app/release.json').read_text(encoding='utf-8'))
@@ -114,6 +125,8 @@ class Session:
         self.device_ready = threading.Event()
         self.active_device_id = None
         self.bridge_ready = threading.Event()
+        self.bridge_failure = None
+        self.bridge_retry_delay = 1
         self.phase = 'idle'
         self.detail = Message('detail.idle')
         self.stop_file = STATE / 'bridge.stop'
@@ -147,11 +160,12 @@ class Session:
         self.active_device_id = None
         self.bridge_ready.clear()
         self.listening.clear()
+        self.bridge_retry_delay = 1
         self.status('detail.checking', 'checking')
         self.thread = threading.Thread(target=self.run, kwargs={'prepare': prepare}, daemon=True)
         self.thread.start()
 
-    def log_bridge(self, stream, log):
+    def log_bridge(self, stream, log, reader_stopped=None):
         for line in stream:
             try:
                 event = json.loads(line)
@@ -164,6 +178,8 @@ class Session:
             safe = {**event, 'detail': {key: value for key, value in event.get('detail', {}).items() if key != 'deviceId'}}
             log.write(json.dumps(safe) + '\n')
             log.flush()
+            if self.stop.is_set() or reader_stopped is not None and reader_stopped.is_set():
+                continue
             if event.get('event') == 'bridgeReady':
                 self.bridge_ready.set()
             elif event.get('event') in ('deviceReady', 'deviceReconnected'):
@@ -202,8 +218,10 @@ class Session:
                 else:
                     self.status('detail.pairing', 'pairing')
             elif event.get('event') == 'ipcFailed':
-                logging.error('SDK product runtime failed: %s', event.get('detail', {}).get('code'))
-                self.status('error.device', 'error')
+                code = event.get('detail', {}).get('code')
+                self.bridge_failure = code if isinstance(code, str) else None
+                logging.error('SDK product runtime failed: %s', self.bridge_failure)
+                self.status('error.runtime', 'error')
 
     def run(self, prepare=False):
         from .settings import load_settings
@@ -263,14 +281,20 @@ class Session:
             self.connected.clear()
             self.listening.clear()
             self.device_ready.clear()
+            self.bridge_ready.clear()
+            self.active_device_id = None
             if self.stop.is_set():
                 self.status('detail.stopped', 'idle')
 
     def run_bridge(self, host, presence, environment):
         """Keep the saved dock listening while prepared host lifetimes change."""
+        if self.stop.is_set():
+            return False
         self.stop_file.unlink(missing_ok=True)
         for signal in (self.listening, self.connected, self.device_ready, self.bridge_ready):
             signal.clear()
+        self.active_device_id = None
+        self.bridge_failure = None
         self.status('detail.device', 'starting')
         with BRIDGE_LOG as log:
             logging.info('Starting bridge for prepared host pid=%s created=%s', host.pid, host.created)
@@ -278,9 +302,12 @@ class Session:
                                            cwd=STATE, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                            stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace',
                                            creationflags=subprocess.CREATE_NO_WINDOW)
-            reader = threading.Thread(target=self.log_bridge, args=(self.bridge.stdout, log), daemon=True)
+            reader_stopped = threading.Event()
+            reader = threading.Thread(target=self.log_bridge,
+                                      args=(self.bridge.stdout, log, reader_stopped), daemon=True)
             reader.start()
             started, next_ui = time.monotonic(), 0
+            healthy_since = None
             notified, native_ui_ready, attempts = False, False, 0
             observed_host, prepared_host = host, host
             reason = 'worker-exited'
@@ -312,6 +339,14 @@ class Session:
                         observed_host, prepared_host = current, None
                         native_ui_ready, attempts, next_ui = False, 0, 0
                         notified, started = False, now
+                        healthy_since = None
+                    if current is not None and self.connected.is_set() and self.device_ready.is_set():
+                        if healthy_since is None:
+                            healthy_since = now
+                        elif now - healthy_since >= 60:
+                            self.bridge_retry_delay = 1
+                    else:
+                        healthy_since = None
                     if current is None:
                         self.connected.clear()
                         self.status('detail.host_waiting', 'pairing')
@@ -339,15 +374,35 @@ class Session:
                     if not notified and not self.connected.is_set() and now - started > 15:
                         self.status('detail.first_pairing', 'pairing')
                         notified = True
+            except OSError:
+                if self.bridge.poll() is None:
+                    raise
             finally:
                 logging.info('Stopping bridge: %s (host pid=%s)', reason, host.pid)
                 self.shutdown_bridge()
                 reader.join(timeout=3)
-                self.connected.clear()
-                self.device_ready.clear()
-            if reason == 'worker-exited':
-                self.status('error.device', 'error')
-                return False
+                reader_stopped.set()
+                for signal in (self.listening, self.connected, self.device_ready, self.bridge_ready):
+                    signal.clear()
+                self.active_device_id = None
+                if reader.is_alive():
+                    raise RuntimeError('The product log reader did not stop')
+                try:
+                    self.bridge.stdin.close()
+                except OSError:
+                    pass
+                finally:
+                    self.bridge.stdout.close()
+            if reason == 'worker-exited' and not self.stop.is_set():
+                if self.bridge_failure in TERMINAL_BRIDGE_FAILURES:
+                    self.status('error.runtime', 'error')
+                    return False
+                delay = self.bridge_retry_delay
+                self.bridge_retry_delay = min(delay * 2, 15)
+                logging.warning('Bridge exited unexpectedly (code=%s, failure=%s); retrying in %ss',
+                                self.bridge.returncode, self.bridge_failure, delay)
+                self.status('detail.runtime_retry', 'starting', seconds=delay)
+                self.stop.wait(delay)
         return True
 
     def send_bridge_command(self, name):

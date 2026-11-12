@@ -369,6 +369,7 @@ class ProductBridge:
         self.selected = None
         self.failure = None
         self.host_available = True
+        self.runtime_failure = None
         self.host_commands = queue.Queue(maxsize=16)
         self.parent_closed = False
         self.command_failure = None
@@ -441,6 +442,11 @@ class ProductBridge:
             self.emit({'event': event, 'detail': {key: item for key, item in detail.items()
                        if key in ('deviceId', 'code', 'ports', 'attempt', 'firmware', 'hostConnected')}})
         elif event == 'diagnostic':
+            code = value.get('detail', {}).get('code')
+            if code in ('OUTPUT_OVERFLOW', 'CANDIDATE_OUTPUT_TIMEOUT', 'ERR_WORKER_EXIT',
+                        'ERR_WORKER_EOF', 'ERR_WORKER_PIPE', 'ERR_WORKER_OFFLINE', 'ERR_DEVICE_CLOSED'):
+                if self.runtime_failure is None or code == 'OUTPUT_OVERFLOW':
+                    self.runtime_failure = code
             self.emit(value)
         elif value.get('state') == 'failed':
             code = value.get('code')
@@ -545,6 +551,7 @@ class ProductBridge:
                     time.sleep(.05)
                     continue
                 self.failure = None
+                self.runtime_failure = None
                 self.selected = self.discover(server)
                 if self.selected is None:
                     for _ in range(20):
@@ -604,13 +611,16 @@ def main(argv=None):
     parser.parse_args(arguments)
     state = Path(os.environ.get('HELLGATO_STATE_DIR', Path(os.environ['LOCALAPPDATA']) / 'Hellgato'))
     stop_file = Path(os.environ.get('HELLGATO_STOP_FILE', state / 'bridge.stop'))
+    bridge = None
     try:
         bridge = ProductBridge(state, stop_file)
-        threading.Thread(target=bridge.read_host_commands, args=(getattr(sys.stdin, 'buffer', sys.stdin),), daemon=True).start()
+        command_stream = os.fdopen(os.dup(sys.stdin.fileno()), 'rb', buffering=0)
+        threading.Thread(target=bridge.read_host_commands, args=(command_stream,), daemon=True).start()
         bridge.run()
         return 0
     except (OSError, ValueError, KeyError, TimeoutError) as error:
-        code = error.code if isinstance(error, ProductRuntimeError) else 'PRODUCT_IPC_FAILED'
+        runtime_failure = (bridge.failure or bridge.runtime_failure) if bridge is not None else None
+        code = error.code if isinstance(error, ProductRuntimeError) else runtime_failure or 'PRODUCT_IPC_FAILED'
         print(json.dumps({'event': 'ipcFailed', 'detail': {'code': code}}), flush=True)
         return 1
 

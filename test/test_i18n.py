@@ -36,7 +36,7 @@ class TranslationTest(unittest.TestCase):
                     self.assertIsInstance(value, str)
                     self.assertTrue(value.strip(), key)
                     self.assertEqual(placeholders(value), placeholders(source[key]), key)
-                    value.format(count=2, filename='Profiles.hellgatoProfiles', reason='Details')
+                    value.format(count=2, filename='Profiles.hellgatoProfiles', reason='Details', seconds=1)
 
     def test_language_persists_without_changing_device_identity(self):
         with TemporaryDirectory() as temporary:
