@@ -13,7 +13,6 @@ def include_tree(relative, suffixes):
 
 include_tree('app/n4', {'.py'})
 include_tree('apps/stream-dog/python/hellgato_stream_dog', {'.py'})
-include_tree('apps/stream-dog/python/hellgato_candidate', {'.py'})
 include_tree('host-integrations/streamdeck/windows/python', {'.py'})
 # Only the compatibility launcher remains here; package runtime is packed below.
 datas.append((str(root / 'app/cora/server.mjs'), 'app/cora'))

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "baseSha": "ee8607ed642e5123427d6fb60c6f18444a55f926",
+  "reason": "Retire unused standalone IPC trial packaging, console supervision and native build forwarding wrappers, with their direct tests/docs. Active product builds already use canonical worker and host paths. Runtime behavior and published SDK packages are unchanged.",
+  "paths": [
+    "scripts/stage-ipc-candidate.py",
+    "installer/ipc-candidate.spec",
+    "native/hellgato-startup/README.md",
+    "native/hellgato-startup/build.py",
+    "native/hellgato-ui/CMakeLists.txt",
+    "native/hellgato-ui/README.md",
+    "native/hellgato-ui/build.py",
+    "native/hellgato-ui/prepare.py",
+    "host-integrations/streamdeck/windows/README.md",
+    "apps/stream-dog/python/candidate.py",
+    "pyproject.toml"
+  ]
+}

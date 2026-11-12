@@ -5,52 +5,13 @@ import ctypes as c
 from ctypes import wintypes as w
 import os
 
-LAUNCHER_MUTEX = r'Local\Hellgato.N4Pro.Launcher'
-BRIDGE_MUTEX = r'Local\Hellgato.N4Pro.Bridge'
-
-
 def kernel():
     if os.name != 'nt':
-        raise OSError('Physical candidate execution requires Windows x64')
+        raise OSError('Process supervision requires Windows')
     result = c.WinDLL('kernel32', use_last_error=True)
     result.CloseHandle.argtypes = [w.HANDLE]
     result.CloseHandle.restype = w.BOOL
     return result
-
-
-class LauncherOwnership:
-    """The same name as the installed GUI prevents either engine starting over us."""
-    def __init__(self):
-        self.handle = None
-        self.api = kernel()
-
-    def __enter__(self):
-        self.api.CreateMutexW.argtypes = [c.c_void_p, w.BOOL, w.LPCWSTR]
-        self.api.CreateMutexW.restype = w.HANDLE
-        self.handle = self.api.CreateMutexW(None, False, LAUNCHER_MUTEX)
-        error = c.get_last_error()
-        if not self.handle:
-            raise c.WinError(error)
-        if error == 183:
-            self.__exit__(None, None, None)
-            raise RuntimeError('Exit Hellgato completely from its tray menu before testing')
-        self.api.OpenMutexW.argtypes = [w.DWORD, w.BOOL, w.LPCWSTR]
-        self.api.OpenMutexW.restype = w.HANDLE
-        other = self.api.OpenMutexW(0x00100000, False, BRIDGE_MUTEX)
-        error = c.get_last_error()
-        if other:
-            self.api.CloseHandle(other)
-            self.__exit__(None, None, None)
-            raise RuntimeError('An existing N4 bridge is running; stop it before testing')
-        if error not in (0, 2):
-            self.__exit__(None, None, None)
-            raise c.WinError(error)
-        return self
-
-    def __exit__(self, *_):
-        if self.handle:
-            self.api.CloseHandle(self.handle)
-            self.handle = None
 
 
 class BasicLimit(c.Structure):
