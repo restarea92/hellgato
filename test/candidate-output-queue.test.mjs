@@ -69,25 +69,41 @@ test('stalled host admission compacts a repeated full-frame burst before any sub
 test('offline animation replaces covered partial regions without crossing a control barrier', async () => {
   const submitted = [], queue = createCandidateOutputQueue({ submit: async payload => { submitted.push(payload); return { status: 'submitted' }; } });
   const region = { x: 0, y: 0, width: 2, height: 4 };
-  const first = queue.enqueue(frame('touch', 'before', { region })), barrier = queue.enqueue(control(50));
+  const wake = { type: 'control', control: 'wake' };
+  const first = queue.enqueue(frame('touch', 'before', { region })), barrier = queue.enqueue(wake);
   const updates = Array.from({ length: 100 }, (_, index) => queue.enqueue(frame('touch', String(index), { region })));
   assert.equal(queue.getStatus().retainedCount, 3); assert.equal(queue.getStatus().closed, false);
   queue.resume();
   const results = await Promise.all([first, barrier, ...updates]);
   assert.equal(results.filter(result => result.status === 'superseded').length, 99);
-  assert.deepEqual(submitted, [frame('touch', 'before', { region }), control(50), frame('touch', '99', { region })]);
+  assert.deepEqual(submitted, [frame('touch', 'before', { region }), wake, frame('touch', '99', { region })]);
   queue.close();
 });
+
+for (const setting of [control(50), { type: 'control', control: 'sleepDuration', value: 60 }]) {
+  test(`reconnect frames coalesce across ${setting.control} without dropping the setting`, async () => {
+    const submitted = [], queue = createCandidateOutputQueue({ submit: async payload => {
+      submitted.push(payload); return { status: 'submitted' };
+    } });
+    const old = queue.enqueue(frame('key:0', 'old'));
+    const change = queue.enqueue(setting), latest = queue.enqueue(frame('key:0', 'latest'));
+    assert.deepEqual(await old, { status: 'superseded' });
+    queue.resume(); await Promise.all([change, latest]);
+    assert.deepEqual(submitted, [setting, frame('key:0', 'latest')]);
+    queue.close();
+  });
+}
 
 test('partial regions and controls keep their order; full frames supersede only matching suffix history', async () => {
   const submitted = [], queue = createCandidateOutputQueue({ submit: async payload => { submitted.push(payload); return { status: 'submitted' }; } });
   const left = frame('key:0', 'left', { region: { x: 0, y: 0, width: 2, height: 4 } });
   const right = frame('key:0', 'right', { region: { x: 2, y: 0, width: 2, height: 4 } });
-  const before = queue.enqueue(left), barrier = queue.enqueue(control(50));
+  const sleep = { type: 'control', control: 'sleep' };
+  const before = queue.enqueue(left), barrier = queue.enqueue(sleep);
   const covered = queue.enqueue(right), latest = queue.enqueue(frame('key:0', 'full'));
   assert.deepEqual(await covered, { status: 'superseded' });
   queue.resume(); await Promise.all([before, barrier, latest]);
-  assert.deepEqual(submitted, [left, control(50), frame('key:0', 'full')]);
+  assert.deepEqual(submitted, [left, sleep, frame('key:0', 'full')]);
   queue.close();
 
   const adjacent = [], partialQueue = createCandidateOutputQueue({ submit: async payload => { adjacent.push(payload); return {}; } });
@@ -114,7 +130,9 @@ test('irreducible entry and byte overload cancels pending work with an explicit 
   assert.ok((await Promise.all(replies)).every(result => result.error.code === 'OUTPUT_OVERFLOW'));
   assert.deepEqual((await replies[0]).error.details, { paused: false, pendingEntries: 32,
     pendingBytes: Array.from({ length: 32 }, (_, value) => Buffer.byteLength(JSON.stringify(control(value)))).reduce((a, b) => a + b),
-    pendingFrames: 0, inFlight: false, incomingType: 'control', incomingBytes: Buffer.byteLength(JSON.stringify(control(32))), limit: 'entries' });
+    pendingFrames: 0, inFlight: false, incomingType: 'control', incomingBytes: Buffer.byteLength(JSON.stringify(control(32))), limit: 'entries',
+    pending: Array.from({ length: 32 }, () => ({ type: 'control', control: 'brightness' })),
+    incoming: { type: 'control', control: 'brightness' } });
   assert.deepEqual(submitted, []);
 
   const partials = createCandidateOutputQueue({ submit: async () => ({}) });

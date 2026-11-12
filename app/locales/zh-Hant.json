@@ -41,6 +41,7 @@
   "detail.waiting": "透過 USB 連接一台 N4 Pro 後，將自動開始連線。",
   "detail.starting": "正在準備 Stream Deck，請稍候。",
   "detail.reconnecting": "正在重新連線至 Stream Deck。裝置設定將會保留。",
+  "detail.runtime_retry": "連線服務意外停止。將於 {seconds} 秒後自動重試。",
   "detail.first_pairing": "在 Stream Deck 的 Network 中連線至 127.0.0.1:5343。",
   "detail.disconnected": "USB 連線已中斷。重新連接裝置後將自動恢復。",
   "detail.stopped": "連線已停止。設定檔與裝置設定已保留。",

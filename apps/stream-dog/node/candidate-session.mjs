@@ -289,7 +289,10 @@ export function createCandidateRunner(input, dependencies = {}) {
     const epoch = hostEpoch;
     count('readinessChecks'); record('readiness', { generation: context.generation });
     const report = await inspect(context);
-    if (epoch === hostEpoch && context.generation === session.generation) {
+    const accepted = epoch === hostEpoch && context.generation === session.generation;
+    record('readinessResult', { epoch, currentEpoch: hostEpoch, generation: context.generation,
+      currentGeneration: session.generation, accepted, ready: report?.ready === true });
+    if (accepted) {
       hostApproved = report?.ready === true;
     }
     return report;
@@ -300,7 +303,8 @@ export function createCandidateRunner(input, dependencies = {}) {
       const bridge = await (dependencies.bridgeFactory ?? createDeviceBridge)({ ...options, sleepDuration: controls.sleepDuration ?? 0 });
       // Stream Deck discovers saved docks at launch; USB recovery must retain listeners and sockets.
       network = { bridge, options, current: null, inputSequence: 0, started: false };
-      network.queue = createCandidateOutputQueue({ submit: payload => network.current.submit(payload), observeFrame: observations.displayFrame });
+      network.queue = createCandidateOutputQueue({ submit: payload => network.current.submit(payload), observeFrame: observations.displayFrame,
+        observeState: detail => record('outputQueueState', { generation: session.generation, ...detail }) });
       const output = payload => {
         network.queue.enqueue(payload).catch(error => {
           if (!stopping && !['CANDIDATE_HOST_DISCONNECTED', 'CANDIDATE_SESSION_ENDED'].includes(error.code)) failOutput(error);
@@ -315,7 +319,7 @@ export function createCandidateRunner(input, dependencies = {}) {
         const primaryReturned = config.productMode && role === 'primary' && event === 'clientConnected' && bridge.childConnected === true;
         if (role === 'child' || primaryLost || primaryReturned) {
           hostEpoch++; hostApproved = false;
-          network.queue.pause(); network.queue.reset(new CandidateError('CANDIDATE_HOST_DISCONNECTED'));
+          network.queue.pause(`relay:${role}:${event}`); network.queue.reset(new CandidateError('CANDIDATE_HOST_DISCONNECTED'));
           network.current?.facade.emit(event, role === 'primary' ? { role: 'child' } : detail);
         } else network.current?.facade.emit(event, detail);
       };
@@ -358,11 +362,11 @@ export function createCandidateRunner(input, dependencies = {}) {
       },
       sendInput: event => bridge.sendInput(config.productMode ? { ...event, generation: network.options.generation,
         sessionId: network.options.sessionId, sequence: ++network.inputSequence } : event),
-      resumeOutput: () => { if (!closed && network.current?.facade === facade) network.queue.resume(); },
+      resumeOutput: () => { if (!closed && network.current?.facade === facade) network.queue.resume('session-ready'); },
       async stop() {
         if (stopCompleted) return;
         if (activeBridge === facade) { hostEpoch++; hostApproved = false; }
-        closed = true; network.queue.reset(new CandidateError('CANDIDATE_SESSION_ENDED'),
+        closed = true; network.queue.pause('session-stop'); network.queue.reset(new CandidateError('CANDIDATE_SESSION_ENDED'),
           { retainPending: config.productMode && !stopping && !outputFailure });
         rejectOutputs(new CandidateError('CANDIDATE_SESSION_ENDED'));
         bridge.releaseInputs?.();
@@ -440,7 +444,7 @@ export function createCandidateRunner(input, dependencies = {}) {
   });
   session.on('adapterState', detail => {
     if (!stopping && ['disconnected', 'failed', 'crashed'].includes(detail.state ?? detail.status) && disconnectedGeneration !== session.generation) {
-      retainedNetwork?.queue.pause();
+      retainedNetwork?.queue.pause(`adapter:${detail.state ?? detail.status}`);
       disconnectedGeneration = session.generation; record('deviceDisconnected', { generation: session.generation, connected: false, code: 'ADAPTER_DISCONNECTED' }); product('deviceDisconnected', { code: 'ADAPTER_DISCONNECTED' });
     }
   });
@@ -473,7 +477,7 @@ export function createCandidateRunner(input, dependencies = {}) {
     },
     pauseDevice() {
       if (!config.productMode || stopping) return Promise.reject(new CandidateError('CANDIDATE_CONTROL_NOT_READY'));
-      hostRequest++; hostSuspended = true; hostApproved = false; recoveryAbort?.abort(); retainedNetwork?.queue.pause();
+      hostRequest++; hostSuspended = true; hostApproved = false; recoveryAbort?.abort(); retainedNetwork?.queue.pause('host-suspended');
       const shutdown = session.stop(); shutdown.catch(() => {});
       const pending = hostTransition.catch(() => {}).then(async () => {
         await shutdown;

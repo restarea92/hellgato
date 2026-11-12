@@ -70,12 +70,14 @@ class LifecycleTest(unittest.TestCase):
     def run_host_sequence(self, hosts, readiness):
         session = Session(queue.Queue())
         session.stop = Mock()
+        session.stop.is_set.return_value = False
         session.stop.wait.side_effect = [False] * len(hosts) + [True]
         session.shutdown_bridge = Mock()
         session.prepare_native_ui = Mock(return_value=True)
-        process = Mock(stdout=[])
+        process = Mock()
         process.poll.return_value = None
         reader = Mock()
+        reader.is_alive.return_value = False
         reader.start.side_effect = session.bridge_ready.set
         presence = Mock()
         presence.host.side_effect = hosts
