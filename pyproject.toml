@@ -66,7 +66,6 @@ mypy_path = [
 # explicitly outside this first strict slice, but remain Ruff-checked above.
 files = [
     "adapters/mirabox-python/src/hellgato_mirabox/protocol.py",
-    "apps/stream-dog/python/hellgato_candidate/files.py",
     "host-integrations/streamdeck/windows/python/hellgato_host/startup_status.py",
     "test/typechecks/python_boundaries.py",
     "scripts/check-python.py",

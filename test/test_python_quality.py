@@ -38,7 +38,6 @@ class PythonQualityTests(unittest.TestCase):
         self.assertFalse(settings.get('ignore_missing_imports', False))
         self.assertNotEqual(settings.get('follow_imports'), 'skip')
         required = {'adapters/mirabox-python/src/hellgato_mirabox/protocol.py',
-                    'apps/stream-dog/python/hellgato_candidate/files.py',
                     'host-integrations/streamdeck/windows/python/hellgato_host/startup_status.py',
                     'test/typechecks/python_boundaries.py'}
         self.assertTrue(required <= set(settings['files']))
@@ -66,10 +65,10 @@ class PythonQualityTests(unittest.TestCase):
         # bridge remains a named migration exception outside these new layers.
         rules = {
             'adapters/mirabox-python/src/hellgato_mirabox': {
-                'hellgato_host', 'hellgato_stream_dog', 'hellgato_candidate',
+                'hellgato_host', 'hellgato_stream_dog',
                 'app', 'apps', 'tkinter', 'subprocess'},
             'host-integrations/streamdeck/windows/python/hellgato_host': {
-                'hellgato_mirabox', 'hellgato_stream_dog', 'hellgato_candidate',
+                'hellgato_mirabox', 'hellgato_stream_dog',
                 'app', 'apps', 'StreamDock'},
             'apps/stream-dog/python': {'hellgato_mirabox', 'StreamDock'},
         }
