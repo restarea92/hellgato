@@ -1,8 +1,10 @@
 {
   "schemaVersion": 1,
   "baseSha": "8defff843219fa8b353d059263f5e1b0d7206eb1",
-  "reason": "Classify the private full-frame runtime and its adapter/tooling paths as Windows-only. This changes path ownership without altering published SDK source or APIs.",
+  "reason": "Classify private full-frame runtime and adapter/tooling paths as Windows-only. Sharp is added only to the private compositor tooling; published SDK source, APIs and package dependencies are unchanged.",
   "paths": [
-    ".release/components.json"
+    ".release/components.json",
+    "package.json",
+    "pnpm-lock.yaml"
   ]
 }
