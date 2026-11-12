@@ -622,45 +622,5 @@ class CandidateSupervisorTests(unittest.TestCase):
                 self.module.initial_controls(state, 'HGMOCK000042')
 
 
-class CandidateStageTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        spec = importlib.util.spec_from_file_location('ipc_candidate_stage', ROOT / 'scripts/stage-ipc-candidate.py')
-        cls.module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cls.module)
-
-    def test_immutable_candidate_requires_committed_clean_source(self):
-        with patch.object(self.module.subprocess, 'check_output', side_effect=['a' * 40, '']):
-            self.assertEqual(self.module.source_identity(ROOT), 'a' * 40)
-        for changes in (' M apps/stream-dog/python/candidate.py\n', 'A  new-runtime.py\n', '?? new-policy.json\n'):
-            with patch.object(self.module.subprocess, 'check_output', side_effect=['a' * 40, changes]):
-                with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, 'clean, committed'):
-                    self.module.source_identity(ROOT)
-
-    def test_sdk_stage_revalidates_inventory_before_candidate_provenance(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / 'runtime.mjs').write_text('exact packed runtime')
-            value = {'schemaVersion': 1, 'component': 'stream-dog-sdk', 'engine': 'legacy-compatibility',
-                     'releaseSha': 'a' * 40, 'files': inventory(root)}
-            (root / 'product-build-manifest.json').write_text(json.dumps(value))
-            self.assertEqual(self.module.verify_sdk_stage(root, 'a' * 40), value)
-            (root / 'runtime.mjs').write_text('mutated after staging')
-            with self.assertRaisesRegex(ValueError, 'inventory'):
-                self.module.verify_sdk_stage(root, 'a' * 40)
-            with self.assertRaisesRegex(ValueError, 'source'):
-                self.module.verify_sdk_stage(root, 'b' * 40)
-
-    def test_candidate_notices_reference_its_own_flat_license_files(self):
-        notices = self.module.CANDIDATE_NOTICES
-        references = {line.removeprefix('License: ') for line in notices.splitlines() if line.startswith('License: ')}
-        self.assertEqual(references, {'licenses/' + name + '.txt' for name in
-                                     ('Hellgato', 'Mirabox', 'DeckBridge', 'Node', 'Python', 'Pillow', 'pefile', 'six', 'PyInstaller')})
-        self.assertNotIn('licenses/Tk/', notices)
-        self.assertNotIn('licenses/pystray/', notices)
-        self.assertNotIn('licenses/NODE-LICENSE.txt', notices)
-        self.assertIn('bootloader distribution exception', notices)
-
-
 if __name__ == '__main__':
     unittest.main()

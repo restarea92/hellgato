@@ -189,8 +189,6 @@ assert bridge.root == root
         self.assertIn("'hellgato_mirabox/models/n4_pro/firmware-policy.json'", spec)
         self.assertIn("if sys.platform == 'win32':", spec)
         self.assertIn("prepare['prepare_sdk'](root / 'work/references/mirabox', offline=True)", spec)
-        stage = (ROOT / 'scripts/stage-ipc-candidate.py').read_text(encoding='utf-8')
-        self.assertIn("digest(worker / '_internal' / firmware_policy)", stage)
 
     def test_wrapper_sources_do_not_duplicate_product_implementation(self):
         for relative in ('app/hellgato.py', 'app/ui.py', 'app/i18n.py',

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "baseSha": "ee8607ed642e5123427d6fb60c6f18444a55f926",
+  "reason": "Remove the unused standalone IPC trial packager and its frozen executable specification. Active Windows builds use stage-product-worker.py and hellgato.spec; product runtime behavior and published SDK packages are unchanged.",
+  "paths": [
+    "scripts/stage-ipc-candidate.py",
+    "installer/ipc-candidate.spec"
+  ]
+}

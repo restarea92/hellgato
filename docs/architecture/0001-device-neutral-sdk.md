@@ -53,12 +53,8 @@ boundary declarations do not enter npm archives. Existing protocol extensions an
 pinned vendor/legacy runtime remain staged JavaScript behind narrow typed boundaries.
 The product session runner is outside this SDK conversion boundary.
 
-The product/host moves, pinned Python build dependencies and quality gates are
-implemented alongside compatibility tests. An isolated, manifest-bound
-[Windows IPC trial](../compatibility/ipc-trial.md) remains an optional portable
-supervisor alongside the ordinary installer, which now bundles the same separated
-worker directly. Its frozen self-test uses the fake backend; actual Windows
-artifact checks and the physical recipe remain distinct evidence. Physical checks
+The product/host moves and locked Python build gates retain the ordinary
+installer. The standalone IPC trial bundle has been retired. Physical checks
 confirmed initial icons, USB reconnect with icons
 and automatic pairing, Stream Deck exit to native standby, and automatic reconnect
 after Stream Deck restart, plus normal input/actions, profile/page images,
@@ -67,8 +63,7 @@ visible for tens of seconds before native standby; Hellgato-only relaunch while
 Stream Deck remains open requires manual pairing, after which icons work. The
 complete hardware endurance recipe has not been run.
 
-Separate runtime/CompatibilityTools ZIP publication remains deferred. The portable
-trial is a product test bundle, not an independent SDK distribution channel.
+Separate runtime/CompatibilityTools ZIP publication remains deferred.
 
 ## Safety and compatibility
 
