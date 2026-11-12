@@ -26,7 +26,9 @@ The draft workflow is serialized. A matching complete draft is reused, not dupli
 
 Prefer **Re-run failed jobs** when build succeeded and draft creation failed. The draft job uses the successful build's artifact ID/name, including its original attempt, rather than guessing a new artifact from the current attempt number. A full rebuild may produce different installer bytes; conflicting draft assets are preserved, not silently replaced. Read the error before deciding whether to keep the existing draft or prepare a new version.
 
-The existing **Windows build** workflow remains available for PRs, main changes and manual build-only runs. Its artifacts expire after 14 days; release drafts retain their attached files. Building does not create a public release.
+During the Node/Rust migration, ordinary source PRs and main pushes run whitespace and changed JavaScript syntax checks. Full legacy checks remain available by manual dispatch. Generated version PRs and explicit reusable installer builds retain their exact-source validation.
+
+The existing **Windows build** workflow remains available for version PRs, explicit reusable builds and manual build-only runs. Its artifacts expire after 14 days; release drafts retain their attached files. Building does not create a public release.
 
 ## Setup and remaining boundaries
 
