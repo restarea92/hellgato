@@ -2,6 +2,7 @@ pub mod compatibility;
 pub mod frame;
 pub mod input;
 pub mod model;
+pub mod native;
 
 use serde::Serialize;
 use serde_json::{json, Value};
