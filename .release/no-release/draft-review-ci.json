@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "baseSha": "e086f37049e1d519903a1910095a3fdcfd108d44",
+  "reason": "Limit ordinary source draft PRs to whitespace and changed JavaScript syntax checks during the runtime migration. Ready-for-review, main, manual and generated version-PR jobs retain the existing full validation and exact-source installer build. This changes review automation only; no shipped package or release version changes.",
+  "paths": [
+    ".github/workflows/checks.yml",
+    ".github/workflows/windows-build.yml"
+  ]
+}

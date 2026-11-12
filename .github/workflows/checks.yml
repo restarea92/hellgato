@@ -4,13 +4,43 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  draft:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.head_ref != 'changeset-release/main'
+    runs-on: windows-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+      - name: Check changed source syntax
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --check $env:BASE_SHA $env:HEAD_SHA
+          if ($LASTEXITCODE) { throw 'Whitespace check failed' }
+          $files = @(git -c core.quotepath=false diff --name-only --diff-filter=ACMR $env:BASE_SHA $env:HEAD_SHA -- '*.mjs' '*.cjs')
+          if ($LASTEXITCODE) { throw 'Changed-file lookup failed' }
+          foreach ($file in $files) {
+            node --check -- $file
+            if ($LASTEXITCODE) { throw "Syntax check failed: $file" }
+          }
   test:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft || github.head_ref == 'changeset-release/main'
     runs-on: windows-latest
     timeout-minutes: 15
     defaults:
