@@ -61,9 +61,7 @@ unsupported. Optional Qt native UI loading is not part of this inspection.
 
 Add `host-integrations/streamdeck/windows/python` to PyInstaller `pathex` and
 collect `hellgato_host` submodules, including `pefile`. A dedicated executable may
-use `python/inspect_readiness.py` as its entry point. The candidate supervisor can
-call `hellgato_host.readiness.main(["inspect", ...])` for `--inspect-host` before
-entering any supervisor/USB path. Neither route needs the GUI or Mirabox runtime.
+use `python/inspect_readiness.py` as its entry point. The inspector does not need the GUI or Mirabox runtime.
 The legacy frozen product also preserves the canonical Python source tree so its
 `app/n4/_host_compat.py` aliases resolve from `sys._MEIPASS`, independently of cwd.
 

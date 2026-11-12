@@ -47,7 +47,6 @@ select = ["E4", "E7", "E9", "F", "B006"]
 [tool.ruff.lint.per-file-ignores]
 # Entrypoints must resolve source/frozen roots and --version before importing
 # product/host modules. This is an intentional bootstrap ordering exception.
-"apps/stream-dog/python/candidate.py" = ["E402"]
 "apps/stream-dog/python/hellgato_stream_dog/launcher.py" = ["E402"]
 
 [tool.mypy]
