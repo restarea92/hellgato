@@ -83,13 +83,22 @@
         "scripts/start-streamdeck.py",
         "packages/windows-release/package.json",
         "adapters/mirabox-python/**",
+        "adapters/mirabox-rust/**",
+        "adapters/simulator/**",
         "apps/stream-dog/**",
         "host-integrations/**",
         "vendor/mirabox-sdk/**",
         "scripts/stage-windows-sdk.mjs",
+        "scripts/stage-ipc-candidate.py",
+        "scripts/stream-dog/stage.mjs",
+        "scripts/stream-dog/build-installer.ps1",
+        "scripts/stream-dog/pack-adapter.mjs",
+        "scripts/stream-dog/create-adapter-manifest.mjs",
+        "scripts/stream-dog/smoke-fleet.mjs",
+        "scripts/stream-dog/qa.mjs",
+        "scripts/stream-dog/smoke-runtime.mjs",
         "pyproject.toml",
-        "uv.lock",
-        "scripts/stage-ipc-candidate.py"
+        "uv.lock"
       ],
       "components": [
         "windows"
@@ -136,6 +145,7 @@
     {
       "paths": [
         "README.md",
+        "scripts/README.md",
         "docs/**",
         "test/**",
         ".github/ISSUE_TEMPLATE/**",
