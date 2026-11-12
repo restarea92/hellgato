@@ -220,11 +220,14 @@ impl<B: Backend> Controller<B> {
                 let name = string(params, "control")?;
                 let value = match name {
                     "brightness" => Some(brightness(params.get("value"))?),
+                    "knobBrightness" if crate::model::current() == crate::model::Model::Pro => {
+                        Some(brightness(params.get("value"))?)
+                    }
                     "sleep" | "wake" => None,
                     _ => {
                         return Err(AdapterError::new(
                             "ERR_UNSUPPORTED",
-                            "Only volatile brightness, sleep, and wake are supported",
+                            "Unsupported volatile control for this model",
                         ))
                     }
                 };
@@ -433,6 +436,18 @@ mod tests {
             "control",
             json!({"control":"brightness","value":101})
         ))["error"]
+            .is_object());
+        for value in [json!(-1), json!(101), json!(true)] {
+            assert!(controller.execute(&request(
+                "control",
+                json!({"control":"knobBrightness","value":value})
+            ))["error"]
+                .is_object());
+        }
+        assert!(controller.execute(&request(
+            "control",
+            json!({"control":"knobBrightness","value":35})
+        ))["result"]
             .is_object());
         controller.close().unwrap();
         assert!(controller.execute(&request(

@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FrameRuntimeManager } from '../apps/stream-dog/node/frame-runtime-manager.mjs';
+import { createFrameRuntimeApi } from '../apps/stream-dog/node/frame-runtime-api.mjs';
 import { adapterFixture, deferred, until } from './helpers/frame-runtime-fixture.mjs';
 
-async function managerFixture(t) {
+async function managerFixture(t, { knobBrightness = false } = {}) {
   const fixture = await adapterFixture(t);
   const config = { stateDir: fixture.root, settingsPath: join(fixture.root, 'settings.json'),
     builtInAdapters: [fixture.path], fake: true, retryMs: () => 5,
@@ -13,17 +14,82 @@ async function managerFixture(t) {
   const identity = { dockSerial: 'HGDOCK000001', childSerial: 'HGMOCK000003', macAddress: [2, 0, 0, 0, 0, 1] };
   await writeFile(config.legacyIdentityPath, JSON.stringify({ identity }));
   const devices = [1, 2].map(index => ({ id: `device-${index}`, adapterId: fixture.manifest.id, modelId: 'fixture', capabilities: {} }));
-  const starts = [];
+  const starts = [], configured = [];
   const createSession = async (value, options) => {
     starts.push(value); const done = deferred();
-    options.onState({ deviceConnected: true, hostConnected: true, networkListening: true });
+    const state = { deviceConnected: true, hostConnected: true, networkListening: true,
+      knobBrightnessSupported: knobBrightness, knobBrightness: value.knobBrightness ?? value.brightness,
+      followDisplayBrightness: value.knobBrightness === null };
+    options.onState(state);
     const stop = async () => { options.onState({ deviceConnected: false, hostConnected: false }); done.resolve(); };
-    return { stop, completion: done.promise, control: async () => {} };
+    return { stop, completion: done.promise, control: async () => {}, ...(knobBrightness ? {
+      configure: async settings => { configured.push(settings); Object.assign(state, settings);
+        if (settings.knobBrightness !== undefined) state.followDisplayBrightness = false; options.onState(state); },
+    } : {}) };
   };
   const manager = new FrameRuntimeManager(config, { createSession, discover: async () => devices });
   t.after(() => manager.close());
-  return { ...fixture, config, manager, starts, identity, devices, createSession };
+  return { ...fixture, config, manager, starts, configured, identity, devices, createSession };
 }
+
+test('native knob controls authenticate, save only final values and restore the paired device setting', async t => {
+  const f = await managerFixture(t, { knobBrightness: true });
+  const token = 'b'.repeat(64);
+  const api = await createFrameRuntimeApi({ token, port: 0, manager: f.manager });
+  t.after(() => api.close());
+  const headers = { Authorization: `Bearer ${token}` };
+  const post = (value, requestHeaders = headers) => fetch(api.url + '/control', { method: 'POST', headers: requestHeaders,
+    body: JSON.stringify({ serial: f.identity.childSerial, action: 'knobBrightness', value: 72, ...value }) });
+  assert.equal((await post({}, {})).status, 403);
+  assert.equal((await post({}, { ...headers, Origin: 'http://foreign.example' })).status, 403);
+  assert.equal((await post({})).status, 400);
+  await f.manager.command('discover', { adapterId: f.manifest.id });
+  await f.manager.command('select', { adapterId: f.manifest.id, deviceId: 'device-1' });
+  await f.manager.command('connect'); await until(() => f.manager.getState().runtime.state === 'running');
+  assert.equal(f.manager.nativeState().available, true);
+  const preview = await (await post({ persist: false })).json();
+  assert.equal(preview.ok, true); assert.equal(preview.state.knobBrightness, 72);
+  assert.equal(preview.state.followDisplayBrightness, false);
+  assert.equal(JSON.parse(await readFile(f.config.settingsPath, 'utf8')).knobBrightness, null);
+  const saved = await post({ value: 44 });
+  assert.equal(saved.status, 200);
+  assert.equal(JSON.parse(await readFile(f.config.settingsPath, 'utf8')).knobBrightness, 44);
+  for (const invalid of [{ serial: 'HGMOCK999999' }, { value: true }, { value: 101 }, { persist: 1 }, { action: 'sleep' }]) {
+    assert.equal((await post(invalid)).status, 400);
+  }
+  assert.deepEqual(f.configured, [{ knobBrightness: 72 }, { knobBrightness: 44 }]);
+  assert.equal(f.starts.length, 1);
+  await f.manager.command('disconnect');
+  assert.equal(f.manager.nativeState().available, false);
+  assert.equal((await post({})).status, 400);
+  const restarted = new FrameRuntimeManager(f.config, { createSession: f.createSession });
+  t.after(() => restarted.close());
+  await restarted.command('connect'); await until(() => restarted.getState().runtime.state === 'running');
+  assert.equal(f.starts[1].knobBrightness, 44);
+  assert.equal(restarted.nativeState().serial, f.identity.childSerial);
+});
+
+test('unsupported models keep native knob controls disabled', async t => {
+  const f = await managerFixture(t);
+  await f.manager.command('discover', { adapterId: f.manifest.id });
+  await f.manager.command('connect-device', { adapterId: f.manifest.id, deviceId: 'device-1' });
+  await until(() => f.manager.getState().runtime.state === 'running');
+  assert.equal(f.manager.nativeState().available, false);
+  await assert.rejects(f.manager.command('native-control', { serial: f.identity.childSerial, action: 'knobBrightness', value: 30 }), /unavailable/);
+});
+
+test('existing serial-scoped knob brightness migrates without overwriting the original file', async t => {
+  const f = await managerFixture(t);
+  await f.manager.close();
+  const saved = JSON.parse(await readFile(f.config.settingsPath, 'utf8')); delete saved.knobBrightness;
+  await writeFile(f.config.settingsPath, JSON.stringify(saved));
+  const path = join(f.root, `device-controls-${f.identity.childSerial}.json`);
+  const legacy = JSON.stringify({ version: 1, serial: f.identity.childSerial, knobBrightness: 31 });
+  await writeFile(path, legacy);
+  const restarted = new FrameRuntimeManager(f.config); t.after(() => restarted.close());
+  assert.equal(restarted.getState().settings.knobBrightness, 31);
+  assert.equal(await readFile(path, 'utf8'), legacy);
+});
 
 test('device selection preserves the existing paired identity and persists explicit connection intent', async t => {
   const f = await managerFixture(t);

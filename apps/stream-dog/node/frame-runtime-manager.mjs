@@ -55,6 +55,7 @@ function validateSettings(value) {
       !Array.isArray(value.identity.macAddress) || value.identity.macAddress.length !== 6 ||
       !value.identity.macAddress.every(byte => Number.isInteger(byte) && byte >= 0 && byte <= 255) ||
       !Number.isInteger(value.brightness) || value.brightness < 0 || value.brightness > 100 ||
+      value.knobBrightness !== null && (!Number.isInteger(value.knobBrightness) || value.knobBrightness < 0 || value.knobBrightness > 100) ||
       !Number.isInteger(value.maxFps) || value.maxFps < 1 || value.maxFps > 120) throw new Error('Invalid saved runtime settings; identity was not regenerated');
   return value;
 }
@@ -65,7 +66,18 @@ export class FrameRuntimeManager {
   #children = new Map();
   constructor(config, { preview, createSession, discover } = {}) {
     this.#config = config; this.#preview = preview; this.#createSession = createSession; this.#discover = discover;
-    this.#settings = validateSettings(existsSync(config.settingsPath) ? readJson(config.settingsPath) : initialSettings(config));
+    const settings = existsSync(config.settingsPath) ? readJson(config.settingsPath) : initialSettings(config);
+    if (!Object.hasOwn(settings, 'knobBrightness')) {
+      settings.knobBrightness = null;
+      validateSettings(settings);
+      const legacy = config.legacyIdentityPath && resolve(dirname(config.legacyIdentityPath), `device-controls-${settings.identity.childSerial}.json`);
+      if (legacy && existsSync(legacy)) {
+        const saved = readJson(legacy);
+        if (saved.version !== 1 || saved.serial !== settings.identity.childSerial) throw new Error('Saved knob brightness belongs to another device');
+        settings.knobBrightness = saved.knobBrightness;
+      }
+    }
+    this.#settings = validateSettings(settings);
     this.#registry = new FrameAdapterRegistry(this.#settings.adapters);
     this.#devices = structuredClone(this.#settings.knownDevices ?? []);
     for (const path of config.builtInAdapters ?? []) {
@@ -103,10 +115,13 @@ export class FrameRuntimeManager {
   }
   nativeState() {
     const session = this.#sessionState;
+    const available = session?.deviceConnected === true && session.knobBrightnessSupported === true && this.#supervisor.status().state === 'running';
     return { serial: this.#settings.identity.childSerial, model: session?.modelId ?? '',
       connected: session?.deviceConnected === true, hostConnected: session?.hostConnected === true,
       networkListening: session?.networkListening === true, connectionDesired: this.#supervisor.status().desired,
-      available: false, capabilities: { knobBrightness: false } };
+      available, capabilities: { knobBrightness: available },
+      knobBrightness: session?.knobBrightness ?? this.#settings.knobBrightness ?? this.#settings.brightness,
+      followDisplayBrightness: session?.followDisplayBrightness ?? this.#settings.knobBrightness === null };
   }
   async #attachHost() {
     if (this.#config.fake || !this.#config.nativeUi) return;
@@ -131,7 +146,7 @@ export class FrameRuntimeManager {
     Object.assign(target.config, { serialNumber: this.#settings.identity.dockSerial,
       childSerialNumber: this.#settings.identity.childSerial, macAddress: [...this.#settings.identity.macAddress] });
     const sessionConfig = { adapter, target, deviceId: this.#settings.selectedDeviceId, generation,
-      brightness: this.#settings.brightness, maxFps: this.#settings.maxFps,
+      brightness: this.#settings.brightness, knobBrightness: this.#settings.knobBrightness, maxFps: this.#settings.maxFps,
       host: this.#config.host, hostProbe: this.#config.hostProbe, port: this.#config.port, childPort: this.#config.childPort,
       logPath: resolve(this.#config.stateDir, 'frame-events.jsonl'), resultPath: resolve(this.#config.stateDir, 'last-session.json') };
     const start = this.#createSession ?? (await import('./frame-session.mjs')).startFullFrameSession;
@@ -159,6 +174,16 @@ export class FrameRuntimeManager {
   async #command(action, params) {
     if (this.#closing) throw new Error('Runtime is closing');
     switch (action) {
+      case 'native-control': {
+        const owner = [this, ...this.#children.values()].find(manager => manager.#settings.identity.childSerial === params.serial);
+        if (!owner || params.action !== 'knobBrightness' || !Number.isInteger(params.value) || params.value < 0 || params.value > 100 ||
+            params.persist !== undefined && typeof params.persist !== 'boolean') throw new Error('Invalid native device control');
+        if (owner !== this) return owner.command(action, params);
+        if (!this.nativeState().available) throw new Error('Knob brightness is unavailable for this device');
+        if (!await this.#supervisor.configure({ knobBrightness: params.value })) throw new Error('Device is not connected');
+        if (params.persist !== false) { this.#settings.knobBrightness = params.value; this.#save(); }
+        return { ok: true, state: this.nativeState() };
+      }
       case 'device-settings': {
         const owner=[this,...this.#children.values()].find(manager=>{const settings=manager.getState().settings;return settings.selectedDeviceId===params.deviceId && settings.selectedAdapterId===params.adapterId;});
         if (!owner) throw new Error('Connect the selected device before changing its settings');
