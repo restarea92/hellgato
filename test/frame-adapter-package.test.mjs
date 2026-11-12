@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { adapterFixture } from './helpers/frame-runtime-fixture.mjs';
 import { inspectAdapterPackage, installAdapterPackage, packAdapter } from '../apps/stream-dog/node/frame-adapter-package.mjs';
+import { FrameRuntimeManager } from '../apps/stream-dog/node/frame-runtime-manager.mjs';
 
 test('hga review warns for DLLs, pins the reviewed bytes and installs an independent complete pack', async t => {
   const f=await adapterFixture(t), path=join(f.root,'adapter.hga');
@@ -23,4 +24,15 @@ test('hga rejects traversal and native special entries before extraction', async
   const original=readFileSync(path);const changed=Buffer.from(original);
   for(let at=0;at<changed.length-46;at++)if(changed.readUInt32LE(at)===0x02014b50){const length=changed.readUInt16LE(at+28);if(length>=3){changed.write('../',at+46);break;}}
   writeFileSync(join(f.root,'unsafe.hga'),changed);assert.throws(()=>inspectAdapterPackage(join(f.root,'unsafe.hga')),/unsafe/);
+});
+
+test('the running manager reviews in a worker, requires confirmation and keeps user trust separate',async t=>{
+  const f=await adapterFixture(t),path=join(f.root,'adapter.hga');packAdapter(f.root,path);
+  const manager=new FrameRuntimeManager({stateDir:join(f.root,'state'),settingsPath:join(f.root,'state/settings.json')});t.after(()=>manager.close());
+  const review=await manager.command('inspect-package',{path});assert.match(review.warning,/DLL/);
+  await assert.rejects(manager.command('install-package',{path,packageHash:review.packageHash}),/Confirm/);
+  await manager.command('install-package',{path,packageHash:review.packageHash,acknowledgeExternalCode:true});
+  assert.equal(manager.getState().adapters[0].source,'user');assert.equal(manager.getState().adapters[0].available,true);
+  const official=new FrameRuntimeManager({stateDir:join(f.root,'official'),settingsPath:join(f.root,'official/settings.json'),builtInAdapters:[f.path]});t.after(()=>official.close());
+  await assert.rejects(official.command('install-package',{path,packageHash:review.packageHash,acknowledgeExternalCode:true}),/cannot replace/);
 });
