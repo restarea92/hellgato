@@ -52,6 +52,8 @@ Normal images pass through the Node SDK session and USB worker; saved screensave
 
 The reusable TypeScript SDK (`hellgato` and `@hellgato/core`) is separate from the Windows client.
 
+- Node/Rust beta: [Architecture](docs/architecture/0002-full-frame-runtime.md) · [Build and QA](apps/stream-dog/rust/README.md) · [Adapter development](docs/adapters/frame-adapter-guide.md)
+
 - [Build, test and contribute](docs/guide.md#build-and-test) · [Core API](packages/core) · [Adapter guide](docs/adapters/contributing.md)
 - [Features and compatibility](docs/guide.md) · [Translation feedback](https://github.com/restarea92/hellgato/issues/new?template=translation.yml)
 - [Version management](.changeset/README.md) · [Windows release operations](docs/windows-releases.md)

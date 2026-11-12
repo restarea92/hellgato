@@ -1,5 +1,9 @@
 # Contributing an adapter
 
+For executable full-frame adapters and `.hga` packages, start with the
+[adapter development guide](frame-adapter-guide.md). The in-process public SDK
+contract below remains available separately.
+
 Implement the public `hellgato` adapter contract, use validators from
 `@hellgato/core/contracts`, and test with `hellgato/testing`. Do not import SDK
 internal files or depend on the Stream Dog installation directory.
