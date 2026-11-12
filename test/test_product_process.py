@@ -12,19 +12,11 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'apps/stream-dog/python'))
-from hellgato_candidate.windows import ProcessTree, LauncherOwnership, kernel
+from hellgato_stream_dog.process import ProcessTree, kernel
 
 
 @unittest.skipUnless(sys.platform == 'win32', 'Windows kernel fixture only')
-class CandidateWindowsTests(unittest.TestCase):
-    def test_launcher_rejects_duplicate_and_releases_after_owner_exit(self):
-        with LauncherOwnership():
-            with self.assertRaisesRegex(RuntimeError, 'Exit Hellgato'):
-                with LauncherOwnership():
-                    self.fail('Duplicate owner acquired launcher')
-        with LauncherOwnership():
-            pass
-
+class ProductProcessTreeTests(unittest.TestCase):
     def test_kill_on_close_reaps_node_style_parent_and_worker_descendant(self):
         with tempfile.TemporaryDirectory() as temp:
             record = Path(temp) / 'pids.json'

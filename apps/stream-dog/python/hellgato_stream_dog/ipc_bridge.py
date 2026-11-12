@@ -136,7 +136,7 @@ class ProductProcess:
     def __init__(self, command, config_path, on_event, *, discover=False, process_factory=subprocess.Popen,
                  job_factory=None):
         if job_factory is None:
-            from hellgato_candidate.windows import ProcessTree
+            from .process import ProcessTree
             job_factory = ProcessTree
         self.command = [*command, '--config', str(config_path), '--supervised', *(['--discover'] if discover else [])]
         self.on_event, self.process_factory, self.job_factory = on_event, process_factory, job_factory
