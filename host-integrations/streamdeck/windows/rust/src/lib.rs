@@ -2,7 +2,10 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{fmt, path::Path};
 
+pub mod prepare;
 pub mod status;
+#[cfg(windows)]
+mod windows;
 
 #[derive(Debug, Serialize)]
 pub struct HostError {
@@ -74,6 +77,8 @@ pub fn validate_native_config(value: &serde_json::Value) -> Result<()> {
     }
     Ok(())
 }
+#[cfg(windows)]
+pub use windows::{attach, probe};
 #[cfg(not(windows))]
 pub fn probe(_: &Path, _: &str) -> Result<serde_json::Value> {
     Err(HostError::new("HOST_PLATFORM", "Windows x64 is required"))
