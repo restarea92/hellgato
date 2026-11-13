@@ -60,7 +60,7 @@ Name: "{autodesktop}\Hellgato Stream Dog"; Filename: "{app}\HellgatoStreamDog.ex
 Root: HKLM; Subkey: "Software\Hellgato\Installer\StartupShortcuts"; ValueType: string; ValueName: "{code:GetStartupShortcut}"; ValueData: "{code:GetStartupShortcut}"; Flags: uninsdeletekey
 
 [Run]
-Filename: "{app}\HellgatoStreamDog.exe"; Description: "Hellgato Stream Dog 실행"; Flags: postinstall nowait skipifsilent runasoriginaluser
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\tools\setup-rust-user.ps1"" -Mode Launch -InstallDir ""{app}"""; Description: "Hellgato Stream Dog 실행"; Flags: postinstall nowait skipifsilent runhidden runasoriginaluser
 
 [Code]
 var

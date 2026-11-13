@@ -1,4 +1,4 @@
-param([ValidateSet('Prepare','Configure','Restart','PrepareHost','RemoveHost')][string]$Mode,[string]$InstallDir,[string]$ContextFile,[ValidateSet('0','1')][string]$Autostart='0')
+param([ValidateSet('Prepare','Configure','Launch','Restart','PrepareHost','RemoveHost')][string]$Mode,[string]$InstallDir,[string]$ContextFile,[ValidateSet('0','1')][string]$Autostart='0')
 $ErrorActionPreference='Stop'
 $taskMode=$Mode
 . (Join-Path $PSScriptRoot 'setup-user.ps1') -Mode Prepare -InstallDir $InstallDir -ContextFile $ContextFile -Autostart $Autostart
@@ -9,6 +9,14 @@ function Test-RustInstallPath([string]$Path) {
     if($full -ine $expected){throw 'Only the canonical Hellgato installation directory can be upgraded.'}
     if(Test-Path -LiteralPath $full){Assert-PlainDirectory $full}else{$current=Get-Item -LiteralPath (Split-Path $full -Parent);while($current){if($current.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Redirected installation parent'};$current=$current.Parent}}
     return $full
+}
+
+function Start-DesktopApp([string]$executable) {
+    $shell=New-Object -ComObject Shell.Application
+    $handle=0
+    $desktop=$shell.Windows().FindWindowSW(0,0,8,[ref]$handle,1)
+    if(-not $desktop){throw 'The original desktop is unavailable for application restart.'}
+    $desktop.Document.Application.ShellExecute($executable,'',(Split-Path $executable -Parent),'open',1)
 }
 
 function Close-RustUpgradeApps([string]$legacy,[string]$destination,[string]$localData,[string]$ContextFile,[string]$startup) {
@@ -49,10 +57,11 @@ function Invoke-RustUserSetup {
         if($LASTEXITCODE){throw 'Host startup integration operation failed'}
         return
     }
+    if($taskMode -eq 'Launch'){Start-DesktopApp (Join-Path $destination 'HellgatoStreamDog.exe');return}
     if($taskMode -eq 'Restart'){
         if($ContextFile -and (Test-Path -LiteralPath $ContextFile) -and (Get-Content -LiteralPath $ContextFile -Raw) -match '(?m)^StreamDeckWasRunning=1\r?$'){
             $executable=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Elgato\StreamDeck\StreamDeck.exe'
-            if(-not @(Get-InstalledProcesses $legacy $destination | Where-Object Name -eq 'StreamDeck.exe').Count){Start-Process -FilePath $executable -WindowStyle Hidden|Out-Null}
+            if(-not @(Get-InstalledProcesses $legacy $destination | Where-Object Name -eq 'StreamDeck.exe').Count){Start-DesktopApp $executable}
         }
         return
     }
