@@ -1,9 +1,13 @@
 # Stream Dog Rust beta
 
-The local Windows x64 installer is
-`Hellgato-StreamDog-0.2.0-beta.1-Setup.exe`. It bundles Node, Rust workers,
+The Windows x64 public beta installer is
+`Hellgato-0.2.0-Setup.exe`. It bundles Node, Rust workers,
 manufacturer DLLs and startup support for Stream Deck 7.6.0.23012 / Qt 6.11.1.
-It contains no Python runtime. Other host executable hashes are rejected.
+It contains no Python runtime. Untested host builds and firmware produce
+compatibility warnings without blocking core connection. Optional native UI
+loading failures also leave the core running. Startup patches remain bound to
+their actual executable structure; an unprepared host may have a different key
+layout. Private automatic rescan is enabled only where its host structure was verified.
 
 ## Installation and lifecycle
 
@@ -16,7 +20,7 @@ It contains no Python runtime. Other host executable hashes are rejected.
 
 Close REA Bridge before opening the same USB device. Foreign startup DLLs are
 never overwritten; resolve conflicts through their owner's uninstall procedure.
-This is a local beta, not a public release or activated automatic update.
+This is a public beta. Automatic updating is not enabled.
 A real installed upgrade/uninstall cycle has not yet been verified.
 
 X and Alt+F4 hide the window while keeping connections alive. Click the tray icon
@@ -25,7 +29,7 @@ the core. `--background` starts hidden; `--stop` requests orderly shutdown.
 
 ## Supported combinations and limits
 
-| Model | USB / admitted firmware | Output | Verification |
+| Model | USB / tested firmware | Output | Verification |
 | --- | --- | --- | --- |
 | N4 Pro E | `5548:1021` / `V4.N4 Pro E.02.010` | Whole-display USB frame | Display and controls confirmed on hardware |
 | N4 / TS10N4 | `0400:3001`, revision 2 / `V3.TS10N4.01.006` | Internal key/touch-region splitting | Simulation only |
@@ -54,3 +58,19 @@ under `devices/<session-id>`. Do not share `control.json` or `native-ui.json`;
 they contain authentication tokens.
 
 See the [adapter development guide](../adapters/frame-adapter-guide.md).
+
+## Device backups
+
+Select a paired device, then open **Backups**. Save to the default location or
+choose a separate destination folder. Default backups are stored below
+`%LOCALAPPDATA%/Hellgato/stream-dog-rust/backups/<virtual-serial>` and can be
+renamed, reordered or individually deleted in the app. Deleting a backup never
+deletes current Stream Deck data. External backups are not added to this list.
+
+Each snapshot contains the selected device's profiles, shared plugins, icons,
+assets and settings, and that device's Hellgato settings/identity. Other devices'
+profiles, old backup archives, logs, dumps and bundled Node files are excluded.
+Linked development plugins are copied as regular files. `backup.json` records
+the snapshot's files and SHA-256 digests. Close Stream Deck before taking a
+consistent backup. The backup is a folder, not a Stream Deck profile-import file;
+automatic restore is not included in this beta.

@@ -7,9 +7,9 @@
 <p align="center"><strong>Unofficial hardware. Official software.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/restarea92/hellgato/releases/download/v0.1.8/Hellgato-0.1.8-Setup.exe"><strong>Download for Windows (.exe)</strong></a> ·
-  <a href="https://github.com/restarea92/hellgato/releases/tag/v0.1.8">Release notes &amp; SHA-256</a> ·
-  <a href="docs/guide.md">Guide</a> ·
+  <a href="https://github.com/restarea92/hellgato/releases/download/v0.2.0/Hellgato-0.2.0-Setup.exe"><strong>Download 0.2.0 Beta for Windows (.exe)</strong></a> ·
+  <a href="https://github.com/restarea92/hellgato/releases/tag/v0.2.0">Release notes &amp; SHA-256</a> ·
+  <a href="docs/compatibility/stream-dog-rust-beta.md">Guide</a> ·
   <a href="https://github.com/restarea92/hellgato/issues">Report an issue</a>
 </p>
 
@@ -26,27 +26,23 @@ Use your **Mirabox N4 Pro with the official Elgato Stream Deck app**. Hellgato S
 
 ## Get started
 
-1. Install the official [Stream Deck app](https://www.elgato.com/downloads), then run the **Windows installer** above as administrator. Setup closes both apps and retains existing settings and profiles.
+1. Install the official [Stream Deck app](https://www.elgato.com/downloads). Close Stream Deck, then run the **Windows installer** above as administrator. Setup stops Hellgato, removes its legacy Python runtime, and retains settings and profiles.
 2. Choose Hellgato's launch options, open Stream Deck yourself and connect one N4 Pro over USB. Open Hellgato if needed.
 3. In Stream Deck, open **Network**, connect to `127.0.0.1:5343` and confirm pairing.
 
-Runtimes and the USB SDK are bundled. See the [guide](docs/guide.md#installation-and-updates) for updates, extra plugins and **Prepare Stream Deck**.
+Node and Rust workers are bundled; Python is not required. See the [beta guide](docs/compatibility/stream-dog-rust-beta.md) for adapters, backups and **Prepare Stream Deck**. The previous [0.1.8 release](https://github.com/restarea92/hellgato/releases/tag/v0.1.8) remains available.
 
 ## Before you install
 
-- Windows x64; tested with N4 Pro E firmware `V4.N4 Pro E.02.010` and Stream Deck `7.6.0.23012`. Other combinations are unverified.
+- Windows x64; tested with N4 Pro E firmware `V4.N4 Pro E.02.010` and Stream Deck `7.6.0.23012`. Untested host builds and firmware show warnings without blocking core connection. Native layout extensions still require compatible structures.
+- N4 / TS10N4 and 293S / TS115 compatibility adapters are included as hardware-unverified betas. Multiple physical devices are also unverified.
 - The installer is unsigned. Startup support adjusts Stream Deck's process memory on every launch, even with N4 Pro unplugged; `StreamDeck.exe` stays unchanged on disk.
 - Simultaneous use with a genuine **Stream Deck + is unsupported** while startup support is installed.
 - Dial holds/release actions and **Advanced → Standby image** are unsupported. Read the [full limitations](docs/guide.md#compatibility-and-limitations).
 
 ## How it works
 
-<p align="center">
-  <img src="docs/visuals/hellgato-network.gif" alt="Conceptual overview of N4 Pro, the Python USB worker, Hellgato SDK session and Stream Deck app" width="800">
-  <br><sub>Conceptual overview: input goes to Stream Deck; display updates return to N4 Pro. The virtual device is a logical identity.</sub>
-</p>
-
-Normal images pass through the Node SDK session and USB worker; saved screensavers play from the worker's local cache. [Architecture details](docs/guide.md#how-it-works).
+Device input goes through an independent Rust adapter to the Node core and Stream Deck. Key images, the touch strip and screensavers compose into one device canvas. N4 Pro receives complete frames; compatibility adapters serialize model-specific regions internally. The Rust GUI manages devices, adapters, backups and the tray. [Architecture details](docs/architecture/0002-full-frame-runtime.md).
 
 ## Develop and contribute
 
