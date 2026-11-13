@@ -1,5 +1,39 @@
 # @hellgato/windows-release
 
+## 0.2.0
+
+### Minor Changes
+
+- 72e59b8: Compose device surfaces and screensavers into complete frames with independent
+  adapter supervision and headless device management.
+- Distribute the Node/Rust Windows beta with owned legacy-worker cleanup and a
+  manual Rust installer build. Keep source checks lightweight during migration.
+- 5e8e76c: Move reviewed host readiness, native extension attachment and owned startup
+  preparation into a separate Rust host integration.
+- 1dbc964: Add independent Rust Mirabox frame adapters, exact firmware admission and explicit
+  N4/293S compatibility modes behind the complete-frame contract.
+- e447823: Bundle the Node/Rust runtime with reviewed adapters and a Windows migration
+  installer, and provide English adapter development and beta testing guides.
+- 0b6deec: Add a Rust Windows manager with owned core lifetime, tray behavior, device and
+  adapter management, and the native reference shell.
+
+### Patch Changes
+
+- 42ac575: Allow untested Stream Deck builds and device firmware with compatibility warnings.
+  Keep process identity, device identity, and native patch validation independent
+  from the tested-version list.
+- 7edcb77: Add per-device backups of profiles, shared plugins, icons, settings and virtual
+  identity, with external destinations and managed backup naming, order and deletion.
+- ee26259: Restore executable reads during physical-device connection so host admission no
+  longer fails with `readFileSync is not defined`.
+- aafb3e4: Restore independent N4 Pro knob brightness through the existing native Stream
+  Deck slider, with saved levels and sleep/wake restoration in the Rust adapter.
+- 1ef5103: Remove retired trial-only runtime helpers and retain process-tree cleanup in the
+  canonical Windows product package.
+- 398e3fc: Retry unexpected bridge exits with bounded backoff while retaining host listeners.
+  Coalesce obsolete reconnect frames across brightness and sleep-duration settings,
+  preserve wake/sleep ordering, and retain the original runtime failure diagnostic.
+
 ## 0.1.8
 
 ### Patch Changes
