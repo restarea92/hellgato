@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Use compatible controllers with the official Elgato Stream Deck app. A Rust management app, Node core and independent device adapters.">
+<meta name="theme-color" content="#f8f9fb">
+<title>Hellgato — Unofficial hardware. Official software.</title>
+<link rel="icon" href="assets/hellgato.png"><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header"><div class="header-inner">
+<a class="brand" href="#"><img src="assets/hellgato.png" alt="" width="46" height="46">hellgato</a>
+<nav aria-label="Main"><a href="#devices">Devices</a><a href="#how-it-works">How it works</a><a href="#download">Download</a></nav>
+</div></header>
+<main id="main">
+<section class="hero">
+<p class="eyebrow">Windows x64 · {{VERSION}} Beta</p>
+<h1>Unofficial hardware.<br>Official software.</h1>
+<p class="lede">Your controller. Your Stream Deck profiles and plugins.<br>Hellgato Stream Dog connects the two.</p>
+<p class="hero-note">No StreamDock app. No Python runtime. Node and Rust are bundled.</p>
+</section>
+<section id="download" class="client-download">
+<img class="client-mascot" src="assets/stream-dog.png" alt="Stream Dog mascot holding a controller" width="112" height="112">
+<h2>Hellgato Stream Dog</h2>
+<p>Manage devices, adapters and per-device backups from one tray app.</p>
+<a class="download-button" href="{{INSTALLER_URL}}">Download {{VERSION}} Beta for Windows</a>
+<p class="client-meta">Windows x64 · Unsigned installer · Manual updates</p>
+<p><a href="{{RELEASE_URL}}">Release notes &amp; SHA-256</a> · <a href="{{REPO_URL}}/blob/main/docs/guide.md">User guide</a> · <a href="{{REPO_URL}}">Source on GitHub</a></p>
+</section>
+<section id="get-started"><h2>Get started</h2>
+<ol>
+<li>Install the official <a href="https://www.elgato.com/downloads">Stream Deck app</a>, then run Hellgato setup. It closes both apps automatically, removes its owned legacy Python runtime and keeps settings, profiles and plugins. Stream Deck reopens if it was running.</li>
+<li>Connect the controller over USB. Open Stream Dog, select the matching adapter, discover the device and connect it. Close other software using the same USB device.</li>
+<li>If needed, add the Network Device in Stream Deck at <code>127.0.0.1:5343</code> and confirm pairing.</li>
+</ol>
+<p>Closing the window keeps the core running in the tray. Use Quit to disconnect. Stream Deck continues to own your actions, profiles and plugins.</p>
+</section>
+<section id="devices"><h2>Devices</h2>
+<div class="table-scroll" role="region" aria-label="Device support" tabindex="0"><table>
+<thead><tr><th>Device</th><th>Output</th><th>Verification</th></tr></thead>
+<tbody>
+<tr><td>Mirabox N4 Pro E</td><td>Complete 800 × 480 USB frame</td><td>Display, controls, screensaver and knob brightness verified on hardware</td></tr>
+<tr><td>N4 / TS10N4</td><td>Canvas split inside adapter</td><td>Included beta · Simulation only</td></tr>
+<tr><td>293S / TS115</td><td>Canvas split inside adapter</td><td>Included beta · Simulation only</td></tr>
+</tbody></table></div>
+<p>Tested with Stream Deck <strong>7.6.0.23012</strong> and N4 Pro E firmware <strong>V4.N4 Pro E.02.010</strong>. Untested builds and firmware show warnings; native extensions still need compatible host structures.</p>
+<p>Independent sessions are tested in simulation. Multiple physical devices and automatic reconnect after initial manual pairing remain unverified. Current Mirabox adapters allow one device per model family.</p>
+</section>
+<section id="how-it-works"><h2>One composed stream per device</h2>
+<p>Device input travels through an independent Rust adapter and the Node core to Stream Deck. Returning key images, the continuous touch strip and screensavers compose into one retained canvas. N4 Pro receives complete USB frames; compatibility adapters split the canvas internally.</p>
+<p>The Rust app manages devices, adapter packages, backups and the core lifetime. The canvas lives in memory, without an OS virtual monitor driver. Idle screens send no frames; active output is capped at 60 fps, keeping only the newest pending state.</p>
+<picture class="architecture-gif"><source media="(prefers-reduced-motion: reduce)" srcset="assets/architecture.png"><img src="assets/architecture.gif" alt="Five-object runtime: input travels to Stream Deck; separate display updates converge into a virtual canvas, then complete frames return to N4 Pro." width="800" height="800" loading="lazy"></picture>
+<p class="section-note"><a href="architecture.html">Open the interactive diagram on its own</a>. Dots illustrate direction, not measured traffic or latency.</p>
+</section>
+<section id="manage"><h2>Keep device management simple</h2>
+<ul>
+<li><strong>Devices in the sidebar.</strong> Select a device to inspect its model, virtual serial, connection and stream statistics.</li>
+<li><strong>Independent adapters.</strong> Add an <code>.hga</code> package without changing the core. External packages can execute native code; integrity checks do not establish malware safety.</li>
+<li><strong>Per-device backups.</strong> Save the selected device's profiles and identity together with shared plugins, icons, assets and settings. Choose an external folder, or manage named snapshots in the default location. Close Stream Deck for a consistent snapshot. Automatic restore is not included.</li>
+</ul>
+<p><a href="{{REPO_URL}}/blob/main/docs/adapters/frame-adapter-guide.md">Develop an adapter</a> · <a href="{{REPO_URL}}/blob/main/apps/stream-dog/rust/README.md">Build and test</a> · <a href="{{REPO_URL}}/issues">Report an issue</a></p>
+</section>
+<section id="limits"><h2>Before you install</h2>
+<p>Startup support adjusts Stream Deck process memory on launch, even with USB unplugged; <code>StreamDeck.exe</code> stays unchanged on disk. A genuine <strong>Stream Deck + cannot be used simultaneously</strong> with this shared layout patch.</p>
+<p>Physical dial holds/releases, RGB lighting effects, vibration and standby/boot-logo uploads are not implemented. The current GUI uses Korean labels. This public beta does not activate automatic updates or replace the latest stable GitHub release.</p>
+<p>Read the <a href="{{REPO_URL}}/blob/main/docs/guide.md#compatibility-and-limitations">full compatibility notes</a> for model-specific limits.</p>
+</section>
+</main>
+<footer><span>Hellgato · <a href="{{REPO_URL}}/blob/main/LICENSE">MIT license</a></span><span>Independent project. Not affiliated with Elgato or Mirabox.</span></footer>
+</body>
+</html>

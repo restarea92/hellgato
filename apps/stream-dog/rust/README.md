@@ -3,7 +3,7 @@
 The Rust app manages the headless Node core and independent device adapters.
 See the [architecture](../../../docs/architecture/0002-full-frame-runtime.md),
 [adapter guide](../../../docs/adapters/frame-adapter-guide.md) and
-[beta compatibility notes](../../../docs/compatibility/stream-dog-rust-beta.md).
+[user guide](../../../docs/guide.md).
 
 ## Build and run
 
@@ -19,15 +19,16 @@ node scripts/stream-dog/stage.mjs --destination work/stream-dog-bundle
 ./work/stream-dog-bundle/HellgatoStreamDog.exe
 ```
 
-Staging requires the reviewed Node executable, native host extension, owned
-startup files and manufacturer DLLs from the existing installation. It verifies
+Prepare inputs before staging: the reviewed Node executable, native Qt extension,
+owned startup files and manufacturer DLLs. The manual **Windows Rust build**
+workflow documents clean-machine preparation using an extracted official host
+reference; staging defaults use the existing local preparation paths. It verifies
 and copies them into a fresh portable directory; Python runtime files are
 rejected. Keep the bundle together. This command does not replace an installed app.
 
 The app imports paired identity from persistent `settings.json` and stores its
 preferences under `%USERPROFILE%/AppData/Local/Hellgato/stream-dog-rust`.
-Stop the previous Hellgato app before opening USB. Open the reviewed Stream Deck
-build yourself; host preparation never restarts it automatically. X hides the app
+Stop the previous Hellgato app before opening USB. Open Stream Deck yourself for this development run; the installer separately manages automatic shutdown and restart. X hides the app
 to the tray, while Quit stops the core and releases devices.
 
 Build the installer from a verified bundle with the existing Inno Setup compiler:
@@ -53,7 +54,7 @@ node scripts/stream-dog/smoke-fleet.mjs --bundle work/stream-dog-bundle
 The renderer checks the production view through GPU readback without Computer
 Use. Runtime smokes use simulated devices, including forced-exit recovery,
 independent sessions and complete-frame restoration. They do not verify physical
-USB output, host restart, Windows drag/snap or a real installed upgrade.
+USB output, host restart, Windows drag/snap or an installed upgrade. The 0.2.1 installed upgrade was verified separately.
 The management app disables live preview; the runtime smoke enables it for image
 verification. See [the hardware recipe](../../../docs/compatibility/hardware-testing.md)
 for physical checks.

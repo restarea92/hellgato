@@ -2,7 +2,7 @@
 
 Device-neutral session composition for a Stream Deck network bridge. This package connects an explicitly selected adapter, physical device, mapping profile, and optional host-readiness provider to `@hellgato/core`.
 
-**Architecture candidate, not a new hardware-support release.** The in-process simulators and versioned Python sidecar are testable without USB hardware. The new N4 worker path remains hardware-gated. The production Windows N4 engine is not switched by importing this package, and independent worker downloads are not provided by npm.
+This reusable SDK is separate from the [Windows Node/Rust app](../../apps/stream-dog/rust/README.md). The experimental Python sidecar export remains a legacy integration; current Windows `.hga` packages use the [frame adapter protocol](../../docs/adapters/frame-adapter-guide.md). Importing this package does not install a device worker.
 
 ## Public entry points
 

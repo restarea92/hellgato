@@ -1,37 +1,25 @@
 # Full-frame runtime
 
-This is the Node/Rust beta architecture. The previous stable Python installer
-still has its own build and regression tests until installer migration is
-verified. Its architecture is recorded in [0001](0001-device-neutral-sdk.md).
+The current Windows beta has three product boundaries:
 
-| Boundary | Responsibility | Entry |
+| Component | Owns | Entry |
 | --- | --- | --- |
-| Windows app | Device/adapter management, settings, tray and core lifetime | `apps/stream-dog/rust/src/main.rs` |
-| Headless core | Host sessions, composition, latest-frame scheduling and reconnect supervision | `apps/stream-dog/node/frame-runtime.mjs` |
-| Device session | One bridge, compositor worker and adapter process | `apps/stream-dog/node/frame-session.mjs` |
-| Adapter | Discovery, firmware, physical layout, input and USB output | `adapters/mirabox-rust` or an installed `.hga` |
-| Host integration | Host readiness, startup ownership and native extension attachment | `host-integrations/streamdeck/windows/rust` |
-| Public SDK | Reusable validated bridge/session contracts | `packages/core`, `packages/hellgato` |
+| Rust management app | Device selection, adapter installation, settings, backups UI, tray and core lifetime | `apps/stream-dog/rust/src/main.rs` |
+| Headless Node core | Stream Deck sessions, virtual identities, retained canvas, scheduling, backups and reconnect supervision | `apps/stream-dog/node/frame-runtime.mjs` |
+| Independent device adapter | Discovery, actual firmware reporting, physical layout, input translation and USB output | `adapters/mirabox-rust` or an installed `.hga` |
 
-Input flows from device to adapter to SDK to Stream Deck. Host display updates
-return to one retained offscreen canvas per device, then one complete frame is
-submitted to the adapter. This is an in-memory compositor, not an OS virtual
-monitor driver. Normal layers retain keys and one continuous touch strip above
-the background. An opaque screensaver covers them; wake restores retained state.
+The Rust host helper owns Stream Deck discovery, startup ownership and optional native extension attachment. The reusable SDK in `packages/core` and `packages/hellgato` supplies the network bridge/session contracts. Python remains in legacy source and native build tooling, outside the shipped runtime.
 
-The core serializes each device's output and coalesces new changes into the
-latest state, capped at 60 submissions per second. Unchanged screens submit no
-frames. USB submission timing excludes plugin execution and physical LCD scanout.
-The optional developer preview uses the same composed stream and is disabled in
-the management app. The runtime owns API, preview and signal lifetimes; sessions
-do not create competing status servers or stop/restart installed apps.
+## Input and display
 
-N4 Pro transmits the complete canvas over USB. Explicit N4/293S compatibility
-adapters split it internally into volatile regions. They do not change the
-core's complete-frame contract or repeatedly write persistent backgrounds.
-Device sessions save independent identities, ports, canvases and reconnect intent.
-New adapters require registration, not core source changes.
+Input travels **device → adapter → core/SDK → Stream Deck**. Stream Deck runs plugins and returns display updates. The core retains key images and one continuous strip over the background in a per-device canvas. An opaque full-canvas screensaver covers those layers; wake restores retained key/strip state.
 
-Build and QA: [Windows app](../../apps/stream-dog/rust/README.md).
-Adapter protocol/package: [development guide](../adapters/frame-adapter-guide.md).
-Hardware and installer limits: [beta notes](../compatibility/stream-dog-rust-beta.md).
+Output travels **Stream Deck → virtual-device bridge (receive) → separate compositor (combine) → complete frame → adapter → USB device**. The virtual device is the network identity/communication endpoint; it receives display updates but does not compose them. The canvas is in memory; it is not a Windows virtual monitor driver. Stream Dog manages it without a production preview.
+
+Each device has one transfer in flight and only the newest pending state. Idle screens submit no frames; active output is capped at 60 fps. USB submission timing does not measure plugin execution or LCD scanout. N4 Pro receives the entire canvas over USB. N4/293S compatibility adapters split that same canvas into volatile model-specific regions internally, without persistent background writes.
+
+## Extension and lifecycle
+
+Each session owns its bridge ports, compositor worker, adapter process, identity and recovery state. The runtime owns the local API and shutdown. Closing the GUI hides it; Quit stops its owned core and workers. Registration of a new `.hga` does not require core or GUI source changes. A manufacturer SDK is optional.
+
+Multiple simulated sessions are verified; multiple physical devices remain unverified. See the [user guide](../guide.md#compatibility-and-limitations), [build instructions](../../apps/stream-dog/rust/README.md), [adapter contract](../adapters/frame-adapter-guide.md) and [interactive diagram](https://hellgato-streamdog.vercel.app/architecture.html).

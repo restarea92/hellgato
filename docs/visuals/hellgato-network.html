@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>Hellgato - Pixel Network</title>
+<title>Hellgato - Full-frame runtime</title>
 <style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
 </head>
 <body>
-<iframe id="codex-visualization" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Hellgato - Pixel Network" data-srcdoc="&lt;!doctype html&gt;
+<iframe id="codex-visualization" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Hellgato - Full-frame runtime" data-srcdoc="&lt;!doctype html&gt;
 &lt;html lang=&quot;en&quot; data-visualize-standalone&gt;
 &lt;head&gt;
 &lt;meta charset=&quot;utf-8&quot;&gt;
 &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
 &lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
 &lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
-&lt;title&gt;Hellgato - Pixel Network&lt;/title&gt;
+&lt;title&gt;Hellgato - Full-frame runtime&lt;/title&gt;
 &lt;style&gt;:root {
   color-scheme: light dark;
   background-color: var(
@@ -1538,7 +1538,7 @@ html&gt;body{padding:0}&lt;/style&gt;
 })();
 &lt;/script&gt;
 &lt;div id=&quot;hellgato-pixel-network&quot;&gt;
-  &lt;h2&gt;Hellgato · Pixel network&lt;/h2&gt;
+  &lt;h2&gt;Hellgato · Input and composed display&lt;/h2&gt;
   &lt;div class=&quot;viz-controls&quot; aria-label=&quot;Data flow&quot;&gt;
     &lt;button class=&quot;btn&quot; type=&quot;button&quot; data-flow=&quot;both&quot; aria-pressed=&quot;true&quot;&gt;Both&lt;/button&gt;
     &lt;button class=&quot;btn&quot; type=&quot;button&quot; data-flow=&quot;input&quot; aria-pressed=&quot;false&quot;&gt;Input&lt;/button&gt;
@@ -1548,24 +1548,25 @@ html&gt;body{padding:0}&lt;/style&gt;
     &lt;button class=&quot;btn&quot; type=&quot;button&quot; data-info aria-pressed=&quot;true&quot; data-tooltip=&quot;Show or hide data descriptions&quot;&gt;Data info&lt;/button&gt;
   &lt;/div&gt;
   &lt;div class=&quot;viz-row text-small px-legend&quot; data-data-info&gt;&lt;span&gt;&lt;b class=&quot;px-input&quot;&gt;●&lt;/b&gt; Input events&lt;/span&gt;&lt;span&gt;&lt;b class=&quot;px-display&quot;&gt;●&lt;/b&gt; Display updates&lt;/span&gt;&lt;/div&gt;
-  &lt;div class=&quot;px-stage&quot; role=&quot;img&quot; aria-label=&quot;Bidirectional data flow from N4 Pro through the USB worker and Hellgato SDK session and core bridge to the Stream Deck app. The translucent Virtual Stream Deck shows the network device identity exposed by the core bridge, not a separate process. Blue events travel toward the app; orange images and brightness updates return to the hardware.&quot;&gt;
+  &lt;div class=&quot;px-stage&quot; role=&quot;img&quot; aria-label=&quot;Five objects: physical N4 Pro, input processing, virtual device bridge, Stream Deck app and separate virtual compositor. Input travels to the app. Host display updates return through the virtual device, branch into retained canvas layers and leave as one complete USB frame. Software objects share the PC plane; physical N4 Pro is outside it.&quot;&gt;
     &lt;canvas class=&quot;px-signals&quot; aria-hidden=&quot;true&quot;&gt;&lt;/canvas&gt;
     &lt;canvas class=&quot;px-objects&quot; aria-hidden=&quot;true&quot;&gt;&lt;/canvas&gt;
     &lt;div class=&quot;px-labels&quot;&gt;
-      &lt;div class=&quot;px-label&quot; data-node=&quot;hub&quot;&gt;&lt;div&gt;Hellgato&lt;/div&gt;&lt;div class=&quot;text-small&quot;&gt;SDK session · Node.js&lt;/div&gt;&lt;/div&gt;
-      &lt;div class=&quot;px-label&quot; data-node=&quot;worker&quot;&gt;&lt;div&gt;Python USB Worker&lt;/div&gt;&lt;div class=&quot;text-small&quot;&gt;Mirabox SDK · DisplayWriter&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;px-label&quot; data-node=&quot;hub&quot;&gt;&lt;div&gt;Virtual compositor&lt;/div&gt;&lt;div class=&quot;text-small&quot;&gt;Retained canvas → complete frame&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;px-label&quot; data-node=&quot;worker&quot;&gt;&lt;div&gt;Input processing&lt;/div&gt;&lt;div class=&quot;text-small&quot;&gt;Rust adapter → normalized input&lt;/div&gt;&lt;/div&gt;
       &lt;div class=&quot;px-label&quot; data-node=&quot;device&quot;&gt;&lt;div&gt;N4 Pro&lt;/div&gt;&lt;div class=&quot;text-small&quot;&gt;10 keys · 4 dials · Touch&lt;/div&gt;&lt;/div&gt;
       &lt;div class=&quot;px-label&quot; data-node=&quot;app&quot;&gt;&lt;div&gt;Stream Deck App&lt;/div&gt;&lt;div class=&quot;text-small&quot;&gt;Actions · Plugins&lt;/div&gt;&lt;/div&gt;
-      &lt;div class=&quot;px-label&quot; data-node=&quot;network&quot;&gt;&lt;div&gt;&lt;span class=&quot;px-long&quot;&gt;Virtual Stream Deck&lt;/span&gt;&lt;span class=&quot;px-short&quot;&gt;Virtual&lt;br&gt;Stream Deck&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;text-small&quot;&gt;Logical device identity&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;px-label&quot; data-node=&quot;network&quot;&gt;&lt;div&gt;&lt;span class=&quot;px-long&quot;&gt;Virtual device&lt;/span&gt;&lt;span class=&quot;px-short&quot;&gt;Virtual&lt;br&gt;Stream Deck&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;text-small&quot;&gt;Receives input and host display updates&lt;/div&gt;&lt;/div&gt;
     &lt;/div&gt;
     &lt;div class=&quot;px-wire-labels&quot; aria-hidden=&quot;true&quot; data-data-info&gt;&lt;/div&gt;
     &lt;div class=&quot;text-small text-muted px-loading&quot; role=&quot;status&quot;&gt;Loading 3D scene&lt;/div&gt;
   &lt;/div&gt;
-  &lt;div class=&quot;text-small px-foot&quot; data-data-info&gt;Virtual Stream Deck · Logical identity seen by the app; not a separate process&lt;/div&gt;
-  &lt;div class=&quot;text-small px-foot&quot; data-data-info&gt;USB worker ↔ SDK session · JSON-RPC 2.0 · NDJSON over stdio&lt;/div&gt;
-  &lt;div class=&quot;text-small px-foot&quot; data-data-info&gt;Local TCP · 127.0.0.1 · Pairing :5343 · I/O :5344&lt;/div&gt;
-  &lt;div class=&quot;text-small px-mobile-flow&quot; data-data-info&gt;Input → Keys · Dials · Touch&lt;br&gt;Display ← Images · Brightness&lt;/div&gt;
+  &lt;div class=&quot;text-small px-foot&quot;&gt;Moving dots show input and independent host updates; flat packets after composition represent complete frames. Motion is illustrative, not a performance measurement.&lt;/div&gt;
+  &lt;div class=&quot;text-small px-foot&quot;&gt;PC: input processing, virtual device, Stream Deck and compositor · USB hardware: N4 Pro&lt;/div&gt;
+  &lt;div class=&quot;text-small px-mobile-flow&quot; data-data-info&gt;Input → Keys · Dials · Touch&lt;br&gt;Output ← Composed full frames + controls&lt;/div&gt;
   &lt;div class=&quot;sr-only&quot; aria-live=&quot;polite&quot; data-state&gt;Bidirectional flow&lt;/div&gt;
+
+
 &lt;/div&gt;
 &lt;style&gt;
   #hellgato-pixel-network h2 {margin:0 0 14px}
@@ -1756,6 +1757,23 @@ html&gt;body{padding:0}&lt;/style&gt;
       for(let row=0;row&lt;3;row++)for(let col=0;col&lt;10;col++)box(group,.178,.030,.127,&#x27;rim&#x27;,-1.23+col*.232,.468,.725+row*.187);
       bevel(group,.29,.15,.43,&#x27;metal&#x27;,1.32,.43,.98,.042);box(group,.017,.016,.092,&#x27;body&#x27;,1.32,.51,.89);
     }
+    function compositor(group){
+      const panel=new THREE.Group();panel.position.y=1.7;panel.rotation.x=-.32;group.add(panel);
+      for(let layer=0;layer&lt;3;layer++){
+        const surface=new THREE.Group();surface.position.set((layer-1)*.42,-layer*.16,layer*.38);panel.add(surface);
+        const rim=bevel(surface,4.30,.085,2.58,&#x27;metal&#x27;,0,0,0,.025);rim.rotation.x=Math.PI/2;
+        const texture=canvasTexture(400,240,(ctx)=&gt;{
+          ctx.fillStyle=css(palette.ink);ctx.fillRect(0,0,400,240);
+          if(layer!==1)for(let key=0;key&lt;10;key++){
+            ctx.fillStyle=css(key%2?palette.orange:palette.blue);
+            ctx.fillRect(4+(key%5)*84.5,3+Math.floor(key/5)*87,56,56);
+            ctx.fillStyle=css(palette.silver);ctx.font=&#x27;14px sans-serif&#x27;;ctx.fillText(String(key+1),23+(key%5)*84.5,38+Math.floor(key/5)*87);
+          }
+          if(layer!==0){ctx.fillStyle=css(palette.blue);ctx.fillRect(0,176.5,400,56);ctx.fillStyle=css(palette.silver);ctx.fillRect(18,199,220,6);ctx.fillRect(250,189,5,26);}
+        });
+        plane(surface,4.13,2.41,texture,0,0,.06);
+      }
+    }
     function network(group){
       controller(group,false,true);
       const ghostMaterials=new Map();
@@ -1774,14 +1792,20 @@ html&gt;body{padding:0}&lt;/style&gt;
       const depthMaterial=new THREE.MeshBasicMaterial({colorWrite:false,depthWrite:true});textures.push(depthMaterial);
       const depthProxy=group.clone(true);depthProxy.traverse(o=&gt;{o.layers.set(1);o.userData.noFit=true;if(o.isMesh){o.material=depthMaterial;o.renderOrder=-1;}});world.add(depthProxy);
     }
-    function rounded(points,r=.22){
-      const curve=new THREE.CurvePath();let previous=points[0].clone();
-      for(let i=1;i&lt;points.length-1;i++){
-        const before=points[i-1],at=points[i],after=points[i+1],incoming=at.clone().sub(before).normalize(),outgoing=after.clone().sub(at).normalize();
-        const radius=Math.min(r,at.distanceTo(before)/3,at.distanceTo(after)/3),start=at.clone().addScaledVector(incoming,-radius),end=at.clone().addScaledVector(outgoing,radius),k=.5522847498;
-        curve.add(new THREE.LineCurve3(previous,start));curve.add(new THREE.CubicBezierCurve3(start,start.clone().addScaledVector(incoming,radius*k),end.clone().addScaledVector(outgoing,-radius*k),end));previous=end;
+    function rounded(points){
+      const curve=new THREE.CurvePath(),matrix=camera.matrixWorldInverse.elements;
+      const onGround=(x,y)=&gt;{
+        const px=x-matrix[4]*.14-matrix[12],py=y-matrix[5]*.14-matrix[13],det=matrix[0]*matrix[9]-matrix[8]*matrix[1];
+        return v((px*matrix[9]-matrix[8]*py)/det,.14,(matrix[0]*py-px*matrix[1])/det);
+      };
+      for(let j=1;j&lt;points.length;j++){
+        const start=points[j-1],end=points[j],a=start.clone().applyMatrix4(camera.matrixWorldInverse),b=end.clone().applyMatrix4(camera.matrixWorldInverse);
+        const dx=b.x-a.x,dy=b.y-a.y,diagonal=Math.min(Math.abs(dx),Math.abs(dy));
+        const middle=onGround(a.x+Math.sign(dx)*diagonal,a.y+Math.sign(dy)*diagonal);
+        if(start.distanceTo(middle)&gt;1e-6)curve.add(new THREE.LineCurve3(start,middle));
+        if(middle.distanceTo(end)&gt;1e-6)curve.add(new THREE.LineCurve3(middle,end));
       }
-      curve.add(new THREE.LineCurve3(previous,points.at(-1)));return curve;
+      return curve;
     }
     function offsetPath(points,amount){
       const dirs=points.slice(1).map((p,i)=&gt;p.clone().sub(points[i]).normalize()),normal=d=&gt;v(-d.z,0,d.x);
@@ -1795,38 +1819,47 @@ html&gt;body{padding:0}&lt;/style&gt;
       world.traverse(o=&gt;{if(o.geometry&amp;&amp;!geometryCache.has(o.geometry.userData.cacheKey)&amp;&amp;o.userData.transient)o.geometry.dispose();});
       world.clear();Object.values(materials).forEach(m=&gt;m.dispose());textures.splice(0).forEach(t=&gt;t.dispose());readPalette();setupMaterials();packets=[];flowGroups={};nodes={};
       const factor=1;
-      const locations={worker:[-6.2,0],hub:[0,0],app:[0,-6.2],device:[0,6.2],network:[6.2,0]};
-      const sizes={worker:[3.45,3.25],hub:[2.62,2.10],app:[3.7,3.4],device:[2.62,2.10],network:[2.62,2.10]};
+      const locations={worker:[-6,1],network:[-4,-6],app:[3,-8],hub:[6,1],device:[-2,8]};
+      const sizes={worker:[3.45,3.25],hub:[4.8,2.7],app:[3.7,3.4],device:[3.23,2.35],network:[3.23,2.35]};
       for(const [name,[x,z]] of Object.entries(locations)){
-        const group=new THREE.Group();group.position.set(x,0,z);group.scale.setScalar(factor);world.add(group);({worker,hub:hellgato,app,device:n4,network})[name](group);
-        nodes[name]={name,group,x,z,width:sizes[name][0]*factor,depth:sizes[name][1]*factor};
+        const group=new THREE.Group();group.position.set(x,0,z);world.add(group);
+        ({worker,hub:compositor,app,device:n4,network})[name](group);
+        nodes[name]={name,group,x,z,width:sizes[name][0],depth:sizes[name][1]};
       }
-      const nd=nodes.device,nw=nodes.worker,nh=nodes.hub,na=nodes.app,nn=nodes.network,y=.14*factor;
-      const isController=n=&gt;[&#x27;hub&#x27;,&#x27;device&#x27;,&#x27;network&#x27;].includes(n.name);
-      const west=n=&gt;[n.x-n.width/2,n.z-(isController(n)?.25:0)],east=n=&gt;[n.x+n.width/2,n.z-(isController(n)?.25:0)],north=n=&gt;[n.x,n.z-n.depth/2],south=n=&gt;[n.x,n.z+n.depth/2];
+      const nd=nodes.device,nw=nodes.worker,nh=nodes.hub,na=nodes.app,nn=nodes.network,y=.14;
       const to3=points=&gt;points.map(p=&gt;v(p[0],y,p[1]));
-      paths=[
-        to3([west(nd),[-3.45,west(nd)[1]],[-3.45,2.72],[nw.x,2.72],south(nw)]),
-        to3([east(nw),[-2.82,0],[-2.82,-2.72],[0,-2.72],north(nh)]),
-        to3([east(nh),[2.9,east(nh)[1]],[2.9,2.18],[nn.x,2.18],south(nn)]),
-        to3([north(nn),[nn.x,-3.1],[2.83,-3.1],[2.83,na.z],east(na)])
+      const inputPaths=[
+        to3([[nd.x-1.65,nd.z],[-8.5,nd.z],[-8.5,nw.z],[nw.x-1.8,nw.z]]),
+        to3([[nw.x,nw.z-1.7],[nw.x,-2.8],[nn.x,-2.8],[nn.x,nn.z+1.4]]),
+        to3([[nn.x+1.7,nn.z],[na.x-2.0,na.z]])
       ];
-      const laneGap=.14;
-      for(const [kind,sign] of [[&#x27;input&#x27;,-1],[&#x27;display&#x27;,1]]){
+      const displayPaths=[to3([[na.x-2.0,na.z+.35],[nn.x+1.7,nn.z+.35]])];
+      for(let i=0;i&lt;3;i++) displayPaths.push(to3([[nn.x,nn.z+1.4+i*.13],[nn.x,-2+i*.24],[nh.x-3.2+i*.2,-2+i*.24],[nh.x-3.2+i*.2,nh.z-.6+i*.3],[nh.x-2.5,nh.z-.6+i*.3]]));
+      displayPaths.push(to3([[nh.x+2.55,nh.z],[9.2,nh.z],[9.2,nd.z],[nd.x+1.7,nd.z]]));
+      paths=[...inputPaths,...displayPaths];
+      for(const [kind,parts] of [[&#x27;input&#x27;,inputPaths],[&#x27;display&#x27;,displayPaths]]){
         const group=new THREE.Group();world.add(group);flowGroups[kind]=group;
-        const ordered=paths.map(points=&gt;offsetPath(points,sign*laneGap));
-        const routes=(kind===&#x27;input&#x27;?ordered:ordered.slice().reverse().map(points=&gt;points.slice().reverse())).map(points=&gt;rounded(points));
-        const full=new THREE.CurvePath();
-        routes.forEach((route,i)=&gt;{
-          if(i)full.add(new THREE.LineCurve3(routes[i-1].getPoint(1),route.getPoint(0)));full.add(route);
-          const geo=new THREE.TubeGeometry(route,96,.024,8,false);const tube=mesh(group,geo,&#x27;line&#x27;);tube.castShadow=false;tube.userData.transient=true;tube.layers.set(1);
-        });
-        ordered.forEach(points=&gt;{port(points[0],points[1].clone().sub(points[0]));port(points.at(-1),points.at(-1).clone().sub(points.at(-2)));});
-        const sphere=cached(&#x27;packet&#x27;,()=&gt;new THREE.SphereGeometry(.075,12,8));
-        for(let i=0;i&lt;packetsPerDirection;i++){
-          const dot=mesh(group,sphere,kind===&#x27;input&#x27;?&#x27;blueDot&#x27;:&#x27;orangeDot&#x27;);dot.castShadow=false;dot.layers.set(1);packets.push({dot,curve:full,offset:(i+(kind===&#x27;display&#x27;?.5:0))/packetsPerDirection,kind});
+        for(const points of parts){
+          const route=rounded(points,.18),geo=new THREE.TubeGeometry(route,80,.024,8,false);
+          const tube=mesh(group,geo,kind===&#x27;input&#x27;?&#x27;blue&#x27;:&#x27;orange&#x27;);tube.castShadow=false;tube.userData.transient=true;tube.layers.set(1);
+          const direction=route.getTangentAt(1);
+          const arrow=new THREE.ArrowHelper(direction,points.at(-1).clone().addScaledVector(direction,-.4),.38,palette[kind===&#x27;input&#x27;?&#x27;blue&#x27;:&#x27;orange&#x27;],.22,.16);
+          arrow.traverse(o=&gt;o.layers.set(1));group.add(arrow);
         }
       }
+      const chain=parts=&gt;{const full=new THREE.CurvePath();parts.forEach((points,index)=&gt;{if(index)full.add(new THREE.LineCurve3(parts[index-1].at(-1),points[0]));full.add(rounded(points,.18));});return full;};
+      const addPackets=(kind,curve,count,wholeFrame=false)=&gt;{
+        const geo=wholeFrame?new THREE.BoxGeometry(.32,.045,.19):new THREE.SphereGeometry(.065,8,6);
+        for(let j=0;j&lt;count;j++){
+          const dot=mesh(flowGroups[kind],geo,kind===&#x27;input&#x27;?&#x27;blueDot&#x27;:&#x27;orangeDot&#x27;);dot.layers.set(1);dot.castShadow=false;
+          packets.push({dot,curve,offset:j/count,kind});
+        }
+      };
+      addPackets(&#x27;input&#x27;,chain(inputPaths),40);
+      for(let j=1;j&lt;=3;j++)addPackets(&#x27;display&#x27;,chain([displayPaths[0],displayPaths[j]]),10);
+      addPackets(&#x27;display&#x27;,chain([displayPaths.at(-1)]),10,true);
+      const computer=mesh(world,new THREE.PlaneGeometry(19.5,14.5),new THREE.MeshBasicMaterial({color:mix(palette.bg,palette.fg,.025)}),0,-.03,-2.5);
+      computer.rotation.x=-Math.PI/2;computer.castShadow=false;computer.userData.noFit=true;computer.layers.set(1);
       const floor=mesh(world,new THREE.PlaneGeometry(30,30),new THREE.ShadowMaterial({color:palette.shade,opacity:palette.dark?.38:.13}),0,-.035,0);floor.rotation.x=-Math.PI/2;floor.castShadow=false;floor.userData.noFit=true;floor.userData.transient=true;
       world.updateMatrixWorld(true);fitPoints=[];
       const packetMeshes=new Set(packets.map(p=&gt;p.dot));
@@ -1844,9 +1877,9 @@ html&gt;body{padding:0}&lt;/style&gt;
         items.forEach((item,i)=&gt;{instance.setMatrixAt(i,item.matrixWorld);item.removeFromParent();});instance.instanceMatrix.needsUpdate=true;instance.computeBoundingBox();instance.computeBoundingSphere();world.add(instance);
       }
       renderer.shadowMap.needsUpdate=true;objectsDirty=true;updateVisibility();fit();
-      root.dataset.render=&#x27;three-webgl-3d&#x27;;root.dataset.nodes=&#x27;5&#x27;;root.dataset.layout=&#x27;square-five-node&#x27;;root.dataset.controllerPlinths=&#x27;0&#x27;;root.dataset.virtualDevice=&#x27;translucent-no-plinth&#x27;;root.dataset.logicalConnection=&#x27;network-app&#x27;;root.dataset.bends=paths.map(p=&gt;p.length-2).join(&#x27;,&#x27;);root.dataset.meshes=String(world.getObjectsByProperty(&#x27;isMesh&#x27;,true).length);root.dataset.packets=packets.length;root.dataset.cycleMs=cycleMs;root.dataset.loopPeriodMs=cycleMs/packetsPerDirection;root.dataset.routes=JSON.stringify(paths.map(p=&gt;p.map(v=&gt;v.toArray())));root.dataset.ready=&#x27;true&#x27;;
+      root.dataset.render=&#x27;three-webgl-3d&#x27;;root.dataset.nodes=&#x27;5&#x27;;root.dataset.layout=&#x27;five-object-runtime&#x27;;root.dataset.wireAngles=&#x27;0,45,90,135&#x27;;root.dataset.controllerPlinths=&#x27;0&#x27;;root.dataset.virtualDevice=&#x27;translucent-no-plinth&#x27;;root.dataset.logicalConnection=&#x27;virtual-device-receives-display&#x27;;root.dataset.bends=paths.map(p=&gt;p.length-2).join(&#x27;,&#x27;);root.dataset.meshes=String(world.getObjectsByProperty(&#x27;isMesh&#x27;,true).length);root.dataset.packets=packets.length;root.dataset.cycleMs=cycleMs;root.dataset.loopPeriodMs=2000;root.dataset.routes=JSON.stringify(paths.map(p=&gt;p.map(v=&gt;v.toArray())));root.dataset.ready=&#x27;true&#x27;;
     }
-    function updateVisibility(){Object.entries(flowGroups).forEach(([kind,g])=&gt;g.visible=mode===&#x27;both&#x27;||mode===kind);root.querySelectorAll(&#x27;[data-wire-flow]&#x27;).forEach(e=&gt;e.hidden=mode!==&#x27;both&#x27;&amp;&amp;e.dataset.wireFlow!==mode);root.dataset.activeFlow=mode;root.dataset.visiblePackets=String(packetsPerDirection*(mode===&#x27;both&#x27;?2:1));}
+    function updateVisibility(){Object.entries(flowGroups).forEach(([kind,g])=&gt;g.visible=mode===&#x27;both&#x27;||mode===kind);root.querySelectorAll(&#x27;[data-wire-flow]&#x27;).forEach(e=&gt;e.hidden=mode!==&#x27;both&#x27;&amp;&amp;e.dataset.wireFlow!==mode);root.dataset.activeFlow=mode;root.dataset.visiblePackets=String(mode===&#x27;both&#x27;?80:40);}
     function project(point){const q=point.clone().project(camera);return {x:(q.x+1)*w/2,y:(1-q.y)*h/2};}
     function fit(){
       const points=fitPoints;
@@ -1859,18 +1892,15 @@ html&gt;body{padding:0}&lt;/style&gt;
         const label=root.querySelector(`[data-node=&quot;${name}&quot;]`),center=project(v(n.x,0,n.z)),bottom=project(v(n.x+n.width/2,0,n.z+n.depth/2));
         const labelWidth=mobile?122:200;label.style.left=Math.max(labelWidth/2,Math.min(w-labelWidth/2,center.x))+&#x27;px&#x27;;
         let labelY=bottom.y+(mobile?4:12);
-        if(name===&#x27;worker&#x27;||name===&#x27;app&#x27;||name===&#x27;hub&#x27;){
+        if(name===&#x27;worker&#x27;||name===&#x27;app&#x27;||name===&#x27;network&#x27;){
           const b=n.bounds,corners=[];for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])for(const z of [b.min.z,b.max.z])corners.push(project(v(x,y,z)));
           labelY=Math.min(...corners.map(p=&gt;p.y))-(mobile?30:49);
         }
-        label.style.top=Math.max(5,labelY)+&#x27;px&#x27;;
+        if(name===&#x27;hub&#x27;)label.style.left=Math.max(labelWidth/2,center.x-(mobile?65:135))+&#x27;px&#x27;;label.style.top=Math.max(5,labelY)+&#x27;px&#x27;;
         labelAnchors[name]={x:center.x,y:bottom.y+12};
       }
       const wireLabels=root.querySelector(&#x27;.px-wire-labels&#x27;);wireLabels.replaceChildren();
-      const captions=[
-        {path:0,segment:1,input:&#x27;Keys · dials · touch&#x27;,display:&#x27;Images · brightness&#x27;,x:-60,y:-39},
-        {path:2,segment:2,input:&#x27;Input events&#x27;,display:&#x27;Display updates&#x27;,x:-92,y:-8}
-      ];
+      const captions=[];
       for(const item of captions){
         const a=project(paths[item.path][item.segment]),b=project(paths[item.path][item.segment+1]),scale=w/704;
         for(const [kind,row] of [[&#x27;input&#x27;,0],[&#x27;display&#x27;,1]]){
@@ -1885,7 +1915,7 @@ html&gt;body{padding:0}&lt;/style&gt;
     function movePackets(){for(const p of packets){const t=(elapsed/cycleMs+p.offset)%1;const q=p.curve.getPointAt(t);p.dot.position.copy(q);p.dot.visible=!Object.values(nodes).some(n=&gt;Math.abs(q.x-n.x)&lt;n.width/2+.06&amp;&amp;Math.abs(q.z-n.z)&lt;n.depth/2+.06);}}
     function render(){if(!Object.keys(nodes).length)return;movePackets();camera.layers.set(1);signalRenderer.render(scene,camera);camera.layers.set(0);if(objectsDirty){renderer.render(scene,camera);objectsDirty=false;}root.dataset.frame=String(Math.floor(elapsed));}
     root.renderAt=time=&gt;{if(!Number.isFinite(time)||time&lt;0)throw new Error(&#x27;Frame time must be a nonnegative number.&#x27;);paused=true;elapsed=time;last=0;controls();render();};
-    function resize(){const nextWidth=Math.max(280,stage.getBoundingClientRect().width),nextMobile=nextWidth&lt;620,changed=nextMobile!==mobile;mobile=nextMobile;root.classList.toggle(&#x27;px-compact&#x27;,mobile);w=nextWidth;h=nextWidth;stage.style.height=h+&#x27;px&#x27;;if(changed||!Object.keys(nodes).length)build();else fit();}
+    function resize(){const nextWidth=Math.max(1,stage.getBoundingClientRect().width),nextMobile=nextWidth&lt;620,changed=nextMobile!==mobile;mobile=nextMobile;root.classList.toggle(&#x27;px-compact&#x27;,mobile);w=nextWidth;h=nextWidth;stage.style.height=h+&#x27;px&#x27;;if(changed||!Object.keys(nodes).length)build();else fit();}
     root.querySelectorAll(&#x27;[data-flow]&#x27;).forEach(b=&gt;b.addEventListener(&#x27;click&#x27;,()=&gt;{mode=b.dataset.flow;controls();updateVisibility();render();save();}));
     pause.addEventListener(&#x27;click&#x27;,()=&gt;{paused=!paused;controls();save();});
     root.querySelector(&#x27;[data-labels]&#x27;).addEventListener(&#x27;click&#x27;,()=&gt;{showLabels=!showLabels;controls();save();});

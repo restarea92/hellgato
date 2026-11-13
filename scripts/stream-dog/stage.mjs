@@ -102,7 +102,7 @@ export function stageStreamDogRust({ destination, sdk = resolve(root, 'work/stre
   cpSync(resolve(root, 'installer/THIRD-PARTY-NOTICES.txt'), resolve(destination, 'THIRD-PARTY-NOTICES.txt'));
   mkdirSync(resolve(destination,'tools'),{recursive:true});
   for(const name of ['setup-user.ps1','setup-rust-user.ps1']) cpSync(resolve(root,'installer',name),resolve(destination,'tools',name));
-  for (const name of ['docs/adapters/frame-adapter-guide.md', 'docs/compatibility/stream-dog-rust-beta.md', 'docs/compatibility/hardware-testing.md']) {
+  for (const name of ['docs/guide.md', 'docs/adapters/frame-adapter-guide.md', 'docs/compatibility/stream-dog-rust-beta.md', 'docs/compatibility/hardware-testing.md']) {
     const output = resolve(destination, name);
     mkdirSync(dirname(output), { recursive: true });
     cpSync(resolve(root, name), output);
