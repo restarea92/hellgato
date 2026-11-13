@@ -19,7 +19,8 @@ Physical mode requires `--dll C:\absolute\path\transport.dll`. Startup and
 `Local\Hellgato.N4Pro.Bridge` lifetime mutex as the existing product, loads the
 runtime, and enumerates only `5548:1021`. Device IDs are path hashes; physical
 paths and serial numbers are not exposed. `open` requires an explicitly
-discovered ID and checks the exact firmware before any display controls.
+discovered ID and reads the actual firmware before display controls. Untested
+firmware is reported with a compatibility warning and does not block connection.
 Enumeration leaves `firmware` empty; only a successful open verifies firmware.
 
 ## JSONL protocol
@@ -33,7 +34,7 @@ Each stdin line is a request with a string or nonnegative safe-integer `id`, a
 | --- | --- | --- |
 | `describe` | `{}` | Static layout and capabilities |
 | `discover` | `{}` | `{devices:[{id,adapterId,modelId,displayName}]}` |
-| `open` | `{deviceId,brightness?,generation?,sessionId?}` | Open session and exact firmware |
+| `open` | `{deviceId,brightness?,generation?,sessionId?}` | Open session, observed firmware and compatibility warnings |
 | `frame` | `{jpeg,width:800,height:480}` | Native `submitted` / `unconfirmed` result |
 | `control` | `{control:"brightness",value:0..100}`, `{control:"knobBrightness",value:0..100}` (N4 Pro), or `{control:"sleep"}` / `{control:"wake"}` | Native submission |
 | `close` | `{}` | Confirmed native handle release |

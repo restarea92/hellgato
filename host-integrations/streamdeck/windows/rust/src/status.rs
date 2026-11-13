@@ -26,7 +26,7 @@ pub fn decode_status(bytes: &[u8], pid: u32, created: u64) -> Result<Value> {
     }
     Ok(
         json!({"pid":pid,"created":created.to_string(),"state":state,"error":u32_at(28),
-        "ready":state == 2 && u64_at(32) != 0 && u64_at(40) != 0 && u64_at(48) != 0}),
+        "running":true,"ready":state == 2 && u64_at(32) != 0 && u64_at(40) != 0 && u64_at(48) != 0}),
     )
 }
 
@@ -96,7 +96,9 @@ pub fn inspect(pid: u32) -> Result<Value> {
             let error = GetLastError();
             CloseHandle(process);
             return if error == 2 {
-                Ok(json!({"pid":pid,"ready":false,"reason":"startup-status-missing"}))
+                Ok(
+                    json!({"pid":pid,"created":created.to_string(),"running":true,"ready":false,"reason":"startup-status-missing"}),
+                )
             } else {
                 Err(AdapterError::new(
                     "ERR_HOST_STATUS",
@@ -142,9 +144,11 @@ pub fn inspect(pid: u32) -> Result<Value> {
             ));
         }
         if first != second || second[24..28] == [0; 4] {
-            return Ok(json!({"pid":pid,"ready":false,"reason":"startup-status-changing"}));
+            return Ok(
+                json!({"pid":pid,"created":created.to_string(),"running":true,"ready":false,"reason":"startup-status-changing"}),
+            );
         }
-        decode_status(&second, pid, created)
+        Ok(decode_status(&second, pid, created).unwrap_or_else(|error| json!({"pid":pid,"created":created.to_string(),"running":true,"ready":false,"reason":error.code})))
     }
 }
 

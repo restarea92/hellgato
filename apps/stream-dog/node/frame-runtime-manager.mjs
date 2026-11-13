@@ -64,6 +64,7 @@ export class FrameRuntimeManager {
   #config; #preview; #settings; #registry; #supervisor; #devices = []; #adapters = [];
   #sessionState = null; #operations = Promise.resolve(); #createSession; #discover; #hostIdentity; #closing = false;
   #children = new Map();
+  #hostWarnings = [];
   constructor(config, { preview, createSession, discover } = {}) {
     this.#config = config; this.#preview = preview; this.#createSession = createSession; this.#discover = discover;
     const settings = existsSync(config.settingsPath) ? readJson(config.settingsPath) : initialSettings(config);
@@ -111,6 +112,7 @@ export class FrameRuntimeManager {
     return { ...structuredClone(this.#sessionState ?? {}), schemaVersion: 1, runtime: this.#supervisor.status(),
       adapters: structuredClone(this.#adapters), devices: structuredClone(this.#devices), settings: structuredClone(this.#settings),
       stream: this.#preview?.getState().frame ?? null, previewUrl: this.#preview?.url ?? null, fake: this.#config.fake === true,
+      warnings: [...(this.#sessionState?.warnings ?? []), ...this.#hostWarnings].filter((warning, index, all) => all.findIndex(item => item.code === warning.code) === index),
       sessions: [...this.#children].map(([id, manager]) => ({ id, ...manager.getState() })) };
   }
   nativeState() {
@@ -129,12 +131,17 @@ export class FrameRuntimeManager {
     const { stdout } = await run(hostProbe.command, [...(hostProbe.args ?? []), '--probe', '--exe', host.executable,
       '--sha256', host.executableSha256], { windowsHide: true, timeout: 5000, maxBuffer: 65536 });
     const report = JSON.parse(stdout.trim());
-    if (report.ready !== true) throw new Error(report.reason ?? 'Open the prepared Stream Deck application');
-    const identity = `${report.pid}:${report.created}`;
+    if (report.running !== true && report.ready !== true) throw new Error(report.reason ?? 'Open the Stream Deck application');
+    const identity = `${report.pid}:${report.created}:${report.executableSha256}`;
     if (identity === this.#hostIdentity) return;
-    await run(hostProbe.command, [...(hostProbe.args ?? []), '--attach', '--exe', host.executable,
-      '--sha256', host.executableSha256, '--dll', nativeUi.dllPath, '--config', nativeUi.configPath],
-    { windowsHide: true, timeout: 15000, maxBuffer: 65536 });
+    this.#hostWarnings = [];
+    if (report.tested === false) this.#hostWarnings.push({ code: 'HOST_BUILD_UNTESTED' });
+    if (report.ready !== true) this.#hostWarnings.push({ code: 'HOST_LAYOUT_UNPREPARED' });
+    try {
+      await run(hostProbe.command, [...(hostProbe.args ?? []), '--attach', '--exe', host.executable,
+        '--sha256', host.executableSha256, '--dll', nativeUi.dllPath, '--config', nativeUi.configPath],
+      { windowsHide: true, timeout: 15000, maxBuffer: 65536 });
+    } catch { this.#hostWarnings.push({ code: 'HOST_NATIVE_UI_UNAVAILABLE' }); }
     this.#hostIdentity = identity;
   }
   async #start({ signal, generation }) {

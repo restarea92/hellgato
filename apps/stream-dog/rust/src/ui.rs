@@ -78,6 +78,15 @@ impl StreamDog {
         cc: &eframe::CreationContext<'_>,
         bundle: PathBuf,
         state: PathBuf,
+fn compatibility_warning(code: &str) -> Option<&'static str> {
+    match code {
+        "HOST_BUILD_UNTESTED" => Some("호환성을 확인하지 않은 Stream Deck 버전입니다. 일부 기능에 문제가 있을 수 있습니다."),
+        "HOST_LAYOUT_UNPREPARED" => Some("Stream Deck 화면 확장이 준비되지 않았습니다. 키 배치가 다르게 표시될 수 있습니다."),
+        "HOST_NATIVE_UI_UNAVAILABLE" => Some("Stream Deck 추가 설정을 연결하지 못했습니다. 노브 밝기 등 일부 기능을 사용할 수 없습니다."),
+        "DEVICE_FIRMWARE_UNTESTED" => Some("호환성을 확인하지 않은 기기 펌웨어입니다. 일부 기능에 문제가 있을 수 있습니다."),
+        _ => None,
+    }
+}
         fake: bool,
         background: bool,
     ) -> Self {
@@ -485,6 +494,8 @@ if self.button(ui,"register",".hga 추가…",available){actions.push(Action::Re
                 .resizable(false)
                 .show(ui.ctx(), |ui| {
                     ui.add(egui::Image::new((self.dog_icon.id(), vec2(48.0, 48.0))));
+                                if let Some(firmware)=session["firmware"].as_str(){ui.weak(format!("펌웨어  {firmware}"));}
+                                for warning in session["warnings"].as_array().into_iter().flatten(){if let Some(message)=compatibility_warning(string(warning,"code")){ui.colored_label(Color32::from_rgb(0xdf,0xc0,0x8e),message);}}
                     ui.strong("Hellgato Stream Dog");
                     ui.weak(env!("CARGO_PKG_VERSION"));
                 });

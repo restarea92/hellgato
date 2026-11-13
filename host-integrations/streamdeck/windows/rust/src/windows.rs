@@ -1,4 +1,7 @@
-use crate::{file_digest, status, validate_host_file, validate_native_config, HostError, Result};
+use crate::{
+    file_digest, status, validate_host_file, validate_host_path, validate_native_config, HostError,
+    Result,
+};
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
@@ -104,16 +107,24 @@ pub(crate) fn matching_processes(executable: &Path) -> Result<Vec<u32>> {
 }
 
 pub fn probe(executable: &Path, digest: &str) -> Result<Value> {
-    validate_host_file(executable, digest)?;
+    validate_host_path(executable)?;
+    let actual = file_digest(executable)?;
     let processes = matching_processes(executable)?;
     if processes.len() != 1 {
         return Ok(
-            json!({"ready":false,"reason":if processes.is_empty() {"host-not-running"} else {"multiple-host-processes"}}),
+            json!({"ready":false,"running":false,"reason":if processes.is_empty() {"host-not-running"} else {"multiple-host-processes"}}),
         );
     }
     let mut report = status::inspect(processes[0])?;
     report["executable"] = json!(executable);
-    report["executableSha256"] = json!(digest.to_ascii_lowercase());
+    if file_digest(executable)? != actual {
+        return Err(HostError::new(
+            "HOST_IDENTITY",
+            "Host executable changed during inspection",
+        ));
+    }
+    report["executableSha256"] = json!(actual);
+    report["tested"] = json!(actual == digest.to_ascii_lowercase());
     Ok(report)
 }
 
@@ -280,12 +291,13 @@ pub fn attach(executable: &Path, digest: &str, dll: &Path, config: &Path) -> Res
     validate_native_config(&configuration)?;
     validate_dll(dll)?;
     let report = probe(executable, digest)?;
-    if report["ready"] != true {
+    if report["running"] != true {
         return Err(HostError::new(
             "HOST_NOT_READY",
-            "Open the prepared Stream Deck application",
+            "Open the Stream Deck application",
         ));
     }
+    validate_host_file(executable, report["executableSha256"].as_str().unwrap())?;
     let pid = report["pid"].as_u64().unwrap() as u32;
     let process = handle(
         unsafe { OpenProcess(0x043a, 0, pid) },

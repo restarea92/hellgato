@@ -78,6 +78,19 @@ test('unsupported models keep native knob controls disabled', async t => {
   await assert.rejects(f.manager.command('native-control', { serial: f.identity.childSerial, action: 'knobBrightness', value: 30 }), /unavailable/);
 });
 
+test('optional native UI failure and an untested host do not prevent a device session', async t => {
+  const f = await managerFixture(t);
+  f.config.fake = false;
+  f.config.host = { executable: 'fixture', executableSha256: '0'.repeat(64) };
+  f.config.hostProbe = { command: process.execPath, args: ['-e', 'if(process.argv.includes("--attach"))process.exit(1);console.log(JSON.stringify({running:true,ready:false,tested:false,pid:42,created:"fixture"}))', '--'] };
+  f.config.nativeUi = { dllPath: 'fixture', configPath: 'fixture' };
+  await f.manager.command('discover', { adapterId: f.manifest.id });
+  await f.manager.command('connect-device', { adapterId: f.manifest.id, deviceId: 'device-1' });
+  await until(() => f.manager.getState().runtime.state === 'running');
+  assert.equal(f.starts.length, 1);
+  assert.deepEqual(f.manager.getState().warnings.map(value => value.code), ['HOST_BUILD_UNTESTED', 'HOST_LAYOUT_UNPREPARED', 'HOST_NATIVE_UI_UNAVAILABLE']);
+});
+
 test('existing serial-scoped knob brightness migrates without overwriting the original file', async t => {
   const f = await managerFixture(t);
   await f.manager.close();

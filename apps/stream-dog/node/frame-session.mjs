@@ -1,6 +1,6 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { dirname, isAbsolute } from 'node:path';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Worker } from 'node:worker_threads';
@@ -16,7 +16,7 @@ const executeFile = promisify(execFile);
 async function inspectHost(config) {
   if (config.hostProbe?.command) {
     const { stdout } = await executeFile(config.hostProbe.command, [...(config.hostProbe.args ?? []),
-      '--probe', '--exe', config.host.executable, '--sha256', config.host.executableSha256],
+      '--probe', '--exe', config.host.executable, '--sha256', config.host.executableSha256 ?? '0'.repeat(64)],
     { windowsHide: true, timeout: 5000, maxBuffer: 65536 });
     return JSON.parse(stdout.trim());
   }
@@ -74,7 +74,7 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
     networkListening: false, stopping: false, generation, adapterPid: null, ignoredHostUpdates: 0, touchUpdates: 0, keyUpdates: 0, keySurfaces: {}, lcdUpdates: 0,
     droppedSaverFrames: 0, screensaverActive: false, screensaverEntries: 0, screensaverRestores: 0,
     framesSubmitted: 0, inputObserved: 0, inputForwarded: 0, keyInputObserved: 0, keyInputForwarded: 0,
-    errors: [], fullFrameOnly: true, maxFps: config.maxFps ?? 60,
+    errors: [], warnings: [], fullFrameOnly: true, maxFps: config.maxFps ?? 60,
     brightness: config.brightness ?? 52, knobBrightness: config.knobBrightness ?? config.brightness ?? 52,
     followDisplayBrightness: config.knobBrightness == null, knobBrightnessSupported: false,
     everHostConnected: false, hostConnections: 0, touchRegions: {}, lastSubmitMs: null, timings: {} };
@@ -256,12 +256,12 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
     checkpoint(); state.adapterPid = adapter.status().pid;
     state.modelId = metadata.modelId;
     if (!fake) {
-      if ((!config.host?.pid && !config.hostProbe) || !config.host.executableSha256 || !isAbsolute(config.host.executable)) throw new TypeError('Verified current host identity is required');
-      const digest = createHash('sha256').update(readFileSync(config.host.executable)).digest('hex');
-      if (digest !== config.host.executableSha256.toLowerCase()) throw new Error('Stream Deck executable changed');
+      if (!config.hostProbe || !isAbsolute(config.host?.executable ?? '')) throw new TypeError('An independent current host inspection is required');
       const report = await inspectHost(config, adapter);
-      if (report.ready !== true) throw new Error('Current Stream Deck process is not prepared');
-      config = { ...config, host: { ...config.host, pid: report.pid ?? config.host.pid, created: report.created } };
+      if (report.running !== true && report.ready !== true) throw new Error('Stream Deck application is not running');
+      if (report.tested === false) state.warnings.push({ code: 'HOST_BUILD_UNTESTED' });
+      if (report.ready !== true) state.warnings.push({ code: 'HOST_LAYOUT_UNPREPARED' });
+      config = { ...config, host: { ...config.host, pid: report.pid ?? config.host.pid, created: report.created, activeSha256: report.executableSha256 } };
       log('host-ready', { pid: config.host.pid });
     }
     const discovered = await adapter.request('discover');
@@ -272,6 +272,8 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
     const opened = await adapter.request('open', { deviceId: device.id, brightness: config.brightness ?? 52, generation, sessionId });
     checkpoint();
     if (opened.firmware) device.firmware = opened.firmware;
+    state.firmware = device.firmware;
+    state.warnings.push(...(opened.warnings ?? []));
     state.knobBrightnessSupported = device.capabilities?.features?.knobBrightness?.status === 'native';
     if (state.knobBrightnessSupported && config.knobBrightness != null) {
       await adapter.request('control', { control: 'knobBrightness', value: config.knobBrightness });
@@ -338,7 +340,9 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
       state.networkAddress = `127.0.0.1:${bridge.ports.primary}`;
       readinessTimer = setInterval(() => {
         inspectHost(config, adapter).then(report => {
-          if (report.ready !== true || report.pid !== config.host.pid || config.host.created && report.created !== config.host.created) fail(new Error('Stream Deck process readiness was lost'));
+          if (report.running !== true && report.ready !== true || report.pid !== config.host.pid ||
+              config.host.created && report.created !== config.host.created ||
+              config.host.activeSha256 && report.executableSha256 !== config.host.activeSha256) fail(new Error('Stream Deck process identity was lost'));
         }).catch(fail);
       }, 1500);
     }
