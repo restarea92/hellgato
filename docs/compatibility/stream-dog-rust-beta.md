@@ -1,7 +1,7 @@
 # Stream Dog Rust beta
 
 The Windows x64 public beta installer is
-`Hellgato-0.2.0-Setup.exe`. It bundles Node, Rust workers,
+`Hellgato-0.2.1-Setup.exe`. It bundles Node, Rust workers,
 manufacturer DLLs and startup support for Stream Deck 7.6.0.23012 / Qt 6.11.1.
 It contains no Python runtime. Untested host builds and firmware produce
 compatibility warnings without blocking core connection. Optional native UI
@@ -11,10 +11,11 @@ layout. Private automatic rescan is enabled only where its host structure was ve
 
 ## Installation and lifecycle
 
-1. Finish active work and close Stream Deck yourself.
-2. Run setup. It stops Hellgato and removes legacy Python executables and
+1. Finish active work, then run setup. Manual app shutdown is not required.
+2. Setup closes Hellgato and Stream Deck and removes legacy Python executables and
    `_internal` only from the registered installation. Settings and profiles remain.
-3. Choose whether to start in the tray at Windows sign-in, then open both apps.
+3. Choose whether to start in the tray at Windows sign-in. Stream Deck reopens
+   afterward if it was running; retries retain this restart intent.
 4. Discover/select your device and connect. Initial Network Device pairing in
    Stream Deck may require manual addition.
 

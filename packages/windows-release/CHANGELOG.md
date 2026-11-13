@@ -1,5 +1,13 @@
 # @hellgato/windows-release
 
+## 0.2.1
+
+### Patch Changes
+
+- 1641885: Automatically close Stream Deck during installation and reopen it afterward if
+  it was running. Record installation failures in the persistent setup log instead
+  of requiring manual application shutdown.
+
 ## 0.2.0
 
 ### Minor Changes

@@ -7,8 +7,8 @@
 <p align="center"><strong>Unofficial hardware. Official software.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/restarea92/hellgato/releases/download/v0.2.0/Hellgato-0.2.0-Setup.exe"><strong>Download 0.2.0 Beta for Windows (.exe)</strong></a> ·
-  <a href="https://github.com/restarea92/hellgato/releases/tag/v0.2.0">Release notes &amp; SHA-256</a> ·
+  <a href="https://github.com/restarea92/hellgato/releases/download/v0.2.1/Hellgato-0.2.1-Setup.exe"><strong>Download 0.2.1 Beta for Windows (.exe)</strong></a> ·
+  <a href="https://github.com/restarea92/hellgato/releases/tag/v0.2.1">Release notes &amp; SHA-256</a> ·
   <a href="docs/compatibility/stream-dog-rust-beta.md">Guide</a> ·
   <a href="https://github.com/restarea92/hellgato/issues">Report an issue</a>
 </p>
@@ -26,7 +26,7 @@ Use your **Mirabox N4 Pro with the official Elgato Stream Deck app**. Hellgato S
 
 ## Get started
 
-1. Install the official [Stream Deck app](https://www.elgato.com/downloads). Close Stream Deck, then run the **Windows installer** above as administrator. Setup stops Hellgato, removes its legacy Python runtime, and retains settings and profiles.
+1. Install the official [Stream Deck app](https://www.elgato.com/downloads), then run the **Windows installer** above as administrator. Setup closes Hellgato and Stream Deck automatically, removes its legacy Python runtime, and retains settings and profiles. Stream Deck reopens afterward if it was running.
 2. Choose Hellgato's launch options, open Stream Deck yourself and connect one N4 Pro over USB. Open Hellgato if needed.
 3. In Stream Deck, open **Network**, connect to `127.0.0.1:5343` and confirm pairing.
 

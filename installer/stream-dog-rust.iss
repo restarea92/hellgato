@@ -60,7 +60,7 @@ Name: "{autodesktop}\Hellgato Stream Dog"; Filename: "{app}\HellgatoStreamDog.ex
 Root: HKLM; Subkey: "Software\Hellgato\Installer\StartupShortcuts"; ValueType: string; ValueName: "{code:GetStartupShortcut}"; ValueData: "{code:GetStartupShortcut}"; Flags: uninsdeletekey
 
 [Run]
-Filename: "{app}\HellgatoStreamDog.exe"; Description: "Hellgato Stream Dog 실행"; Flags: postinstall nowait skipifsilent runasoriginaluser
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\tools\setup-rust-user.ps1"" -Mode Launch -InstallDir ""{app}"""; Description: "Hellgato Stream Dog 실행"; Flags: postinstall nowait skipifsilent runhidden runasoriginaluser
 
 [Code]
 var
@@ -104,7 +104,7 @@ begin
       Result := '등록된 기존 설치 경로가 다릅니다. 기존 제거 프로그램으로 먼저 제거해 주세요.'; exit;
     end;
   end;
-  if not UserSetup('Prepare') then Result := 'Hellgato를 종료하고 Stream Deck을 직접 닫은 뒤 다시 시도해 주세요. 사용자 설정과 Stream Deck 프로필은 삭제하지 않습니다.';
+  if not UserSetup('Prepare') then Result := '실행 중인 앱의 자동 종료 또는 설치 준비에 실패했습니다. 설치 로그: %LOCALAPPDATA%\Hellgato\setup.log';
   StartupShortcut := GetIniString('User','StartupShortcut','',UserContext);
   if (ExtractFileName(StartupShortcut) <> 'Hellgato Stream Dog.lnk') or (Pos(':\',StartupShortcut) <> 2) then Result := '자동 실행 바로가기 경로를 확인하지 못했습니다.';
 end;
@@ -115,6 +115,9 @@ begin
   if Step = ssPostInstall then begin
     if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\tools\setup-rust-user.ps1') + '" -Mode PrepareHost -InstallDir "' + ExpandConstant('{app}') + '"',ExpandConstant('{app}'),SW_HIDE,ewWaitUntilTerminated,Code) or (Code <> 0) then SuppressibleMsgBox('Stream Deck 시작 지원 준비에 실패했습니다. 앱의 설정에서 Stream Deck 준비를 실행해 주세요.',mbError,MB_OK,IDOK);
     if not UserSetup('Configure') then SuppressibleMsgBox('자동 실행 바로가기 설정에 실패했습니다. 앱은 설치되었습니다.',mbError,MB_OK,IDOK);
+  end;
+  if Step = ssDone then begin
+    if not UserSetup('Restart') then SuppressibleMsgBox('설치는 완료됐지만 Stream Deck를 다시 실행하지 못했습니다. 시작 메뉴에서 Stream Deck를 실행해 주세요.',mbInformation,MB_OK,IDOK);
   end;
 end;
 
