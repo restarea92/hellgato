@@ -11,7 +11,7 @@ const options = { number: 12, sha, result: 'success', runUrl: 'https://github.co
 test('correct only the version action introduction, preserving its generated changelogs', () => {
   const body = versionPullRequestBody(original);
   assert.match(body, /npm publishing remains deferred/);
-  assert.match(body, /unpublished Windows installer draft/);
+  assert.match(body, /require separate manual workflows/);
   assert.equal(body.slice(body.indexOf('\n')), original.slice(original.indexOf('\n')));
   assert.equal(versionPullRequestBody(body), body);
   assert.throws(() => versionPullRequestBody('Unexpected user-written body.\n'), /Unexpected Changesets PR template/);

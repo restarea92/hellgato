@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 const REPOSITORY = 'restarea92/hellgato';
 const PREFIX = 'This PR was opened by the [Changesets release](https://github.com/changesets/action) GitHub action.';
-const INTRO = 'This PR prepares package and Windows app versions and changelogs for review. Merging prepares an unpublished Windows installer draft; npm publishing remains deferred.';
+const INTRO = 'This PR prepares package and Windows app versions and changelogs for review. Windows builds and unpublished installer drafts require separate manual workflows; npm publishing remains deferred.';
 const MARKER = '<!-- hellgato-version-build -->';
 const require = (value, message) => { if (!value) throw new Error(message); };
 
@@ -23,7 +23,7 @@ export function versionPullRequest(pr) {
 }
 
 export function versionPullRequestBody(body) {
-  require(typeof body === 'string' && (body.startsWith(PREFIX) || body.startsWith(INTRO)), 'Unexpected Changesets PR template; preserve it for review');
+  require(typeof body === 'string' && (body.startsWith(PREFIX) || body.startsWith('This PR prepares package and Windows app versions and changelogs for review.')), 'Unexpected Changesets PR template; preserve it for review');
   const newline = body.indexOf('\n');
   require(newline >= 0, 'Missing Changesets changelog body');
   // v2.1.2/version assumes a publish script in its standard introduction.
