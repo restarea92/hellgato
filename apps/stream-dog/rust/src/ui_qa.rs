@@ -116,6 +116,7 @@ impl eframe::App for RenderQa {
         if self.frames == 2 && self.scenario == "adapters" {
             self.view.open_adapters();
         }
+        if self.frames == 2 && self.scenario == "backups" { self.view.open_backups(); }
         let screenshot = ui.ctx().input(|input| {
             input.events.iter().find_map(|event| {
                 if let egui::Event::Screenshot { image, .. } = event {
@@ -211,6 +212,19 @@ mod tests {
             vec![egui::Event::PointerMoved(position), event(true)],
         );
         draw(context, view, state, vec![event(false)])
+    }
+    #[test]
+    fn backups_use_the_selected_device_and_keep_export_explicit() {
+        let context=egui::Context::default();chrome::configure(&context);
+        let mut view=View::new(&context);let mut state=fixture(true);
+        for _ in 0..3 { draw(&context,&mut view,&state,vec![]); }
+        view.open_backups();
+        let actions=draw(&context,&mut view,&state,vec![]);
+        assert!(actions.iter().any(|action| matches!(action,Action::Api("backup-list",_))));
+        state.value["backups"]=json!({"serial":"HGMOCK000003","entries":[],"busy":false});
+        draw(&context,&mut view,&state,vec![]);
+        assert_eq!(click(&context,&mut view,&state,"backup-create"),vec![Action::Api("backup-create",json!({"adapterId":"mirabox","deviceId":"n4-test"}))]);
+        assert_eq!(click(&context,&mut view,&state,"backup-external"),vec![Action::BackupElsewhere(json!({"adapterId":"mirabox","deviceId":"n4-test"}))]);
     }
     #[test]
     fn connect_disconnect_and_settings_use_the_rendered_controls() {

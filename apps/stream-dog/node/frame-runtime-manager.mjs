@@ -65,6 +65,8 @@ export class FrameRuntimeManager {
   #sessionState = null; #operations = Promise.resolve(); #createSession; #discover; #hostIdentity; #closing = false;
   #children = new Map();
   #hostWarnings = [];
+  #backups = { serial: null, entries: [], busy: false, error: null, lastPath: null };
+  #backupTask;
   constructor(config, { preview, createSession, discover } = {}) {
     this.#config = config; this.#preview = preview; this.#createSession = createSession; this.#discover = discover;
     const settings = existsSync(config.settingsPath) ? readJson(config.settingsPath) : initialSettings(config);
@@ -113,6 +115,7 @@ export class FrameRuntimeManager {
       adapters: structuredClone(this.#adapters), devices: structuredClone(this.#devices), settings: structuredClone(this.#settings),
       stream: this.#preview?.getState().frame ?? null, previewUrl: this.#preview?.url ?? null, fake: this.#config.fake === true,
       warnings: [...(this.#sessionState?.warnings ?? []), ...this.#hostWarnings].filter((warning, index, all) => all.findIndex(item => item.code === warning.code) === index),
+      backups: structuredClone(this.#backups),
       sessions: [...this.#children].map(([id, manager]) => ({ id, ...manager.getState() })) };
   }
   nativeState() {
@@ -181,6 +184,31 @@ export class FrameRuntimeManager {
   async #command(action, params) {
     if (this.#closing) throw new Error('Runtime is closing');
     switch (action) {
+      case 'backup-list': case 'backup-create': case 'backup-rename': case 'backup-move': case 'backup-delete': {
+        if (this.#backups.busy) throw new Error('A backup operation is already running');
+        const owner = [this, ...this.#children.values()].find(manager => manager.#settings.selectedAdapterId === params.adapterId && manager.#settings.selectedDeviceId === params.deviceId);
+        if (!owner) throw new Error('Select a paired device before managing backups');
+        const device = this.#devices.find(item => item.id === params.deviceId && item.adapterId === params.adapterId);
+        if (!device) throw new Error('Unknown backup device');
+        const serial = owner.#settings.identity.childSerial;
+        const task = { action: action.slice(7), root: resolve(this.#config.stateDir, 'backups'), serial,
+          id: params.id, name: params.name, offset: params.offset,
+          ...(action === 'backup-create' ? { device: { id: device.id, adapterId: device.adapterId, modelId: device.modelId,
+            name: device.displayName, serial }, streamDeckRoot: this.#config.streamDeckDataRoot ?? resolve(process.env.APPDATA, 'Elgato/StreamDeck'),
+            settingsPath: owner.#config.settingsPath, destination: params.destination } : {}) };
+        this.#backups = { ...this.#backups, serial, busy: true, error: null, lastPath: null };
+        const worker = new Worker(new URL('./frame-device-backup-worker.mjs', import.meta.url), { workerData: task });
+        this.#backupTask = new Promise((yes, no) => {
+          let replied = false;
+          worker.once('message', value => { replied = true; value.error ? no(new Error(value.error)) : yes(value.result); });
+          worker.once('error', no);
+          worker.once('exit', () => { if (!replied) no(new Error('Backup worker stopped before completing')); });
+        }).then(async result => {
+          const listed = action === 'backup-create' ? await (await import('./frame-device-backups.mjs')).listDeviceBackups(task.root, serial) : result;
+          this.#backups = { serial, ...listed, busy: false, error: null, lastPath: result.path ?? null };
+        }).catch(error => { this.#backups = { ...this.#backups, busy: false, error: error.message }; });
+        return { started: true };
+      }
       case 'native-control': {
         const owner = [this, ...this.#children.values()].find(manager => manager.#settings.identity.childSerial === params.serial);
         if (!owner || params.action !== 'knobBrightness' || !Number.isInteger(params.value) || params.value < 0 || params.value > 100 ||
@@ -281,5 +309,5 @@ export class FrameRuntimeManager {
     this.#publish(); return this.getState();
   }
   resume() { if (this.#settings.connectionDesired) this.#supervisor.connect(); for (const child of this.#children.values()) child.resume(); }
-  async close() { this.#closing = true; await this.#operations; await Promise.all([...this.#children.values()].map(child => child.close())); await this.#supervisor.disconnect(); }
+  async close() { this.#closing = true; await this.#operations; await this.#backupTask; await Promise.all([...this.#children.values()].map(child => child.close())); await this.#supervisor.disconnect(); }
 }

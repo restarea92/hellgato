@@ -15,6 +15,7 @@ pub enum Action {
     Api(&'static str, Value),
     Register,
     PrepareHost,
+    BackupElsewhere(Value),
     Close,
     Quit,
     DismissPackage,
@@ -25,6 +26,7 @@ enum Page {
     Device,
     Settings,
     Adapters,
+    Backups,
 }
 pub struct View {
     selected: String,
@@ -36,6 +38,9 @@ pub struct View {
     dog_icon: egui::TextureHandle,
     samples: BTreeMap<String, (Instant, u64, f64)>,
     error_seen: Option<(String, Instant)>,
+    backup_serial: String,
+    rename_backup: Option<(String, String)>,
+    delete_backup: Option<(String, String)>,
     pub hitboxes: BTreeMap<String, Rect>,
     pub layout: Option<chrome::Layout>,
 }
@@ -73,11 +78,6 @@ fn local_error(message: &str) -> &str {
         message
     }
 }
-impl StreamDog {
-    pub fn new(
-        cc: &eframe::CreationContext<'_>,
-        bundle: PathBuf,
-        state: PathBuf,
 fn compatibility_warning(code: &str) -> Option<&'static str> {
     match code {
         "HOST_BUILD_UNTESTED" => Some("호환성을 확인하지 않은 Stream Deck 버전입니다. 일부 기능에 문제가 있을 수 있습니다."),
@@ -87,6 +87,11 @@ fn compatibility_warning(code: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+impl StreamDog {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        bundle: PathBuf,
+        state: PathBuf,
         fake: bool,
         background: bool,
     ) -> Self {
@@ -129,6 +134,9 @@ impl View {
             dog_icon: chrome::texture(context, "stream-dog", DOG_ICON),
             samples: BTreeMap::new(),
             error_seen: None,
+            backup_serial: String::new(),
+            rename_backup: None,
+            delete_backup: None,
             hitboxes: BTreeMap::new(),
             layout: None,
         }
@@ -139,12 +147,15 @@ impl View {
     pub fn open_adapters(&mut self) {
         self.page = Page::Adapters;
     }
+    pub fn open_backups(&mut self) { self.page = Page::Backups; }
     fn button(&mut self, ui: &mut egui::Ui, id: &str, text: &str, enabled: bool) -> bool {
         let response = ui.add_enabled(enabled, egui::Button::new(text));
         self.hitboxes.insert(id.into(), response.rect);
         response.clicked()
     }
     fn select(&mut self, value: &Value, device: &Value) {
+        self.rename_backup = None;
+        self.delete_backup = None;
         self.selected = format!("{}:{}", string(device, "adapterId"), string(device, "id"));
         self.max_fps = owner(value, device)
             .and_then(|state| state["settings"]["maxFps"].as_u64())
@@ -239,6 +250,10 @@ impl View {
                             menu_style(ui);
                             if menu_item(ui, "어댑터 추가…", "", available) {
                                 actions.push(Action::Register);
+                                ui.close();
+                            }
+                            if menu_item(ui, "기기 백업…", "", available && !session.is_null()) {
+                                self.page = Page::Backups;
                                 ui.close();
                             }
                             ui.separator();
@@ -371,6 +386,7 @@ impl View {
                     ("기기 관리", Page::Device, "tab:device"),
                     ("설정", Page::Settings, "settings"),
                     ("어댑터 관리", Page::Adapters, "adapters"),
+                    ("백업", Page::Backups, "backups"),
                 ] {
                     let width = ui
                         .painter()
@@ -418,6 +434,42 @@ impl View {
                 ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
                 egui::ScrollArea::vertical().auto_shrink([false,false]).show(ui,|ui|{
                 match self.page {
+                    Page::Backups=>{
+                        ui.heading("기기 백업");ui.add_space(8.0);
+                        ui.label(selected.map(|device|string(device,"displayName")).unwrap_or("기기를 선택하세요."));
+                        ui.weak("선택한 기기의 프로필과 공용 플러그인·아이콘·설정을 함께 백업합니다.");
+                        ui.weak("정확한 백업을 위해 Stream Deck를 종료한 상태에서 진행하세요.");
+                        let serial=string(&session["settings"]["identity"],"childSerial");
+                        let params=json!({"adapterId":device["adapterId"],"deviceId":device["id"]});
+                        let backups=&value["backups"];let busy=backups["busy"]==true;
+                        let enabled=available && !session.is_null() && !busy;
+                        if !serial.is_empty() && self.backup_serial!=serial && !busy {
+                            self.backup_serial=serial.into();self.rename_backup=None;self.delete_backup=None;
+                            actions.push(Action::Api("backup-list",params.clone()));
+                        }
+                        ui.add_space(12.0);ui.horizontal_wrapped(|ui|{
+                            if self.button(ui,"backup-create","기본 위치에 백업",enabled){actions.push(Action::Api("backup-create",params.clone()));}
+                            if self.button(ui,"backup-external","다른 위치에 백업…",enabled){actions.push(Action::BackupElsewhere(params.clone()));}
+                            if self.button(ui,"backup-refresh","새로고침",enabled){actions.push(Action::Api("backup-list",params.clone()));}
+                        });
+                        if busy{ui.horizontal(|ui|{ui.spinner();ui.label("백업 처리 중…");});}
+                        if let Some(error)=backups["error"].as_str(){ui.colored_label(ERROR,format!("백업 처리 실패: {error}"));}
+                        if let Some(path)=backups["lastPath"].as_str(){ui.colored_label(SUCCESS,"백업을 저장했습니다.");ui.weak(path);}
+                        if string(backups,"serial")==serial {
+                            if let Some(path)=backups["directory"].as_str(){ui.add_space(8.0);ui.weak(format!("기본 위치  {path}"));}
+                            for (index,entry) in backups["entries"].as_array().into_iter().flatten().enumerate(){ui.add_space(10.0);card(ui,string(entry,"name"),|ui|{
+                                ui.weak(format!("{} · 프로필 {}개 · 파일 {}개 · {:.1} MB",string(entry,"createdLabel"),entry["profiles"].as_u64().unwrap_or(0),entry["fileCount"].as_u64().unwrap_or(0),entry["bytes"].as_f64().unwrap_or(0.0)/1048576.0));
+                                let id=string(entry,"id");let mut command=params.clone();command["id"]=json!(id);
+                                ui.horizontal_wrapped(|ui|{
+                                    if self.button(ui,&format!("backup-up:{id}"),"↑",enabled && index>0){let mut p=command.clone();p["offset"]=json!(-1);actions.push(Action::Api("backup-move",p));}
+                                    if self.button(ui,&format!("backup-down:{id}"),"↓",enabled && index+1<backups["entries"].as_array().map_or(0,Vec::len)){let mut p=command.clone();p["offset"]=json!(1);actions.push(Action::Api("backup-move",p));}
+                                    if self.button(ui,&format!("backup-rename:{id}"),"이름 변경",enabled){self.rename_backup=Some((id.into(),string(entry,"name").into()));}
+                                    if self.button(ui,&format!("backup-delete:{id}"),"삭제",enabled){self.delete_backup=Some((id.into(),string(entry,"name").into()));}
+                                });
+                            });}
+                            if !busy && backups["entries"].as_array().is_some_and(Vec::is_empty){ui.add_space(16.0);ui.weak("이 기기에 저장된 백업이 없습니다.");}
+                        }
+                    }
                     Page::Adapters=>{
                         ui.heading("어댑터 관리");ui.add_space(16.0);ui.horizontal(|ui|{if self.button(ui,"check-adapters","설치 상태 검사",available){actions.push(Action::Api("check-adapters",json!({})));}
 if self.button(ui,"register",".hga 추가…",available){actions.push(Action::Register);}});ui.add_space(12.0);
@@ -442,6 +494,8 @@ if self.button(ui,"register",".hga 추가…",available){actions.push(Action::Re
                                 if session["runtime"]["desired"]==true {if self.button(ui,"disconnect","연결 해제",available){actions.push(Action::Api("disconnect-device",json!({"adapterId":device["adapterId"],"deviceId":device["id"]})));}}
                                 else if self.button(ui,"connect","연결",available){actions.push(Action::Api("connect-device",json!({"adapterId":device["adapterId"],"deviceId":device["id"]})));}
                                 if let Some(error)=session["runtime"]["error"].as_str(){ui.colored_label(ERROR,local_error(error));}
+                                if let Some(firmware)=session["firmware"].as_str(){ui.weak(format!("펌웨어  {firmware}"));}
+                                for warning in session["warnings"].as_array().into_iter().flatten(){if let Some(message)=compatibility_warning(string(warning,"code")){ui.colored_label(Color32::from_rgb(0xdf,0xc0,0x8e),message);}}
                             });ui.add_space(14.0);card(ui,"스트림",|ui|{
                                 let resolution=match(session["display"]["width"].as_u64(),session["display"]["height"].as_u64()){(Some(w),Some(h))=>format!("{w} × {h}"),_=>"연결 대기".into()};
                                 metric(ui,"화면",&resolution);metric(ui,"전송",&format!("{fps:.1} fps  /  최대 {} fps",session["settings"]["maxFps"].as_u64().unwrap_or(60)));
@@ -494,11 +548,23 @@ if self.button(ui,"register",".hga 추가…",available){actions.push(Action::Re
                 .resizable(false)
                 .show(ui.ctx(), |ui| {
                     ui.add(egui::Image::new((self.dog_icon.id(), vec2(48.0, 48.0))));
-                                if let Some(firmware)=session["firmware"].as_str(){ui.weak(format!("펌웨어  {firmware}"));}
-                                for warning in session["warnings"].as_array().into_iter().flatten(){if let Some(message)=compatibility_warning(string(warning,"code")){ui.colored_label(Color32::from_rgb(0xdf,0xc0,0x8e),message);}}
                     ui.strong("Hellgato Stream Dog");
                     ui.weak(env!("CARGO_PKG_VERSION"));
                 });
+        }
+        if let Some((id,mut name))=self.rename_backup.clone(){
+            let mut done=false;
+            egui::Modal::new(egui::Id::new("rename-backup")).show(ui.ctx(),|ui|{ui.heading("백업 이름 변경");ui.text_edit_singleline(&mut name);ui.horizontal(|ui|{
+                if ui.button("취소").clicked(){done=true;}
+                if ui.add_enabled(!name.trim().is_empty() && name.chars().count()<=100,egui::Button::new("저장")).clicked(){actions.push(Action::Api("backup-rename",json!({"adapterId":device["adapterId"],"deviceId":device["id"],"id":id,"name":name})));done=true;}
+            });});
+            self.rename_backup=if done{None}else{Some((id,name))};
+        }
+        if let Some((id,name))=self.delete_backup.clone(){
+            egui::Modal::new(egui::Id::new("delete-backup")).show(ui.ctx(),|ui|{ui.heading("백업 삭제");ui.label(format!("‘{name}’ 백업을 삭제하시겠습니까?"));ui.weak("현재 프로필과 플러그인은 유지됩니다.");ui.horizontal(|ui|{
+                if ui.button("취소").clicked(){self.delete_backup=None;}
+                if ui.button("삭제").clicked(){actions.push(Action::Api("backup-delete",json!({"adapterId":device["adapterId"],"deviceId":device["id"],"id":id})));self.delete_backup=None;}
+            });});
         }
         if state.review.is_object() {
             egui::Modal::new(egui::Id::new("external-adapter-review")).show(ui.ctx(),|ui|{ui.set_max_width(470.0);ui.heading("외부 어댑터 설치");ui.label(format!("{} · v{}",string(&state.review,"name"),string(&state.review,"version")));ui.add_space(10.0);ui.colored_label(ERROR,string(&state.review,"warning"));for dll in state.review["dlls"].as_array().into_iter().flatten(){ui.weak(dll.as_str().unwrap_or(""));}ui.add_space(10.0);ui.label("해시 검사는 무결성 확인용이며 악성코드 검사나 안전성 인증이 아닙니다.");ui.horizontal(|ui|{if self.button(ui,"cancel-package","취소",true){actions.push(Action::DismissPackage);}
@@ -655,6 +721,12 @@ impl eframe::App for StreamDog {
                         .pick_file()
                     {
                         self.backend.send(Command::InspectPackage(path));
+                    }
+                }
+                Action::BackupElsewhere(mut params) => {
+                    if let Some(path)=rfd::FileDialog::new().set_title("백업을 저장할 폴더 선택").pick_folder(){
+                        params["destination"]=json!(path);
+                        self.backend.send(Command::Api("backup-create",params));
                     }
                 }
                 Action::Close => self.hide(ui.ctx()),
