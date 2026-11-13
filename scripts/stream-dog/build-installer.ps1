@@ -1,6 +1,7 @@
-param([Parameter(Mandatory=$true)][string]$Bundle,[Parameter(Mandatory=$true)][string]$Iscc,[Alias('BetaVersion')][string]$Version='0.2.0')
+param([Parameter(Mandatory=$true)][string]$Bundle,[Parameter(Mandatory=$true)][string]$Iscc,[Alias('BetaVersion')][string]$Version)
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+if(-not $Version){$Version=(Get-Content -LiteralPath (Join-Path $projectRoot 'packages/windows-release/package.json') -Raw|ConvertFrom-Json).version}
 $bundlePath=(Resolve-Path -LiteralPath $Bundle).Path
 if($Version -notmatch '^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$'){throw 'Use a canonical release version'}
 $revision=if($Matches[4]){[int]$Matches[4]+1}else{65535}

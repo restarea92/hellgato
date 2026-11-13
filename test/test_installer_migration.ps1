@@ -150,7 +150,24 @@ try {
     try {
         Assert-True (@(Get-InstalledProcesses $legacy $destination).Count -eq 0) 'A process exiting during inspection must not fail setup.'
     } finally { Remove-Item -LiteralPath Function:\Get-Process }
-    Write-Output 'Installer migration checks passed: paths, commands, stale registration, data preservation, junctions, startup ownership, context ACLs, interop, process SID and exit race.'
+    & {
+        . (Join-Path (Split-Path $PSScriptRoot -Parent) 'installer\setup-rust-user.ps1') -Mode Prepare
+        $script:hostRunning=$true
+        $script:closeCalls=0
+        function Get-InstalledProcesses { if($script:hostRunning){[pscustomobject]@{Name='StreamDeck.exe';ProcessId=42;StartTime=1}} }
+        function Stop-InstalledLegacyWorkers {}
+        function Close-InstalledApps {$script:closeCalls++;$script:hostRunning=$false}
+        $context=Join-Path $fixture 'rust-upgrade.ini'
+        Close-RustUpgradeApps (Join-Path $fixture 'old') (Join-Path $fixture 'new') $fixture $context $fixture
+        Assert-True ($script:closeCalls -eq 1) 'Stream Deck must close automatically even when Hellgato is absent.'
+        Assert-True ((Get-Content -LiteralPath $context -Raw) -match 'StreamDeckWasRunning=1') 'The installer must remember to reopen Stream Deck.'
+        Close-RustUpgradeApps (Join-Path $fixture 'old') (Join-Path $fixture 'new') $fixture $context $fixture
+        Assert-True ((Get-Content -LiteralPath $context -Raw) -match 'StreamDeckWasRunning=1') 'An installation retry must retain restart intent.'
+        $context=Join-Path $fixture 'rust-no-host.ini'
+        Close-RustUpgradeApps (Join-Path $fixture 'old') (Join-Path $fixture 'new') $fixture $context $fixture
+        Assert-True ((Get-Content -LiteralPath $context -Raw) -match 'StreamDeckWasRunning=0') 'An app that was not running must remain closed.'
+    }
+    Write-Output 'Installer migration checks passed: paths, data preservation, process ownership, automatic host shutdown and retry-safe restart intent.'
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixture)
     $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
