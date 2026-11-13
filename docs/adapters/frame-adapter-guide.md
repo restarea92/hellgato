@@ -3,7 +3,7 @@
 An adapter is an independent executable registered as an `.hga` package. Adding
 one does not require changes to the Node core or Rust GUI. The core owns Stream
 Deck sessions, virtual identities, composition and scheduling. The adapter owns
-discovery, firmware admission, physical layout, input translation and USB output.
+discovery, firmware reporting, physical layout, input translation and USB output.
 
 Start with `adapters/simulator/worker.mjs`, or `adapters/mirabox-rust` for a Rust
 implementation wrapping a manufacturer DLL. Other implementation languages are
@@ -27,7 +27,7 @@ responses to stdout; diagnostic logs belong on stderr. The message limit is
 | --- | --- |
 | `describe` | Return static layout and capabilities without opening USB. |
 | `discover` | Return only supported devices, with IDs stable across restarts. Avoid initialization writes. |
-| `open` | Select `deviceId`, check exact firmware, and bind `sessionId` and `generation`. |
+| `open` | Select `deviceId`, report actual firmware and compatibility warnings, and bind `sessionId` and `generation`. |
 | `frame` | Accept `{jpeg,width,height}` containing one complete baseline RGB JPEG. |
 | `control` | Apply supported volatile brightness/sleep/wake controls; reject unsupported commands. |
 | `close` | Release native handles and ownership, then return `{status:"closed"}`. |

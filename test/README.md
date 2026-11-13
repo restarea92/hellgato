@@ -1,19 +1,15 @@
 # Tests
 
-All automated suites live in this directory. `helpers/` contains shared fixtures;
-`typechecks/` contains compile-time consumers, including intentionally invalid
-inputs. They are not alternate application implementations.
+Choose checks for the changed boundary; ordinary PR CI only checks whitespace and changed JavaScript syntax.
 
-- Node/Rust beta: `frame-*.test.mjs`, `full-frame-*.test.mjs`, Rust crate tests and
-  the [integration commands](../apps/stream-dog/rust/README.md#verification).
-- Public SDK: `architecture-*.test.mjs`, protocol/transport/firmware suites and
-  `sdk-types.test.mts`.
-- Previous stable app: Python `test_*.py`, `candidate-*.test.mjs` and product IPC
-  regressions. Despite their historical names, the Node candidate modules still
-  run the previous stable installer; these tests are not orphaned experiments.
-- Packaging/releases: `release-*.test.mjs`, `version-*.test.mjs`, Python release
-  tests and `test_installer_migration.ps1`.
+| Boundary | Focused checks |
+| --- | --- |
+| Current frame runtime | `node --test test/frame-*.test.mjs test/full-frame-*.test.mjs` |
+| Rust GUI, device or host worker | `cargo test --manifest-path <crate>/Cargo.toml` for the affected crate |
+| Public SDK | `pnpm test:npm`, `pnpm typecheck` |
+| Version metadata | `pnpm test:version`, `pnpm release:metadata:check` |
+| Installer migration | `powershell -NoProfile -File test/test_installer_migration.ps1` |
 
-Run `pnpm test` for Node and `.venv/Scripts/python.exe -m unittest discover -s test`
-for Python. The [physical test recipe](../docs/compatibility/hardware-testing.md)
-is documentation, separate from automated pass results.
+Runtime/fleet simulation and rendered UI commands are in the [Rust app README](../apps/stream-dog/rust/README.md#verification). They do not prove physical USB behavior; use the [hardware checklist](../docs/compatibility/hardware-testing.md).
+
+Python `test_*.py`, historical `candidate-*` suites and old release coordinator tests cover legacy interfaces. They are retained for changes to those interfaces, not required as a blanket migration gate. `helpers/`, `fixtures/` and `typechecks/` hold test inputs and consumers, not alternate apps.

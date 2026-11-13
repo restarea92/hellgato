@@ -1,14 +1,12 @@
 # Repository tools
 
-| Area | Commands |
+| Task | Entry |
 | --- | --- |
-| Node/Rust app | `stream-dog/`: staging, installer, adapter packaging and integration QA |
-| Public SDK | `prepare-cora.mjs`, `build-npm.mjs`, `build-typescript.mjs`, `verify-npm.mjs`, `pack-npm.mjs`, `stage-windows-sdk.mjs` |
-| Release operations | `release-*.mjs`, `version-*.mjs`, `draft-windows-release.mjs`, `npm-release.mjs`, `sync-release-metadata.mjs`, `update-downloads.mjs`, `windows_release.py`, `verify-artifact.py` |
-| Previous stable Windows app | `build-windows.ps1`, `prepare-windows.py`, `stage-product-worker.py`, host preparation/patch/load scripts |
-| Shared checks/assets | `check-*.mjs`, `check-python.py`, `build-icons.py`, `draw-stream-dog.py` |
+| Build/run the Windows app | [Rust app instructions](../apps/stream-dog/rust/README.md) |
+| Stage a bundle, build an installer, package an adapter, run focused QA | `stream-dog/` |
+| Build/check the reusable SDK | `build-npm.mjs`, `build-typescript.mjs`, `verify-npm.mjs`, `stage-windows-sdk.mjs` |
+| Prepare versions and generated metadata | `version-packages.mjs`, `sync-release-metadata.mjs`; [versioning guide](../.changeset/README.md) |
+| Prepare reviewed native build inputs | `prepare-windows.py` and the host integration's native build scripts |
+| Build the website | `node apps/site/build.mjs` |
 
-Start with the [Node/Rust app instructions](../apps/stream-dog/rust/README.md).
-Release tools remain used by package scripts and CI. Python/native build tools
-remain necessary for the previous installer and shared host libraries; removing
-Python from the beta runtime does not retire those build dependencies.
+Python remains a build dependency for native components, not a shipped runtime. Older release coordinators and Python packaging scripts are retained for legacy fixtures; they are not the current desktop release path. Use [Windows release operations](../docs/windows-releases.md), rather than running historical publication scripts directly.

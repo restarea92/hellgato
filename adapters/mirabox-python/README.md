@@ -1,10 +1,8 @@
-# Mirabox physical worker (candidate)
+# Legacy Mirabox Python sidecar
 
 This package runs independently of the Windows GUI, Node bridge and Stream Deck
 installation. Native USB still uses the explicitly prepared Mirabox Python SDK.
-The existing product engine remains the default until the new path passes the N4
-hardware, reconnect, display, screensaver, Windows shutdown and endurance gates.
-Passing the fake backend is **not** physical-device support evidence.
+This is retained for public SDK compatibility and legacy tests; the current Windows app uses the [Rust adapter](../mirabox-rust). Passing the fake backend is **not** physical-device support evidence.
 
 The bundled experimental firmware policy currently admits only the exact string
 `V4.N4 Pro E.02.010`, based on the historical product baseline. This is permission

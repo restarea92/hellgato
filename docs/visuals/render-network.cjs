@@ -26,7 +26,8 @@ const targetFps = 24;
       html,body { background:#fff !important; color-scheme:light; }
       #hellgato-pixel-network { position:relative; width:800px; height:800px; background:#fff; }
       #hellgato-pixel-network h2,#hellgato-pixel-network .viz-controls,
-      #hellgato-pixel-network .px-foot,#hellgato-pixel-network .px-mobile-flow { display:none; }
+      #hellgato-pixel-network .px-foot,#hellgato-pixel-network .px-mobile-flow,
+      #hellgato-pixel-network .px-compositor { display:none; }
       #hellgato-pixel-network .px-legend { position:absolute; top:18px; left:0; width:100%; margin:0; justify-content:center; z-index:2; }
     ` });
     await frame.evaluate(() => document.fonts.ready);

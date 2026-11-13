@@ -1,19 +1,19 @@
-name: Translation feedback
-description: Suggest a correction to an interface translation.
+name: Interface wording
+description: Suggest a correction to text in the current interface.
 title: "Translation: "
 body:
   - type: input
     id: language
     attributes:
       label: Language
-      placeholder: e.g. Spanish (es)
+      placeholder: e.g. Korean (current Windows app)
     validations:
       required: true
   - type: textarea
     id: current
     attributes:
       label: Current text
-      description: Include the message key from app/locales if known.
+      description: Include the app version and where this message appears.
     validations:
       required: true
   - type: textarea

@@ -1,19 +1,14 @@
-# Architecture visuals
+# Architecture visual
 
-- [hellgato-network.gif](hellgato-network.gif): white-background, 800×800 infinite loop for the project README; 80 packets, 12 frames, averaging 24 fps.
-- [hellgato-network.png](hellgato-network.png): static preview.
-- [hellgato-network.html](hellgato-network.html): self-contained browser view with playback, flow, label, and data controls. Download the file and open it in a WebGL-capable browser; no network connection is required.
-- [3d](3d/README.md): individual GLB models, transparent PNG previews, and rendering settings.
+[Open the interactive diagram](https://hellgato-streamdog.vercel.app/architecture.html) or download [hellgato-network.html](hellgato-network.html) and open it locally. The scene has five objects: physical N4 Pro, input processing, virtual device bridge, Stream Deck app and a separate retained compositor. Input rises toward the app; display updates return through the virtual device and converge into the canvas, then complete frames follow one USB output path. The Rust management app supervises this system outside the data path.
 
-The repeated packet layout loops every 500 ms while each packet's complete route takes 20 seconds. GIF delays use 10 ms units, so frames alternate between 40 and 50 ms to average 24 fps. Capture times follow those exact delays to maintain a constant travel speed. These illustrative packets do not measure throughput or latency.
+Moving dots show direction, not measured traffic or latency. The exported GIF is a 24 fps illustration, not device performance. See [runtime ownership](../architecture/0002-full-frame-runtime.md) for the implementation.
 
-To regenerate the GIF, use Node.js with Playwright and Microsoft Edge, plus Python with Pillow:
+To regenerate the PNG/GIF after editing the HTML:
 
 ```sh
 node docs/visuals/render-network.cjs
 python docs/visuals/encode-network.py
 ```
 
-The capture script stores temporary frames under `work/hellgato-network-frames`. `PLAYWRIGHT_MODULE` can point to an existing Playwright installation. The encoder uses a shared palette, preserves a pure-white background, and checks the decoded frames.
-
-The standalone view includes Three.js 0.170.0 and Floating UI. Their MIT notices are in [licenses](licenses/).
+This asset-only toolchain requires Playwright/Edge and Pillow; it is not part of the shipped app. `PLAYWRIGHT_MODULE` can point to an existing Playwright installation. Captures go to `work/hellgato-network-frames`. [3D assets](3d/README.md) use illustration dimensions. Embedded Three.js and Floating UI retain their [MIT notices](licenses/).

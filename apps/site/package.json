@@ -1,0 +1,5 @@
+{
+  "name": "hellgato-site",
+  "private": true,
+  "scripts": { "build": "node build.mjs" }
+}
