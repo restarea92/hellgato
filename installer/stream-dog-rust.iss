@@ -1,14 +1,17 @@
 #ifndef BundleDir
   #error BundleDir is required
 #endif
-#ifndef BetaVersion
-  #define BetaVersion "0.2.0-beta.1"
+#ifndef ReleaseVersion
+  #define ReleaseVersion "0.2.0"
+#endif
+#ifndef ReleaseVersionNumeric
+  #define ReleaseVersionNumeric "0.2.0.65535"
 #endif
 [Setup]
 AppId={{FB7179C2-B55A-487C-B462-C50E15F91B1B}
 AppName=Hellgato Stream Dog Beta
-AppVersion={#BetaVersion}
-VersionInfoVersion=0.2.0.1
+AppVersion={#ReleaseVersion}
+VersionInfoVersion={#ReleaseVersionNumeric}
 AppPublisher=Hellgato
 DefaultDirName={autopf}\Hellgato
 DefaultGroupName=Hellgato
@@ -17,7 +20,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.19041
 OutputDir=..\dist
-OutputBaseFilename=Hellgato-StreamDog-{#BetaVersion}-Setup
+OutputBaseFilename=Hellgato-{#ReleaseVersion}-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -91,7 +94,7 @@ begin
   if not ExecAsOriginalUser(ExpandConstant('{tmp}\HellgatoStreamDog.exe'),'--stop',ExpandConstant('{tmp}'),SW_HIDE,ewWaitUntilTerminated,Code) or (Code <> 0) then begin Result := '기존 Rust 앱을 종료하지 못했습니다.'; exit; end;
   UserContext := ExpandConstant('{tmp}\hellgato-user.ini');
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\setup-user.ps1') + '" -Mode Initialize -ContextFile "' + UserContext + '"',ExpandConstant('{tmp}'),SW_HIDE,ewWaitUntilTerminated,Code) or (Code <> 0) then begin Result := '사용자 설치 정보를 준비하지 못했습니다.'; exit; end;
-  CleanLegacy := DirExists(ExpandConstant('{app}\_internal')) or FileExists(ExpandConstant('{app}\Hellgato.exe'));
+  CleanLegacy := DirExists(ExpandConstant('{app}\_internal')) or FileExists(ExpandConstant('{app}\Hellgato.exe')) or FileExists(ExpandConstant('{app}\HellgatoWorker.exe')) or FileExists(ExpandConstant('{app}\HellgatoMiraboxWorker.exe'));
   if CleanLegacy then begin
     if not RegQueryStringValue(HKLM64,'Software\Microsoft\Windows\CurrentVersion\Uninstall\{FB7179C2-B55A-487C-B462-C50E15F91B1B}_is1','InstallLocation',RegisteredDir) then begin
       Result := '기존 Hellgato 설치 소유권을 확인하지 못했습니다. 기존 제거 프로그램으로 먼저 제거해 주세요. 설정과 프로필은 유지됩니다.';

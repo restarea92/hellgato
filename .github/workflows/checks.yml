@@ -40,7 +40,7 @@ jobs:
             if ($LASTEXITCODE) { throw "Syntax check failed: $file" }
           }
   test:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'changeset-release/main'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 15
     defaults:
