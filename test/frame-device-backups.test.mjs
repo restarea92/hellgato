@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink, lstat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDeviceBackup, listDeviceBackups, manageDeviceBackup } from '../apps/stream-dog/node/frame-device-backups.mjs';
@@ -19,11 +19,16 @@ test('device snapshots include matching profiles and shared data, preserve order
     await mkdir(join(source, name)); await writeFile(join(source, name, 'file'), name);
   }
   await writeFile(settings, JSON.stringify({ identity: 'preserved' }));
+  const linked = join(temporary, 'plugin-source'); await mkdir(linked);
+  await writeFile(join(linked, 'plugin.js'), 'linked plugin');
+  await symlink(linked, join(source, 'Plugins/linked.sdPlugin'), process.platform === 'win32' ? 'junction' : 'dir');
   const device = { serial: 'HGMOCK000003', id: 'one', adapterId: 'fixture', modelId: 'test' };
   const params = { root, device, streamDeckRoot: source, settingsPath: settings, includeRegistry: false };
   const first = await createDeviceBackup(params), second = await createDeviceBackup(params);
   assert.equal(first.profiles, 1);
   assert.equal(await readFile(join(first.path, 'StreamDeck/Plugins/file'), 'utf8'), 'Plugins');
+  assert.equal(await readFile(join(first.path, 'StreamDeck/Plugins/linked.sdPlugin/plugin.js'), 'utf8'), 'linked plugin');
+  assert.equal((await lstat(join(first.path, 'StreamDeck/Plugins/linked.sdPlugin'))).isSymbolicLink(), false);
   assert.equal(await readFile(join(first.path, 'Hellgato/settings.json'), 'utf8'), await readFile(settings, 'utf8'));
   await assert.rejects(access(join(first.path, 'StreamDeck/ProfilesV3/two.sdProfile')));
   await assert.rejects(access(join(first.path, 'StreamDeck/logs')));
