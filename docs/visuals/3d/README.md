@@ -1,12 +1,12 @@
 # Device assets
 
-Reusable glTF 2.0 binary models from the earlier Hellgato scene. Original export coordinates are recorded below; the current interactive scene rearranges these roles and constructs the separate compositor procedurally. Each GLB contains its geometry, materials, and embedded screen textures. Models use a shared Y-up orientation and a local origin at the footprint center. Dimensions are illustration units.
+Self-contained glTF 2.0 binary models from the Hellgato architecture scene. Each GLB contains its geometry, materials, and embedded screen textures. Models use a shared Y-up orientation and a local origin at the footprint center. Dimensions are illustration units.
 
 | File | Model |
 | --- | --- |
 | [hellgato.glb](hellgato.glb) | Black controller with a flame face and four dials |
 | [n4-pro.glb](n4-pro.glb) | Black N4 Pro with ten keys, a touch strip, and four dials |
-| [usb-worker.glb](usb-worker.glb) | Device-adapter circuit-board illustration |
+| [usb-worker.glb](usb-worker.glb) | Mirabox SDK and DisplayMirror circuit-board illustration |
 | [stream-deck-app.glb](stream-deck-app.glb) | App monitor, keyboard, mouse, and platform |
 | [virtual-stream-deck.glb](virtual-stream-deck.glb) | Translucent device identity exposed by CORA to the app |
 

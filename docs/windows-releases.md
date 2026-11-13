@@ -27,7 +27,7 @@ Verify the version, source, runtime inventory, checksum and release notes before
 publication. A local build is not a successful GitHub Actions build.
 
 Public beta releases use GitHub's prerelease flag even when the version is
-`0.2.0`. They do not replace the latest stable release or activate automatic
+`0.2.1`. They do not replace the latest stable release or activate automatic
 updates. Publish the beta explicitly, verify anonymous downloads and checksums,
 then make the versioned download prominent in the main README. Preserve older
 releases for rollback. Do not publish npm packages as part of desktop releases.
