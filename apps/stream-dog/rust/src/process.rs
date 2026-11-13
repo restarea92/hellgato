@@ -253,6 +253,9 @@ pub fn prepare_host(bundle: &Path) -> Result<String, String> {
     let digest = config["service"]["host"]["executableSha256"]
         .as_str()
         .ok_or("Missing host digest")?;
+    if hellgato_windows_host::file_digest(&executable).map_err(|error|error.to_string())? != digest.to_ascii_lowercase() {
+        return Ok("호환성을 확인하지 않은 Stream Deck 버전입니다. 연결은 허용되지만 화면 확장 등 일부 기능에 문제가 있을 수 있습니다.".into());
+    }
     let proxy = bundle.join(
         config["startupProxy"]
             .as_str()

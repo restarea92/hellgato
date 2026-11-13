@@ -3,12 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
 import { registerHooks } from 'node:module';
 
 const hooks = registerHooks({ resolve(specifier, context, next) {
   if (specifier === 'hellgato') return { shortCircuit: true,
-    url: 'data:text/javascript,export function createDeviceBridge(){throw Error("Bridge must not start before host admission")}' };
+    url: 'data:text/javascript,export function createDeviceBridge(){throw Error("Bridge fixture reached")}' };
   return next(specifier, context);
 } });
 after(() => hooks.deregister());
@@ -18,21 +17,23 @@ const worker = `
   let buffered='';process.stdin.setEncoding('utf8');process.stdin.on('data',chunk=>{
     buffered+=chunk;let end;while((end=buffered.indexOf('\\n'))>=0){
       const request=JSON.parse(buffered.slice(0,end));buffered=buffered.slice(end+1);
-      if(request.method!=='close')throw Error('Physical device must not open before host admission');
-      console.log(JSON.stringify({id:request.id,result:{status:'closed'}}));
+      const result=request.method==='discover'?{devices:[{id:'fixture',capabilities:{}}]}:request.method==='close'?{status:'closed'}:{};
+      console.log(JSON.stringify({id:request.id,result}));
     }
   });process.stdin.on('end',()=>process.exit(0));
 `;
 
-test('hardware mode reads the host executable and rejects changed or unprepared hosts before USB open', async t => {
+test('untested host builds and missing layout preparation warn without blocking connection', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'hellgato-host-guard-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const executable = join(directory, 'StreamDeck.exe'), bytes = Buffer.from('fixture host');
-  await writeFile(executable, bytes);
+  const executable = join(directory, 'StreamDeck.exe');
+  await writeFile(executable, 'fixture host');
+  const states = [];
   const config = { adapter: { command: process.execPath, args: ['-e', worker] }, target: {},
     host: { pid: 1, executable, executableSha256: '0'.repeat(64) },
-    hostProbe: { command: process.execPath, args: ['-e', 'console.log(JSON.stringify({ready:false}))', '--'] } };
-  await assert.rejects(startFullFrameSession(config), /Stream Deck executable changed/);
-  config.host.executableSha256 = createHash('sha256').update(bytes).digest('hex');
-  await assert.rejects(startFullFrameSession(config), /Current Stream Deck process is not prepared/);
+    hostProbe: { command: process.execPath, args: ['-e', 'console.log(JSON.stringify({running:true,ready:false,tested:false,pid:1,created:"fixture"}))', '--'] } };
+  await assert.rejects(startFullFrameSession(config, { onState: state => states.push(state) }), /Bridge fixture reached/);
+  assert.deepEqual(states.at(-1).warnings.map(warning => warning.code), ['HOST_BUILD_UNTESTED', 'HOST_LAYOUT_UNPREPARED']);
+  config.hostProbe.args[1] = 'console.log(JSON.stringify({running:false,ready:false}))';
+  await assert.rejects(startFullFrameSession(config), /application is not running/);
 });

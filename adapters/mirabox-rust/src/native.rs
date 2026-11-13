@@ -28,6 +28,9 @@ fn classify_read(result: u32, writable: Option<bool>) -> ReadDisposition {
 }
 
 pub trait Backend {
+    fn firmware(&self) -> &str {
+        crate::model::current().firmware()
+    }
     fn simulated(&self) -> bool {
         false
     }
@@ -284,6 +287,7 @@ mod windows_backend {
         heartbeat_at: Instant,
         compat_cache: HashMap<u8, Vec<u8>>,
         lights: LightState,
+        firmware: String,
     }
 
     impl NativeBackend {
@@ -300,6 +304,7 @@ mod windows_backend {
                 heartbeat_at: Instant::now(),
                 compat_cache: HashMap::new(),
                 lights: LightState::default(),
+                firmware: String::new(),
             }
         }
         fn load(&mut self) -> Result<()> {
@@ -343,6 +348,9 @@ mod windows_backend {
     }
 
     impl Backend for NativeBackend {
+        fn firmware(&self) -> &str {
+            &self.firmware
+        }
         fn discover(&mut self) -> Result<Vec<Value>> {
             if !self.handle.is_null() {
                 return Err(AdapterError::new(
@@ -495,12 +503,13 @@ mod windows_backend {
                     .split(|byte| *byte == 0)
                     .find(|part| !part.is_empty())
                     .unwrap_or_default();
-                if firmware != model::current().firmware().as_bytes() {
-                    return Err(AdapterError::new(
-                        "ERR_FIRMWARE",
-                        format!("Exact firmware {} is required", model::current().firmware()),
-                    ));
-                }
+                self.firmware = std::str::from_utf8(firmware)
+                    .ok()
+                    .filter(|value| !value.is_empty() && value.is_ascii())
+                    .ok_or_else(|| {
+                        AdapterError::new("ERR_FIRMWARE", "Device returned invalid firmware data")
+                    })?
+                    .to_owned();
                 self.admitted = true;
                 Self::checked(unsafe { (library.wake)(self.handle) }, "wake")?;
                 Self::checked(

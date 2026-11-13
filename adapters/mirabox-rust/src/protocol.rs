@@ -181,8 +181,16 @@ impl<B: Backend> Controller<B> {
                 self.session_id = session_id;
                 self.sequence = 0;
                 self.decoder = InputDecoder::default();
+                let firmware = self.backend.firmware();
+                let warnings = if firmware == crate::model::current().firmware() {
+                    vec![]
+                } else {
+                    vec![
+                        json!({"code":"DEVICE_FIRMWARE_UNTESTED","observed":firmware,"tested":crate::model::current().firmware()}),
+                    ]
+                };
                 Ok(
-                    json!({"status":"open","deviceId":device_id,"generation":generation,"sessionId":self.session_id,"firmware":crate::model::current().firmware()}),
+                    json!({"status":"open","deviceId":device_id,"generation":generation,"sessionId":self.session_id,"firmware":firmware,"warnings":warnings}),
                 )
             }
             "frame" => {
@@ -280,8 +288,14 @@ impl<B: Backend> Controller<B> {
 #[derive(Default)]
 pub struct FakeBackend {
     opened: bool,
+    firmware: Option<String>,
 }
 impl Backend for FakeBackend {
+    fn firmware(&self) -> &str {
+        self.firmware
+            .as_deref()
+            .unwrap_or(crate::model::current().firmware())
+    }
     fn simulated(&self) -> bool {
         true
     }
@@ -410,6 +424,26 @@ mod tests {
             method: method.into(),
             params,
         }
+    }
+
+    #[test]
+    fn untested_firmware_opens_with_a_warning_and_retains_controls() {
+        let mut controller = Controller::new(FakeBackend {
+            firmware: Some("future firmware".into()),
+            ..FakeBackend::default()
+        });
+        let result = controller.execute(&request("open", json!({"deviceId":"fake-n4-pro"})));
+        assert_eq!(result["result"]["status"], "open");
+        assert_eq!(result["result"]["firmware"], "future firmware");
+        assert_eq!(
+            result["result"]["warnings"][0]["code"],
+            "DEVICE_FIRMWARE_UNTESTED"
+        );
+        assert!(controller.execute(&request(
+            "control",
+            json!({"control":"brightness","value":30})
+        ))["result"]
+            .is_object());
     }
 
     #[test]

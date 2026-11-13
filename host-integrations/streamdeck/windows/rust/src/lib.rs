@@ -33,13 +33,24 @@ pub fn file_digest(path: &Path) -> Result<String> {
         std::fs::read(path).map_err(|error| HostError::new("HOST_FILE", error.to_string()))?;
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
-pub fn validate_host_file(path: &Path, digest: &str) -> Result<()> {
+pub fn validate_host_path(path: &Path) -> Result<()> {
     if !path.is_absolute()
         || !path.file_name().is_some_and(|name| {
             name.to_string_lossy()
                 .eq_ignore_ascii_case("StreamDeck.exe")
         })
-        || digest.len() != 64
+        || !path.is_file()
+    {
+        return Err(HostError::new(
+            "HOST_PATH",
+            "An existing absolute StreamDeck.exe path is required",
+        ));
+    }
+    Ok(())
+}
+pub fn validate_host_file(path: &Path, digest: &str) -> Result<()> {
+    validate_host_path(path)?;
+    if digest.len() != 64
         || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
         || file_digest(path)? != digest.to_ascii_lowercase()
     {
