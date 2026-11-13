@@ -300,11 +300,15 @@ test('asset redirects never forward authorization to object storage', async () =
 
 test('workflow remains draft-only and downloads immutable original build outputs', async () => {
   const workflow = await readFile(new URL('../.github/workflows/windows-release.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /push:\n    branches: \[main\]/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /\n  push:/);
   assert.match(workflow, /artifact-ids: \$\{\{ needs\.build\.outputs\.artifact-id \}\}/);
-  assert.match(workflow, /BUILD_ARTIFACT_NAME: \$\{\{ needs\.build\.outputs\.artifact-name \}\}/);
   assert.match(workflow, /digest-mismatch: error/);
-  assert.match(workflow, /source-sha: \$\{\{ needs\.preflight\.outputs\.source-sha \}\}/);
+  assert.match(workflow, /source-sha: \$\{\{ inputs\.source_sha \}\}/);
+  assert.match(workflow, /ref: \$\{\{ needs\.build\.outputs\.source-sha \}\}/);
+  assert.match(workflow, /git merge-base --is-ancestor "\$SOURCE_SHA" origin\/main/);
+  assert.match(workflow, /sha256sum -c/);
+  assert.match(workflow, /--target "\$SOURCE_SHA"[^\n]+--draft --prerelease/);
   assert.equal((workflow.match(/contents: write/g) ?? []).length, 1);
   assert.equal((workflow.match(/GH_TOKEN:/g) ?? []).length, 1);
   assert.doesNotMatch(workflow, /draft:\s*false|npm publish|git push|RELEASE_ENABLED|windows_release\.py publish|github\.run_attempt/);
