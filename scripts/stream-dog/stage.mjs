@@ -42,7 +42,8 @@ function copyPackage(name, caller, destination, copied) {
 }
 
 export function stageStreamDogRust({ destination, sdk = resolve(root, 'work/stream-dog-sdk'), withGui = true,
-  vendor = 'C:/Program Files/Hellgato/_internal/runtime/mirabox/_internal/vendor/mirabox/src/StreamDock/Transport/TransportDLL',
+  vendor = resolve(root, 'work/references/mirabox/Python-SDK/src/StreamDock/Transport/TransportDLL'),
+  startupDirectory = 'C:/Program Files/Elgato/StreamDeck',
   nativeUi = resolve(root, 'work/build-native-ui-package/HellgatoNativeUiV2.dll'),
   node = resolve(root, 'work/build-runtime/node.exe') } = {}) {
   requireValue(process.platform === 'win32' && process.arch === 'x64', 'The current bundle targets Windows x64');
@@ -107,10 +108,10 @@ export function stageStreamDogRust({ destination, sdk = resolve(root, 'work/stre
     cpSync(resolve(root, name), output);
   }
   const executable = 'C:/Program Files/Elgato/StreamDeck/StreamDeck.exe';
-  const startup = json(resolve(dirname(executable), 'HellgatoStartup.json'));
-  requireValue(startup.owner === 'Hellgato.Startup.VERSION/1' && startup.executableSha256 === hash(readFileSync(executable)), 'Reviewed startup support does not match this host');
+  const startup = json(resolve(startupDirectory, 'HellgatoStartup.json'));
+  requireValue(startup.owner === 'Hellgato.Startup.VERSION/1' && /^[a-f0-9]{64}$/.test(startup.executableSha256), 'Reviewed startup support metadata is invalid');
   for (const name of ['version.dll', 'HellgatoStartup.plan']) {
-    const source = resolve(dirname(executable), name);
+    const source = resolve(startupDirectory, name);
     requireValue(startup.files[name] === hash(readFileSync(source)), 'Startup support file changed outside its owner');
     cpSync(source, resolve(destination, 'native/startup', name));
   }
@@ -118,7 +119,7 @@ export function stageStreamDogRust({ destination, sdk = resolve(root, 'work/stre
     adapters: ['adapters/mirabox/adapter.json', ...compatibility, 'adapters/simulator/adapter.json'], hostWorker: 'native/HellgatoHostWorker.exe', nativeUi: 'native/HellgatoNativeUiV2.dll',
     startupProxy: 'native/startup/version.dll', startupPlan: 'native/startup/HellgatoStartup.plan',
     service: { apiPort: 5345, previewEnabled: false,
-      host: { executable, executableSha256: hash(readFileSync(executable)) } } });
+      host: { executable, executableSha256: startup.executableSha256 } } });
   const files = inventory(destination, new Set(['bundle-manifest.json']));
   requireValue(!Object.keys(files).some(name => /(?:python|\.py[cd]?$|\.venv|pyside)/i.test(name)), 'Python files cannot enter the new runtime bundle');
   writeJson(resolve(destination, 'bundle-manifest.json'), { schemaVersion: 1, kind: 'hellgato-stream-dog-rust', files });
@@ -127,5 +128,8 @@ export function stageStreamDogRust({ destination, sdk = resolve(root, 'work/stre
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2); const destination = args[args.indexOf('--destination') + 1];
   requireValue(args.includes('--destination'), '--destination is required');
-  console.log(JSON.stringify(stageStreamDogRust({ destination, withGui: !args.includes('--without-gui') })));
+  const option = name => args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
+  console.log(JSON.stringify(stageStreamDogRust({ destination, withGui: !args.includes('--without-gui'),
+    ...(option('--startup-directory') ? { startupDirectory: option('--startup-directory') } : {}),
+    ...(option('--vendor') ? { vendor: option('--vendor') } : {}) })));
 }

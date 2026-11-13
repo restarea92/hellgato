@@ -191,6 +191,25 @@ namespace HellgatoSetup {
 '@
 }
 
+function Get-LegacyWorkerPaths([string]$LegacyDirectory, [string]$Destination) {
+    foreach($folder in @($LegacyDirectory,$Destination)) {
+        foreach($name in @('HellgatoWorker.exe','HellgatoMiraboxWorker.exe')) {
+            Join-Path $folder $name
+            Join-Path $folder ('_internal\runtime\mirabox\'+$name)
+        }
+    }
+}
+
+function Stop-InstalledLegacyWorkers([string]$LegacyDirectory, [string]$Destination) {
+    foreach($observed in @(Get-InstalledProcesses $LegacyDirectory $Destination | Where-Object { $_.Name -in @('HellgatoWorker.exe','HellgatoMiraboxWorker.exe') })) {
+        $current=Get-Process -Id $observed.ProcessId -ErrorAction SilentlyContinue
+        if($current -and $current.StartTime.ToUniversalTime().ToFileTimeUtc() -eq $observed.StartTime) {
+            $fresh=@(Get-InstalledProcesses $LegacyDirectory $Destination | Where-Object { $_.ProcessId -eq $observed.ProcessId -and $_.StartTime -eq $observed.StartTime })
+            if($fresh.Count -eq 1){$current.Kill();$current.WaitForExit(10000)|Out-Null}
+        }
+    }
+}
+
 function Get-InstalledProcesses([string]$LegacyDirectory, [string]$Destination) {
     Initialize-RestartManager
     $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -201,8 +220,8 @@ function Get-InstalledProcesses([string]$LegacyDirectory, [string]$Destination) 
         (Join-Path $Destination 'Hellgato.exe'),
         (Join-Path $Destination 'HellgatoWorker.exe'),
         (Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Elgato\StreamDeck\StreamDeck.exe')
-    )
-    foreach ($process in Get-Process -Name Hellgato,HellgatoWorker,StreamDeck -ErrorAction SilentlyContinue) {
+    ) + @(Get-LegacyWorkerPaths $LegacyDirectory $Destination)
+    foreach ($process in Get-Process -Name Hellgato,HellgatoWorker,HellgatoMiraboxWorker,StreamDeck -ErrorAction SilentlyContinue) {
         try {
             if ($process.SessionId -ne $session -or $paths -inotcontains $process.Path) { continue }
             $started = $process.StartTime.ToUniversalTime().ToFileTimeUtc()

@@ -135,6 +135,9 @@ try {
     Assert-True (@($helperRules | Where-Object { $_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::WriteData }).Count -eq 0) 'Context access must not grant write access to the helper.'
 
     Initialize-RestartManager
+    $workerPaths=@(Get-LegacyWorkerPaths $legacy $destination)
+    Assert-True ($workerPaths -contains (Join-Path $destination '_internal\runtime\mirabox\HellgatoMiraboxWorker.exe')) 'Nested legacy Mirabox workers must be identified.'
+    Assert-True (-not ($workerPaths -contains (Join-Path $destination 'python.exe'))) 'Generic Python processes must not be migration targets.'
     Assert-True ($null -ne ('HellgatoSetup.RestartManager' -as [type])) 'Restart Manager interop must compile without closing any process.'
     $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     Assert-True ([HellgatoSetup.RestartManager]::Owner($PID) -eq $currentSid) 'Process ownership must use the expected user SID.'

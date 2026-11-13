@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile, rename, lstat, rm, copyFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile, rename, lstat, stat, realpath, rm, copyFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { resolve, join, relative, isAbsolute, dirname } from 'node:path';
@@ -45,17 +45,20 @@ async function fileHash(path) {
   for await (const bytes of createReadStream(path)) hash.update(bytes);
   return hash.digest('hex');
 }
-async function copyTree(source, target, base, inventory) {
-  const info = await plain(source);
+async function copyTree(source, target, base, inventory, ancestors = new Set()) {
+  const info = await stat(source);
   if (info.isDirectory()) {
+    const actual = await realpath(source), back = relative(actual, base);
+    requireValue(!ancestors.has(actual) && (back.startsWith('..') || isAbsolute(back)), 'Backup source contains a directory cycle');
+    const parents = new Set([...ancestors, actual]);
     await mkdir(target, { recursive: true });
-    for (const name of await readdir(source)) await copyTree(join(source, name), join(target, name), base, inventory);
+    for (const name of await readdir(source)) await copyTree(join(source, name), join(target, name), base, inventory, parents);
     return;
   }
   requireValue(info.isFile(), 'Backup source contains a special file');
   await mkdir(dirname(target), { recursive: true });
   await copyFile(source, target);
-  const after = await plain(source);
+  const after = await stat(source);
   requireValue(after.size === info.size && after.mtimeMs === info.mtimeMs, 'A source file changed during backup; retry after closing Stream Deck');
   inventory.push({ path: relative(base, target).replaceAll('\\', '/'), bytes: info.size, sha256: await fileHash(target) });
 }

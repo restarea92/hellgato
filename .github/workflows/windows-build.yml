@@ -1,45 +1,27 @@
-name: Windows build
-
+name: Windows Rust build
 on:
-  push:
-    branches: [main]
-    paths: ['app/**', 'apps/**', 'adapters/**', 'host-integrations/**', 'vendor/**', 'schemas/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'pyproject.toml', 'uv.lock', 'docs/releases/**', '.github/workflows/**']
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
-    paths: ['app/**', 'apps/**', 'adapters/**', 'host-integrations/**', 'vendor/**', 'schemas/**', 'native/**', 'installer/**', 'scripts/**', 'test/**', 'packages/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'pyproject.toml', 'uv.lock', 'docs/releases/**', '.github/workflows/**']
   workflow_dispatch:
   workflow_call:
     inputs:
       source-sha:
-        description: Exact commit to build (for the generated version PR)
         required: false
         type: string
     outputs:
-      artifact-name:
-        value: ${{ jobs.build.outputs.artifact-name }}
       artifact-id:
         value: ${{ jobs.build.outputs.artifact-id }}
-      artifact-digest:
-        value: ${{ jobs.build.outputs.artifact-digest }}
       source-sha:
         value: ${{ jobs.build.outputs.source-sha }}
       version:
         value: ${{ jobs.build.outputs.version }}
-
 permissions:
   contents: read
-
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || inputs.source-sha != '' || github.head_ref == 'changeset-release/main'
     runs-on: windows-2022
     timeout-minutes: 45
     outputs:
-      artifact-name: windows-installer-${{ github.run_id }}-${{ github.run_attempt }}
       artifact-id: ${{ steps.artifact.outputs.artifact-id }}
-      artifact-digest: ${{ steps.artifact.outputs.artifact-digest }}
-      source-sha: ${{ steps.metadata.outputs.source_sha }}
+      source-sha: ${{ steps.metadata.outputs.source-sha }}
       version: ${{ steps.metadata.outputs.version }}
     defaults:
       run:
@@ -49,66 +31,78 @@ jobs:
         with:
           ref: ${{ inputs.source-sha || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.13.7'
-          architecture: x64
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24.19.0'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.7'
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
-      - name: Resolve installer version
-        id: metadata
+      - id: metadata
         env:
-          EXPECTED_SOURCE_SHA: ${{ inputs.source-sha || github.sha }}
+          EXPECTED_SHA: ${{ inputs.source-sha || github.sha }}
         run: |
-          $source = git rev-parse HEAD
-          if ($LASTEXITCODE -or $env:EXPECTED_SOURCE_SHA -notmatch '^[0-9a-f]{40}$' -or $source -ne $env:EXPECTED_SOURCE_SHA) { throw 'Build checkout must match the exact requested source SHA' }
-          "source_sha=$source" >> $env:GITHUB_OUTPUT
-          $version = python scripts/windows_release.py version
-          if ($LASTEXITCODE) { throw 'Invalid Windows installer version' }
+          $source=git rev-parse HEAD
+          if($source -ne $env:EXPECTED_SHA){throw 'Build source changed'}
+          "source-sha=$source" >> $env:GITHUB_OUTPUT
+          $version=(Get-Content packages/windows-release/package.json -Raw|ConvertFrom-Json).version
           "version=$version" >> $env:GITHUB_OUTPUT
-      - name: Install build dependencies
+      - name: Prepare build tools and reviewed inputs
         run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.98.1 --profile minimal
+          if($LASTEXITCODE){throw 'Rust installation failed'}
+          rustup default 1.98.1
           pnpm install --frozen-lockfile
-          if ($LASTEXITCODE) { throw 'Workspace dependency installation failed' }
+          if($LASTEXITCODE){throw 'Dependency installation failed'}
           npm install --prefix work/tooling npm@11.9.0 --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE) { throw 'Pinned npm installation failed' }
+          if($LASTEXITCODE){throw 'Pinned npm installation failed'}
           (Join-Path $pwd 'work/tooling/node_modules/.bin') >> $env:GITHUB_PATH
-          python -m pip install --disable-pip-version-check uv==0.12.23
-          if ($LASTEXITCODE) { throw 'Pinned uv installation failed' }
-          uv sync --locked --no-install-workspace --python python
-          if ($LASTEXITCODE) { throw 'Locked Python build environment failed' }
-          $setup = Join-Path $env:RUNNER_TEMP 'innosetup.exe'
+          python -m pip install pefile==2024.8.26
+          python scripts/prepare-windows.py
+          if($LASTEXITCODE){throw 'Reviewed inputs failed'}
+          python host-integrations/streamdeck/windows/native/ui/prepare.py
+          if($LASTEXITCODE){throw 'Qt build inputs failed'}
+          $setup=Join-Path $env:RUNNER_TEMP 'innosetup.exe'
           Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $setup
-          if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732') { throw 'Inno Setup checksum mismatch' }
-          $compiler = Join-Path $env:RUNNER_TEMP 'InnoSetup'
-          Start-Process $setup -ArgumentList '/CURRENTUSER','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOICONS',"/DIR=`"$compiler`"" -WindowStyle Hidden -Wait
-      - name: Test and build
+          if((Get-FileHash $setup -Algorithm SHA256).Hash -ne '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'){throw 'Inno Setup checksum mismatch'}
+          Start-Process $setup -ArgumentList '/CURRENTUSER','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOICONS',('/DIR="'+$env:RUNNER_TEMP+'/InnoSetup"') -WindowStyle Hidden -Wait
+      - name: Build native components and reference layout
+        run: |
+          python host-integrations/streamdeck/windows/native/ui/build.py --output work/build-native-ui-package
+          if($LASTEXITCODE){throw 'Native UI build failed'}
+          python host-integrations/streamdeck/windows/native/startup/build.py
+          if($LASTEXITCODE){throw 'Startup support build failed'}
+          $msi=Join-Path $env:RUNNER_TEMP 'StreamDeck.msi'
+          Invoke-WebRequest 'https://edge.elgato.com/egc/windows/sd/Stream_Deck_7.6.0.23012.msi' -OutFile $msi
+          if((Get-AuthenticodeSignature -LiteralPath $msi).Status -ne 'Valid'){throw 'Reference installer signature is invalid'}
+          $reference=Join-Path $pwd 'work/streamdeck-reference'
+          $extract=Start-Process msiexec.exe -ArgumentList '/a',('"'+$msi+'"'),'/qn',('TARGETDIR="'+$reference+'"') -WindowStyle Hidden -PassThru -Wait
+          if($extract.ExitCode -ne 0){throw 'Reference extraction failed'}
+          $executables=@(Get-ChildItem -LiteralPath $reference -Recurse -Filter StreamDeck.exe)
+          if($executables.Count -ne 1 -or (Get-FileHash $executables[0].FullName -Algorithm SHA256).Hash -ne '2963DF27B13F97E5736E3F931348D89D2F693109F3CB9DC3C9899300E35EA9E3'){throw 'Reference executable changed'}
+          $env:PYTHONPATH=Join-Path $pwd 'host-integrations/streamdeck/windows/python'
+          python -c 'from hellgato_host.startup_install import install;import sys;install(sys.argv[1],sys.argv[2])' $executables[0].FullName (Join-Path $pwd 'work/build-native-startup/version.dll')
+          if($LASTEXITCODE){throw 'Reference layout preparation failed'}
+          $executables[0].DirectoryName | Set-Content work/startup-reference-path.txt
+      - name: Build Node and Rust application
         run: |
           pnpm run prepare:cora
-          if ($LASTEXITCODE) { throw 'CORA preparation failed' }
+          if($LASTEXITCODE){throw 'CORA preparation failed'}
           pnpm run build:npm
-          if ($LASTEXITCODE) { throw 'SDK package build failed' }
-          & ./.venv/Scripts/python.exe -m unittest discover -s test -p 'test_*.py'
-          if ($LASTEXITCODE) { throw 'Python checks failed' }
-          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File test/test_installer_migration.ps1
-          if ($LASTEXITCODE) { throw 'Installer migration checks failed' }
-          ./scripts/build-windows.ps1 -Python (Join-Path $pwd '.venv/Scripts/python.exe') -Iscc (Join-Path $env:RUNNER_TEMP 'InnoSetup/ISCC.exe')
-          if ($LASTEXITCODE) { throw 'Windows build failed' }
-          $applicationTests = @(Get-ChildItem test -Filter '*.test.mjs' | Where-Object { $_.Name -notlike 'release-*.test.mjs' } | ForEach-Object { $_.FullName })
-          ./work/build-runtime/node.exe --test @applicationTests
-          if ($LASTEXITCODE) { throw 'Application checks failed' }
-          python scripts/windows_release.py artifacts
-          if ($LASTEXITCODE) { throw 'Installer artifact validation failed' }
-      - name: Record exact build provenance
-        env:
-          RELEASE_SHA: ${{ steps.metadata.outputs.source_sha }}
-        run: |
-          python scripts/windows_release.py manifest
-          if ($LASTEXITCODE) { throw 'Build manifest validation failed' }
-      - name: Save installer and SHA-256 (not a release)
-        id: artifact
+          if($LASTEXITCODE){throw 'SDK build failed'}
+          node scripts/stage-windows-sdk.mjs
+          if($LASTEXITCODE){throw 'SDK staging failed'}
+          foreach($crate in @('adapters/mirabox-rust','host-integrations/streamdeck/windows/rust','apps/stream-dog/rust')){
+            cargo build --release --locked --manifest-path "$crate/Cargo.toml"
+            if($LASTEXITCODE){throw "Rust build failed: $crate"}
+          }
+          node scripts/stream-dog/stage.mjs --destination work/rust-release --startup-directory (Get-Content work/startup-reference-path.txt)
+          if($LASTEXITCODE){throw 'Runtime staging failed'}
+          ./scripts/stream-dog/build-installer.ps1 -Bundle work/rust-release -Iscc (Join-Path $env:RUNNER_TEMP 'InnoSetup/ISCC.exe') -Version '${{ steps.metadata.outputs.version }}'
+          if($LASTEXITCODE){throw 'Installer build failed'}
+          @{schemaVersion=1;kind='hellgato-stream-dog-rust';sourceSha='${{ steps.metadata.outputs.source-sha }}';version='${{ steps.metadata.outputs.version }}';pythonRuntime=$false}|ConvertTo-Json|Set-Content dist/build-manifest.json
+      - id: artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           archive: true

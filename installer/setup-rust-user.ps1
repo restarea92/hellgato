@@ -20,6 +20,7 @@ function Invoke-RustUserSetup {
     $targets=@((Join-Path $legacy 'Hellgato.exe'),(Join-Path $destination 'Hellgato.exe'),(Join-Path $destination 'HellgatoStreamDog.exe'))
     if($taskMode -in @('PrepareHost','RemoveHost')){
         $config=Get-Content -LiteralPath (Join-Path $destination 'runtime.json') -Raw|ConvertFrom-Json
+        if($taskMode -eq 'PrepareHost' -and (Get-FileHash -LiteralPath $config.service.host.executable -Algorithm SHA256).Hash -ine $config.service.host.executableSha256){Write-Warning 'Untested Stream Deck build: connection is allowed; native layout preparation is unavailable.';return}
         $arguments=@($(if($taskMode -eq 'RemoveHost'){'--remove'}else{'--prepare'}),'--exe',$config.service.host.executable,'--sha256',$config.service.host.executableSha256)
         if($taskMode -eq 'PrepareHost'){$arguments+=@('--proxy',(Join-Path $destination $config.startupProxy),'--plan',(Join-Path $destination $config.startupPlan))}
         & (Join-Path $destination $config.hostWorker) @arguments
@@ -35,9 +36,12 @@ function Invoke-RustUserSetup {
                 else{[IO.Directory]::CreateDirectory((Join-Path $localData 'Hellgato'))|Out-Null;[IO.File]::WriteAllText((Join-Path $localData 'Hellgato\launcher.stop'),'')}
             }
         }
+        if(Test-Path -LiteralPath (Join-Path $legacy 'Hellgato.exe')){[IO.Directory]::CreateDirectory((Join-Path $localData 'Hellgato'))|Out-Null;[IO.File]::WriteAllText((Join-Path $localData 'Hellgato\launcher.stop'),'')}
         $deadline=[DateTime]::UtcNow.AddSeconds(15)
-        do{$owners=@(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith(($destination+'\'),[StringComparison]::OrdinalIgnoreCase) -and $_.Name -match '^Hellgato.*\.exe$' });if(-not $owners.Count){break};Start-Sleep -Milliseconds 250}while([DateTime]::UtcNow -lt $deadline)
+        do{$owners=@(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and ($_.ExecutablePath -ieq (Join-Path $destination 'Hellgato.exe') -or $_.ExecutablePath -ieq (Join-Path $destination 'HellgatoStreamDog.exe') -or $_.ExecutablePath -ieq (Join-Path $legacy 'Hellgato.exe')) });if(-not $owners.Count){break};Start-Sleep -Milliseconds 250}while([DateTime]::UtcNow -lt $deadline)
         if($owners.Count){throw 'Close the installed Hellgato app before continuing.'}
+        Stop-InstalledLegacyWorkers $legacy $destination
+        if(@(Get-InstalledProcesses $legacy $destination | Where-Object { $_.Name -in @('HellgatoWorker.exe','HellgatoMiraboxWorker.exe') }).Count){throw 'Previous Hellgato workers are still running.'}
         if(Get-Process StreamDeck -ErrorAction SilentlyContinue){throw 'Close Stream Deck yourself before replacing its loaded native extension.'}
         Remove-LegacyInstallation (Read-LegacyRegistration) $localData $destination
     } else {

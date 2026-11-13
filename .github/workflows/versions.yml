@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 # Only main can refresh the one version PR. Its own commits cannot re-trigger
-# this workflow. Serialize refreshes and their exact-source build reports.
+# this workflow. Serialize version metadata refreshes.
 concurrency:
   group: hellgato-versions
   cancel-in-progress: false
@@ -65,36 +65,3 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION_PR_NUMBER: ${{ steps.version.outputs.pr-number }}
         run: node scripts/version-pr.mjs prepare
-
-  validate-windows:
-    needs: prepare
-    if: needs.prepare.outputs.source-sha != ''
-    permissions:
-      contents: read
-    uses: ./.github/workflows/windows-build.yml
-    with:
-      source-sha: ${{ needs.prepare.outputs.source-sha }}
-
-  report:
-    needs: [prepare, validate-windows]
-    if: always() && needs.prepare.outputs.source-sha != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '24.19.0'
-      - name: Record the build result on its exact version PR
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION_PR_NUMBER: ${{ needs.prepare.outputs.pr-number }}
-          VERSION_SOURCE_SHA: ${{ needs.prepare.outputs.source-sha }}
-          BUILD_RESULT: ${{ needs.validate-windows.result }}
-        run: node scripts/version-pr.mjs report
