@@ -30,9 +30,7 @@ The unsigned installer adds owned startup support that adjusts Stream Deck proce
 
 An independent Rust adapter translates device input for the Node core and Stream Deck. The core composes key images, one continuous touch strip and screensavers into a retained device canvas. N4 Pro receives complete USB frames; compatibility adapters split that canvas internally. The Rust GUI manages devices, adapters, backups and the tray.
 
-![Input and composed display flow](docs/visuals/hellgato-network.gif)
-
-- [Interactive architecture](https://hellgato-streamdog.vercel.app/architecture.html) · [Runtime boundaries](docs/architecture/0002-full-frame-runtime.md)
+- [Runtime boundaries](docs/architecture/0002-full-frame-runtime.md)
 - [Build and QA](apps/stream-dog/rust/README.md) · [Create an .hga adapter](docs/adapters/frame-adapter-guide.md)
 - [Public SDK](packages/hellgato/README.md) · [Versioning](.changeset/README.md) · [Windows releases](docs/windows-releases.md)
 - [Report an issue](https://github.com/restarea92/hellgato/issues)

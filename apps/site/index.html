@@ -50,8 +50,6 @@
 <section id="how-it-works"><h2>One composed stream per device</h2>
 <p>Device input travels through an independent Rust adapter and the Node core to Stream Deck. Returning key images, the continuous touch strip and screensavers compose into one retained canvas. N4 Pro receives complete USB frames; compatibility adapters split the canvas internally.</p>
 <p>The Rust app manages devices, adapter packages, backups and the core lifetime. The canvas lives in memory, without an OS virtual monitor driver. Idle screens send no frames; active output is capped at 60 fps, keeping only the newest pending state.</p>
-<picture class="architecture-gif"><source media="(prefers-reduced-motion: reduce)" srcset="assets/architecture.png"><img src="assets/architecture.gif" alt="Five-object runtime: input travels to Stream Deck; separate display updates converge into a virtual canvas, then complete frames return to N4 Pro." width="800" height="800" loading="lazy"></picture>
-<p class="section-note"><a href="architecture.html">Open the interactive diagram on its own</a>. Dots illustrate direction, not measured traffic or latency.</p>
 </section>
 <section id="manage"><h2>Keep device management simple</h2>
 <ul>

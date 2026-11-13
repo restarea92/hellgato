@@ -22,4 +22,4 @@ Each device has one transfer in flight and only the newest pending state. Idle s
 
 Each session owns its bridge ports, compositor worker, adapter process, identity and recovery state. The runtime owns the local API and shutdown. Closing the GUI hides it; Quit stops its owned core and workers. Registration of a new `.hga` does not require core or GUI source changes. A manufacturer SDK is optional.
 
-Multiple simulated sessions are verified; multiple physical devices remain unverified. See the [user guide](../guide.md#compatibility-and-limitations), [build instructions](../../apps/stream-dog/rust/README.md), [adapter contract](../adapters/frame-adapter-guide.md) and [interactive diagram](https://hellgato-streamdog.vercel.app/architecture.html).
+Multiple simulated sessions are verified; multiple physical devices remain unverified. See the [user guide](../guide.md#compatibility-and-limitations), [build instructions](../../apps/stream-dog/rust/README.md), [adapter contract](../adapters/frame-adapter-guide.md).

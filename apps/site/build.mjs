@@ -18,6 +18,4 @@ await writeFile(new URL('index.html', output), html);
 for (const name of ['style.css', 'assets']) {
   await cp(new URL(name, root), new URL(name, output), { recursive: true });
 }
-await cp(new URL('../../docs/visuals/hellgato-network.html', root), new URL('architecture.html', output));
-for (const suffix of ['gif', 'png']) await cp(new URL(`../../docs/visuals/hellgato-network.${suffix}`, root), new URL(`assets/architecture.${suffix}`, output));
 console.log(`Built Hellgato website ${version}: ${fileURLToPath(output)}`);
