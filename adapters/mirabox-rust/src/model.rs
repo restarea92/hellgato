@@ -62,6 +62,9 @@ pub fn descriptor() -> serde_json::Value {
     if !ts {
         value["layout"]["strip"] =
             json!({"x":0,"y":353,"width":800,"height":112,"logicalWidth":800,"logicalHeight":100});
+        value["layout"]["dials"] = json!([[104,545],[302,545],[500,545],[698,545]]);
+    } else {
+        value["layout"]["screens"] = json!([[447,1,85,85],[447,89,85,85],[447,177,85,85]]);
     }
     value
 }

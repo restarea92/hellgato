@@ -56,6 +56,7 @@ pub fn descriptor() -> Value {
         "layout": {
             "width": 800, "height": 480, "rotation": 180,
             "keys": keys, "stripRect": [0, 353, 800, 112],
+            "dials": [[104,545],[302,545],[500,545],[698,545]],
             "strip": {"x":0,"y":353,"width":800,"height":112,"logicalWidth":800,"logicalHeight":100},
             "logicalTouch": {"width": 800, "height": 100},
             "touchCoordinates": "normalized-local-strip",

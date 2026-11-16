@@ -18,7 +18,6 @@ use std::{
 struct LatestFrame {
     pixels: Option<egui::ColorImage>,
     layout: Value,
-    model: String,
     error: String,
 }
 enum Press {
@@ -49,7 +48,6 @@ pub struct VirtualDevice {
     latest: Arc<Mutex<LatestFrame>>,
     texture: Option<egui::TextureHandle>,
     layout: Value,
-    model: String,
     pressed: Option<Press>,
     hovered_dial: Option<usize>,
     pending: VecDeque<Value>,
@@ -78,7 +76,6 @@ impl VirtualDevice {
             latest: latest.clone(),
             texture: None,
             layout: Value::Null,
-            model: String::new(),
             pressed: None,
             hovered_dial: None,
             pending: VecDeque::new(),
@@ -154,8 +151,6 @@ impl VirtualDevice {
                                                     image.as_raw(),
                                                 ));
                                             latest.layout = value["layout"].clone();
-                                            latest.model =
-                                                value["modelId"].as_str().unwrap_or("").into();
                                             latest.error.clear();
                                             after = sequence;
                                         }
@@ -253,7 +248,8 @@ impl VirtualDevice {
         format!("Hellgato Virtual · {}:{}", self.adapter, self.device)
     }
     fn window_size(&self) -> Vec2 {
-        vec2(884.0 * self.scale, 716.0 * self.scale)
+        let width = self.layout["width"].as_f64().unwrap_or(800.0) as f32;
+        self.body().size() * (self.scale * 800.0 / width)
     }
     pub fn set_preferred_scale(&mut self, scale: f32, context: &egui::Context) {
         if self.preferred_scale != scale {
@@ -289,14 +285,19 @@ impl VirtualDevice {
                         egui::TextureOptions::LINEAR,
                     ));
                 }
-                self.layout = latest.layout.clone();
-                self.model = latest.model.clone();
+                if self.layout != latest.layout {
+                    self.layout = latest.layout.clone();
+                    context.send_viewport_cmd(egui::ViewportCommand::InnerSize(self.window_size()));
+                    self.native_configured = false;
+                }
             }
         }
         let area = ui.max_rect();
         let width = self.layout["width"].as_f64().unwrap_or(800.0) as f32;
         let height = self.layout["height"].as_f64().unwrap_or(480.0) as f32;
         let draw_scale = self.scale * 800.0 / width;
+        let unit = width / 800.0;
+        let body = self.body();
         let hovered = context.input(|i| i.pointer.hover_pos().is_some_and(|p| area.contains(p)));
         let hover = context.animate_bool_with_time(
             egui::Id::new(("virtual-hover", &self.device)),
@@ -315,21 +316,20 @@ impl VirtualDevice {
             self.native_alpha = alpha;
         }
         let transform = Projection {
-            origin: area.min + vec2(42.0 * draw_scale, 72.0 * draw_scale),
+            origin: area.min - body.min.to_vec2() * draw_scale,
             scale: draw_scale,
         };
         let painter = ui.painter();
-        let body = Rect::from_min_size(pos2(-42.0, -72.0), vec2(width + 84.0, height + 236.0));
         surface(
             painter,
             &transform,
             body,
-            42.0,
+            42.0 * unit,
             0.0,
             None,
             Color32::from_rgb(69, 76, 84),
         );
-        let rim = rounded_points(body.shrink(3.0), 40.0)
+        let rim = rounded_points(body.shrink(3.0 * unit), 40.0 * unit)
             .into_iter()
             .map(|p| transform.project(p, 0.0))
             .collect();
@@ -338,36 +338,84 @@ impl VirtualDevice {
             Stroke::new(1.0, Color32::from_rgb(110, 119, 128)),
         ));
         painter.text(
-            transform.project(pos2(width / 2.0, -38.0), 0.0),
+            transform.project(pos2(body.center().x, body.top()+34.0*unit), 0.0),
             egui::Align2::CENTER_CENTER,
             "Stream Dog",
-            egui::FontId::proportional(15.0 * draw_scale),
+            egui::FontId::proportional(15.0 * self.scale),
             Color32::from_gray(170),
         );
-        surface(
-            painter,
-            &transform,
-            Rect::from_min_size(pos2(-22.0, height + 24.0), vec2(width + 44.0, 120.0)),
-            18.0,
-            0.0,
-            None,
-            Color32::from_rgb(55, 61, 68),
-        );
-        let keys: Vec<Rect> = self.layout["keys"]
+        let dials = self.dials(width, height);
+        if !dials.is_empty() && dials.iter().all(|dial| dial.y > height) {
+            surface(
+                painter,
+                &transform,
+                Rect::from_min_max(
+                    pos2(body.left() + 20.0 * unit, height + 24.0 * unit),
+                    pos2(body.right() - 20.0 * unit, body.bottom() - 20.0 * unit),
+                ),
+                18.0 * unit,
+                0.0,
+                None,
+                Color32::from_rgb(55, 61, 68),
+            );
+        }
+        let texture = self.texture.as_ref().map(|t| t.id());
+        for rect in self.layout["screens"]
             .as_array()
             .into_iter()
             .flatten()
-            .filter_map(|key| rect_value(&key["rect"]))
+            .take(32)
+            .filter_map(rect_value)
+        {
+            surface(
+                painter,
+                &transform,
+                rect.expand(8.0 * unit),
+                13.0 * unit,
+                0.0,
+                None,
+                Color32::from_rgb(22, 25, 29),
+            );
+            surface(
+                painter,
+                &transform,
+                rect,
+                8.0 * unit,
+                0.0,
+                None,
+                Color32::from_gray(45),
+            );
+            if let Some(texture) = texture {
+                surface(
+                    painter,
+                    &transform,
+                    rect,
+                    8.0 * unit,
+                    0.0,
+                    Some((texture, vec2(width, height))),
+                    Color32::WHITE,
+                );
+            }
+        }
+        let keys: Vec<(usize, Rect)> = self.layout["keys"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|key| {
+                Some((
+                    key["id"].as_str()?.strip_prefix("key:")?.parse().ok()?,
+                    rect_value(&key["rect"])?,
+                ))
+            })
             .collect();
-        let texture = self.texture.as_ref().map(|t| t.id());
-        for (index, rect) in keys.iter().enumerate() {
-            let pressed = matches!(self.pressed,Some(Press::Key(key)) if key==index);
+        for (index, rect) in &keys {
+            let pressed = matches!(self.pressed,Some(Press::Key(key)) if key==*index);
             let depth = 0.0;
             surface(
                 painter,
                 &transform,
-                rect.expand(8.0),
-                13.0,
+                rect.expand(8.0 * unit),
+                13.0 * unit,
                 0.0,
                 None,
                 Color32::from_rgb(22, 25, 29),
@@ -376,7 +424,7 @@ impl VirtualDevice {
                 painter,
                 &transform,
                 *rect,
-                8.0,
+                8.0 * unit,
                 depth,
                 None,
                 Color32::from_gray(45),
@@ -386,7 +434,7 @@ impl VirtualDevice {
                     painter,
                     &transform,
                     *rect,
-                    8.0,
+                    8.0 * unit,
                     depth,
                     Some((texture, vec2(width, height))),
                     Color32::WHITE.gamma_multiply(if pressed { 0.68 } else { 1.0 }),
@@ -416,8 +464,8 @@ impl VirtualDevice {
             surface(
                 painter,
                 &transform,
-                rect.expand(12.0),
-                13.0,
+                rect.expand(12.0 * unit),
+                13.0 * unit,
                 0.0,
                 None,
                 Color32::from_rgb(22, 25, 29),
@@ -426,7 +474,7 @@ impl VirtualDevice {
                 painter,
                 &transform,
                 rect,
-                7.0,
+                7.0 * unit,
                 0.5,
                 None,
                 Color32::from_gray(45),
@@ -436,18 +484,17 @@ impl VirtualDevice {
                     painter,
                     &transform,
                     rect,
-                    7.0,
+                    7.0 * unit,
                     0.6,
                     Some((texture, vec2(width, height))),
                     Color32::WHITE,
                 );
             }
         }
-        let dials = self.dials(width, height);
         let hover_pointer = context.input(|i| i.pointer.hover_pos());
         for (index, point) in dials.iter().enumerate() {
             let center = transform.project(*point, 10.0);
-            let radius = 25.0 * draw_scale;
+            let radius = 25.0 * self.scale;
             painter.circle_filled(center, radius + 3.0, Color32::from_gray(26));
             let cap_color = if matches!(self.pressed,Some(Press::Dial{index:active,..}) if active==index)
             {
@@ -491,14 +538,14 @@ impl VirtualDevice {
                 dials.get(*index).is_some_and(|point| {
                     let center = transform.project(*point, 0.0);
                     hover_pointer
-                        .is_some_and(|pointer| dial_zone(center, draw_scale).contains(pointer))
+                        .is_some_and(|pointer| dial_zone(center, self.scale).contains(pointer))
                 })
             })
             .or_else(|| {
                 hover_pointer.and_then(|pointer| {
                     dials.iter().position(|point| {
                         transform.project(*point, 0.0).distance(pointer)
-                            < (25.0 * draw_scale).max(10.0) + 4.0
+                            < (25.0 * self.scale).max(10.0) + 4.0
                     })
                 })
             });
@@ -510,7 +557,7 @@ impl VirtualDevice {
             .filter(|_| !matches!(self.pressed, Some(Press::Dial { .. })))
             .map(|index| {
                 let center = transform.project(dials[index], 0.0);
-                let bounds = dial_arrows(center, draw_scale);
+                let bounds = dial_arrows(center, self.scale);
                 for (side, rect) in bounds.iter().enumerate() {
                     let points = if side == 0 {
                         vec![
@@ -559,11 +606,13 @@ impl VirtualDevice {
                             .iter()
                             .enumerate()
                             .any(|(side, rect)| dial_arrow_contains(*rect, side, pointer))
-                    }) || keys.iter().any(|rect| rect.contains(point))
+                    }) || keys.iter().any(|(_, rect)| rect.contains(point))
                         || strip.is_some_and(|rect| rect.contains(point))
                     {
                         egui::CursorIcon::PointingHand
-                    } else if dials.iter().any(|center| center.distance(point) < 35.0)
+                    } else if dials
+                        .iter()
+                        .any(|center| center.distance(point) < 35.0 * unit)
                         || body.contains(point)
                     {
                         egui::CursorIcon::Grab
@@ -600,22 +649,23 @@ impl VirtualDevice {
                         side: if delta < 0 { 0 } else { 1 },
                     });
                     self.event(json!({"type":"dial","kind":"rotate","index":index,"delta":delta}));
-                } else if let Some(index) = keys.iter().position(|rect| rect.contains(point)) {
-                    self.pressed = Some(Press::Key(index));
+                } else if let Some((index, _)) = keys.iter().find(|(_, rect)| rect.contains(point))
+                {
+                    self.pressed = Some(Press::Key(*index));
                     self.event(json!({"type":"key","index":index,"state":"down"}));
                 } else if let Some(index) = dials
                     .iter()
-                    .position(|center| center.distance(point) < 35.0)
+                    .position(|center| center.distance(point) < 35.0 * unit)
                 {
                     let center = transform.project(dials[index], 0.0);
-                    let angle = if pointer.distance(center) >= 8.0 * draw_scale {
+                    let angle = if pointer.distance(center) >= 8.0 * self.scale {
                         snap_dial_angle((pointer.y - center.y).atan2(pointer.x - center.x))
                     } else {
                         -std::f32::consts::FRAC_PI_2
                     };
                     self.pressed = Some(Press::Dial {
                         index,
-                        previous: (pointer.distance(center) >= 8.0 * draw_scale).then_some(angle),
+                        previous: (pointer.distance(center) >= 8.0 * self.scale).then_some(angle),
                         angle,
                         moved: false,
                     });
@@ -642,7 +692,7 @@ impl VirtualDevice {
         ) = (&mut self.pressed, pointer)
         {
             let center = transform.project(dials[*index], 0.0);
-            if pointer.distance(center) < 8.0 * draw_scale {
+            if pointer.distance(center) < 8.0 * self.scale {
                 *previous = None;
             } else {
                 let snapped = snap_dial_angle((pointer.y - center.y).atan2(pointer.x - center.x));
@@ -736,37 +786,103 @@ impl VirtualDevice {
         }
     }
     fn dials(&self, width: f32, height: f32) -> Vec<Pos2> {
-        if self.model == "n4-pro" {
-            [104.0, 302.0, 500.0, 698.0]
-                .into_iter()
-                .map(|x| pos2(x, 545.0))
-                .collect()
-        } else {
-            let count = self.layout["encoderCount"].as_u64().unwrap_or(0) as usize;
-            (0..count)
-                .map(|i| pos2(width * (i + 1) as f32 / (count + 1) as f32, height + 64.0))
-                .collect()
+        let count = self.layout["encoderCount"].as_u64().unwrap_or(0).min(32) as usize;
+        (0..count)
+            .map(|index| {
+                self.layout["dials"][index]
+                    .as_array()
+                    .and_then(|point| {
+                        Some(pos2(
+                            point.first()?.as_f64()? as f32,
+                            point.get(1)?.as_f64()? as f32,
+                        ))
+                    })
+                    .filter(|point|point.x.is_finite() && point.y.is_finite())
+                    .unwrap_or_else(|| {
+                        pos2(
+                            width * (index as f32 + 0.5) / count as f32,
+                            height + 65.0 * width / 800.0,
+                        )
+                    })
+            })
+            .collect()
+    }
+    fn body(&self) -> Rect {
+        let width = self.layout["width"].as_f64().unwrap_or(800.0) as f32;
+        let height = self.layout["height"].as_f64().unwrap_or(480.0) as f32;
+        let unit = width / 800.0;
+        let dials = self.dials(width, height);
+        let mut body = Rect::from_min_max(
+            pos2(-42.0 * unit, -72.0 * unit),
+            pos2(
+                width + 42.0 * unit,
+                height
+                    + if dials.iter().any(|dial| dial.y > height) {
+                        164.0
+                    } else {
+                        16.0
+                    } * unit,
+            ),
+        );
+        for dial in dials {
+            body = body.union(Rect::from_center_size(
+                dial,
+                vec2(168.0 * unit, 134.0 * unit),
+            ));
         }
+        body
     }
     pub fn fixture(context: &egui::Context, scenario: &str) -> Self {
         let (commands, _) = std::sync::mpsc::sync_channel(16);
         let keys:Vec<_>=(0..10).map(|index|json!({"id":format!("key:{index}"),"rect":[7+index%5*169,5+index/5*174,112,112]})).collect();
-        let mut pixels = egui::ColorImage::filled([800, 480], Color32::from_gray(42));
-        for index in 0..10 {
-            for y in (5 + index / 5 * 174)..(117 + index / 5 * 174) {
-                for x in (7 + index % 5 * 169)..(119 + index % 5 * 169) {
-                    pixels[(x, y)] = if index % 2 == 0 {
-                        Color32::from_rgb(42, 121, 172)
-                    } else {
-                        Color32::from_rgb(45, 139, 112)
-                    };
+        let mut layout = json!({"width":800,"height":480,"encoderCount":4,"dials":[[104,545],[302,545],[500,545],[698,545]],"keys":keys,"strip":{"x":0,"y":353,"width":800,"height":112,"logicalWidth":800,"logicalHeight":100}});
+        if scenario == "virtual-293s" {
+            let keys:Vec<_>=(0..15).map(|index|json!({"id":format!("key:{index}"),"rect":[2+index%5*89,1+index/5*88,85,85]})).collect();
+            layout = json!({"width":532,"height":262,"encoderCount":0,"keys":keys,"screens":[[447,1,85,85],[447,89,85,85],[447,177,85,85]]});
+        } else if scenario == "virtual-custom" {
+            layout = json!({"width":360,"height":240,"encoderCount":2,"dials":[[420,60],[420,180]],"keys":[{"id":"key:2","rect":[20,140,90,60]},{"id":"key:0","rect":[10,10,60,60]},{"id":"key:1","rect":[100,40,100,80]}],"screens":[[250,30,80,160]]});
+        }
+        let mut pixels = egui::ColorImage::filled(
+            [
+                layout["width"].as_u64().unwrap() as usize,
+                layout["height"].as_u64().unwrap() as usize,
+            ],
+            Color32::from_gray(42),
+        );
+        let mut fill = |rect: Rect, color| {
+            for y in rect.min.y as usize..rect.max.y as usize {
+                for x in rect.min.x as usize..rect.max.x as usize {
+                    pixels[(x, y)] = color;
                 }
             }
+        };
+        for (index, key) in layout["keys"].as_array().unwrap().iter().enumerate() {
+            fill(
+                rect_value(&key["rect"]).unwrap(),
+                if index % 2 == 0 {
+                    Color32::from_rgb(42, 121, 172)
+                } else {
+                    Color32::from_rgb(45, 139, 112)
+                },
+            );
         }
-        for y in 353..465 {
-            for x in 0..800 {
-                pixels[(x, y)] = Color32::from_rgb(45, 81, 100);
-            }
+        if let Some(strip) = layout["strip"].as_object() {
+            fill(
+                Rect::from_min_size(
+                    pos2(
+                        strip["x"].as_f64().unwrap() as f32,
+                        strip["y"].as_f64().unwrap() as f32,
+                    ),
+                    vec2(
+                        strip["width"].as_f64().unwrap() as f32,
+                        strip["height"].as_f64().unwrap() as f32,
+                    ),
+                ),
+                Color32::from_rgb(45, 81, 100),
+            );
+        }
+        for screen in layout["screens"].as_array().into_iter().flatten() {
+            fill(rect_value(screen).unwrap(), Color32::from_rgb(83, 67, 112));
         }
         Self {
             visible: true,
@@ -780,8 +896,7 @@ impl VirtualDevice {
                 pixels,
                 egui::TextureOptions::LINEAR,
             )),
-            layout: json!({"width":800,"height":480,"encoderCount":4,"keys":keys,"strip":{"x":0,"y":353,"width":800,"height":112,"logicalWidth":800,"logicalHeight":100}}),
-            model: "n4-pro".into(),
+            layout,
             pressed: (scenario == "virtual-knob-pressed")
                 .then_some(Press::Arrow { index: 1, side: 1 }),
             hovered_dial: scenario.starts_with("virtual-knob").then_some(1),
@@ -994,10 +1109,35 @@ mod tests {
         }
     }
     #[test]
+    fn adapter_layout_controls_bounds_optional_hardware_and_automatic_dial_fallback() {
+        let context = egui::Context::default();
+        let compact = VirtualDevice::fixture(&context, "virtual-293s");
+        assert_eq!(compact.layout["keys"].as_array().unwrap().len(), 15);
+        assert_eq!(compact.layout["screens"].as_array().unwrap().len(), 3);
+        assert!(compact.dials(532.0, 262.0).is_empty());
+        assert!(compact.layout["strip"].is_null());
+        assert!((compact.window_size().x - 442.0).abs() < 0.01);
+        assert!(compact.window_size().y < 250.0);
+        let mut custom = VirtualDevice::fixture(&context, "virtual-custom");
+        assert_eq!(
+            custom.dials(360.0, 240.0),
+            vec![pos2(420.0, 60.0), pos2(420.0, 180.0)]
+        );
+        for center in custom.dials(360.0, 240.0) {
+            assert!(custom.body().contains(center));
+        }
+        assert!(custom.window_size().x > 500.0);
+        custom.layout.as_object_mut().unwrap().remove("dials");
+        let automatic = custom.dials(360.0, 240.0);
+        assert_eq!(automatic.len(), 2);
+        assert!(automatic.iter().all(|point| point.y > 240.0));
+    }
+    #[test]
     fn native_pointer_releases_keys_and_distinguishes_dial_click_from_rotation() {
         let context = egui::Context::default();
         let mut device = VirtualDevice::fixture(&context, "virtual-2d");
         let (commands, events) = std::sync::mpsc::sync_channel(16);
+        device.layout["keys"].as_array_mut().unwrap().swap(0, 5);
         device.commands = commands;
         device.interactive = true;
         let mut draw = |point: Pos2, pressed: bool| {

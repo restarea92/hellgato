@@ -46,16 +46,16 @@ when an instance is already running. The floating window retains application
 focus for action targets, supports key down/up and touch gestures, and turns a
 dial by angular dragging or its hover minus/plus arrows. The drag gauge follows
 the nearest direction on a fixed eight-position grid, with 45-degree output steps. Click without
-dragging sends a dial click. The N4 Pro
-controller uses a rounded gunmetal 2D body with key bezels, a continuous strip and
-dials. Its default size is 50%; Settings offers DPI-aware 25% steps without
+dragging sends a dial click. The controller
+uses a rounded gunmetal 2D body generated from adapter layout and
+control metadata. Its default size is 50%; Settings offers DPI-aware 25% steps without
 changing the stream or disconnecting the host. Only the device body is shown;
 drag its empty areas to move it, and show/hide it from the management app.
 Moving the window does not require activation. Idle opacity is applied once to
 the entire native window, and stays fully visible throughout a held gesture.
 
 Native fixture cases `virtual-2d`, `virtual-hover`, `virtual-knob`,
-`virtual-knob-hover` and `virtual-knob-pressed`
+`virtual-knob-hover`, `virtual-knob-pressed`, `virtual-293s` and `virtual-custom`
 can be rendered with the existing `--ui-qa` command. They do not send host input.
 
 ```powershell
