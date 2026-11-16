@@ -7,6 +7,7 @@ import { FrameAdapterRegistry } from './frame-adapter-registry.mjs';
 import { FrameSessionSupervisor } from './frame-session-supervisor.mjs';
 import { FrameAdapterProcess } from './frame-adapter-process.mjs';
 import { Worker } from 'node:worker_threads';
+import { virtualFrameDevice } from './frame-persistent-adapter.mjs';
 
 function packageTask(action,data) {
   return new Promise((yes,no)=>{
@@ -45,12 +46,12 @@ function initialSettings(config) {
     childSerial: `HGMOCK${String(randomBytes(3).readUIntBE(0, 3) % 999999 + 1).padStart(6, '0')}`,
     macAddress: [2, ...randomBytes(5)] };
   return { schemaVersion: 1, adapters: [], selectedAdapterId: null, selectedDeviceId: null,
-    connectionDesired: false, identity, brightness: 52, maxFps: 60 };
+    connectionDesired: false, keepConnected: true, identity, brightness: 52, maxFps: 60 };
 }
 
 function validateSettings(value) {
   if (value?.schemaVersion !== 1 || !Array.isArray(value.adapters) || value.adapters.length > 64 ||
-      typeof value.connectionDesired !== 'boolean' ||
+      typeof value.connectionDesired !== 'boolean' || typeof value.keepConnected !== 'boolean' ||
       !/^HGDOCK\d{6}$/.test(value.identity?.dockSerial) || !/^HGMOCK\d{6}$/.test(value.identity?.childSerial) ||
       !Array.isArray(value.identity.macAddress) || value.identity.macAddress.length !== 6 ||
       !value.identity.macAddress.every(byte => Number.isInteger(byte) && byte >= 0 && byte <= 255) ||
@@ -67,9 +68,12 @@ export class FrameRuntimeManager {
   #hostWarnings = [];
   #backups = { serial: null, entries: [], busy: false, error: null, lastPath: null };
   #backupTask;
+  #frame = null;
+  #frameSequence = 0;
   constructor(config, { preview, createSession, discover } = {}) {
     this.#config = config; this.#preview = preview; this.#createSession = createSession; this.#discover = discover;
     const settings = existsSync(config.settingsPath) ? readJson(config.settingsPath) : initialSettings(config);
+    settings.keepConnected ??= true;
     if (!Object.hasOwn(settings, 'knobBrightness')) {
       settings.knobBrightness = null;
       validateSettings(settings);
@@ -86,6 +90,7 @@ export class FrameRuntimeManager {
     for (const path of config.builtInAdapters ?? []) {
       const inspected = new FrameAdapterRegistry();
       const entry = inspected.register(path);
+      if (entry.id === 'hellgato-simulator' && !config.fake) continue;
       this.#registry.register(path, { source: 'official' });
     }
     this.#adapters = this.#registry.list();
@@ -117,6 +122,10 @@ export class FrameRuntimeManager {
       warnings: [...(this.#sessionState?.warnings ?? []), ...this.#hostWarnings].filter((warning, index, all) => all.findIndex(item => item.code === warning.code) === index),
       backups: structuredClone(this.#backups),
       sessions: [...this.#children].map(([id, manager]) => ({ id, ...manager.getState() })) };
+  }
+  frame(params) {
+    const owner = [this, ...this.#children.values()].find(manager => manager.#settings.selectedAdapterId === params.adapterId && manager.#settings.selectedDeviceId === params.deviceId);
+    return owner?.#frame ?? null;
   }
   nativeState() {
     const session = this.#sessionState;
@@ -156,12 +165,13 @@ export class FrameRuntimeManager {
     Object.assign(target.config, { serialNumber: this.#settings.identity.dockSerial,
       childSerialNumber: this.#settings.identity.childSerial, macAddress: [...this.#settings.identity.macAddress] });
     const sessionConfig = { adapter, target, deviceId: this.#settings.selectedDeviceId, generation,
+      keepConnected: this.#settings.keepConnected, knownDevice: this.#devices.find(device => device.id === this.#settings.selectedDeviceId && device.adapterId === adapter.id),
       brightness: this.#settings.brightness, knobBrightness: this.#settings.knobBrightness, maxFps: this.#settings.maxFps,
       host: this.#config.host, hostProbe: this.#config.hostProbe, port: this.#config.port, childPort: this.#config.childPort,
       logPath: resolve(this.#config.stateDir, 'frame-events.jsonl'), resultPath: resolve(this.#config.stateDir, 'last-session.json') };
     const start = this.#createSession ?? (await import('./frame-session.mjs')).startFullFrameSession;
     return start(sessionConfig, { fake: this.#config.fake === true, sharedPreview: this.#preview, signal,
-      onState: state => { this.#sessionState = state; } });
+      onFrame: frame => { this.#frame = { ...frame, sequence: ++this.#frameSequence }; }, onState: state => { this.#sessionState = state; } });
   }
   async #discoverAdapter(id) {
     const adapter = this.#registry.resolve(id);
@@ -184,6 +194,33 @@ export class FrameRuntimeManager {
   async #command(action, params) {
     if (this.#closing) throw new Error('Runtime is closing');
     switch (action) {
+      case 'virtual-frame': {
+        const frame = this.frame(params);
+        if (!frame || frame.sequence === params.after) return { unchanged: true };
+        return { sequence: frame.sequence, jpeg: frame.jpeg.toString('base64'), rotation: frame.rotation, layout: frame.layout, modelId: frame.modelId };
+      }
+      case 'virtual-input': {
+        const owner = [this, ...this.#children.values()].find(manager => manager.#settings.selectedAdapterId === params.adapterId && manager.#settings.selectedDeviceId === params.deviceId);
+        if (!owner) throw new Error('Unknown virtual device');
+        const event = params.input, geometry = owner.#registry.resolve(params.adapterId).target.geometry;
+        if (!event || !['key', 'dial', 'touch'].includes(event.type)) throw new Error('Invalid virtual input');
+        if (event.type === 'key' && (!Number.isInteger(event.index) || event.index < 0 || event.index >= geometry.keyCount || !['down', 'up'].includes(event.state))) throw new Error('Invalid virtual key');
+        if (event.type === 'dial' && (!Number.isInteger(event.index) || event.index < 0 || event.index >= geometry.encoderCount || !['rotate', 'pulse'].includes(event.kind) || event.kind === 'rotate' && (!Number.isInteger(event.delta) || !event.delta || Math.abs(event.delta) > 30))) throw new Error('Invalid virtual dial');
+        if (event.type === 'touch' && (!['tap', 'swipe', 'hold'].includes(event.gesture) || !['x', 'y', ...(event.gesture === 'swipe' ? ['endX', 'endY'] : [])].every(key => Number.isInteger(event[key]) && event[key] >= 0 && event[key] < (key.toLowerCase().endsWith('x') ? geometry.touchWidth : geometry.touchHeight)))) throw new Error('Invalid virtual touch');
+        const input = event.type === 'key' ? { type: 'key', index: event.index, state: event.state }
+          : event.type === 'dial' ? { type: 'dial', index: event.index, kind: event.kind, ...(event.kind === 'rotate' ? { delta: event.delta } : {}) }
+          : { type: 'touch', gesture: event.gesture, x: event.x, y: event.y, ...(event.gesture === 'swipe' ? { endX: event.endX, endY: event.endY } : {}) };
+        await owner.#supervisor.input(input); return { ok: true };
+      }
+      case 'virtual-device': {
+        const adapter = this.#registry.resolve(params.adapterId);
+        const device = this.#devices.find(item => item.adapterId === adapter.id) ?? { ...virtualFrameDevice(adapter.id, adapter.target), displayName: adapter.name };
+        if (!this.#devices.some(item => item.id === device.id && item.adapterId === device.adapterId)) {
+          this.#devices.push(device); this.#settings.knownDevices = structuredClone(this.#devices); this.#save();
+        }
+        await this.#command('connect-device', { adapterId: device.adapterId, deviceId: device.id });
+        return { device };
+      }
       case 'backup-list': case 'backup-create': case 'backup-rename': case 'backup-move': case 'backup-delete': {
         if (this.#backups.busy) throw new Error('A backup operation is already running');
         const owner = [this, ...this.#children.values()].find(manager => manager.#settings.selectedAdapterId === params.adapterId && manager.#settings.selectedDeviceId === params.deviceId);
@@ -222,7 +259,7 @@ export class FrameRuntimeManager {
       case 'device-settings': {
         const owner=[this,...this.#children.values()].find(manager=>{const settings=manager.getState().settings;return settings.selectedDeviceId===params.deviceId && settings.selectedAdapterId===params.adapterId;});
         if (!owner) throw new Error('Connect the selected device before changing its settings');
-        const settings={maxFps:params.maxFps};
+        const settings={...(params.maxFps === undefined ? {} : {maxFps:params.maxFps}), ...(params.keepConnected === undefined ? {} : {keepConnected:params.keepConnected})};
         if(owner===this) await this.#command('settings',settings);else await owner.command('settings',settings);
         return this.getState();
       }
@@ -294,10 +331,10 @@ export class FrameRuntimeManager {
         this.#settings.connectionDesired = false; this.#save(); await this.#supervisor.disconnect(); break;
       case 'settings': {
         const next = { ...this.#settings };
-        for (const key of ['brightness', 'maxFps']) if (Object.hasOwn(params, key)) next[key] = params[key];
+        for (const key of ['brightness', 'maxFps', 'keepConnected']) if (Object.hasOwn(params, key)) next[key] = params[key];
         validateSettings(next);
         const reconnect = this.#settings.connectionDesired;
-        if (await this.#supervisor.configure({ ...(Object.hasOwn(params, 'brightness') ? { brightness: next.brightness } : {}),
+        if (next.keepConnected === this.#settings.keepConnected && await this.#supervisor.configure({ ...(Object.hasOwn(params, 'brightness') ? { brightness: next.brightness } : {}),
           ...(Object.hasOwn(params, 'maxFps') ? { maxFps: next.maxFps } : {}) })) {
           this.#settings = next; this.#save(); break;
         }

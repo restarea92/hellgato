@@ -8,6 +8,7 @@ import { performance } from 'node:perf_hooks';
 import { createDeviceBridge } from 'hellgato';
 import { LatestFrameScheduler } from './full-frame-compositor.mjs';
 import { FrameAdapterProcess } from './frame-adapter-process.mjs';
+import { PersistentFrameAdapter, virtualFrameDevice } from './frame-persistent-adapter.mjs';
 import { FullFrameScreensaver } from './full-frame-screensaver.mjs';
 import { createTraceWriter } from './trace-log.mjs';
 
@@ -65,7 +66,7 @@ class RenderWorker {
 }
 
 async function runFrameSession(config, { fake = false, sharedPreview: preview,
-  onState = () => {}, onReady = () => {}, fakeDemo = fake, signal: abortSignal } = {}) {
+  onState = () => {}, onFrame = () => {}, onReady = () => {}, fakeDemo = fake, signal: abortSignal } = {}) {
   if (!isAbsolute(config.adapter?.command) || !config.target) {
     throw new TypeError('An explicit adapter command and Stream Deck target are required');
   }
@@ -98,13 +99,15 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
   let normalBrightness = config.brightness ?? 52;
   let layout;
   const finished = new Promise(resolveFinished => { stoppedResolve = resolveFinished; });
-  const adapter = new FrameAdapterProcess({ command: config.adapter.command,
+  const Adapter = config.keepConnected ? PersistentFrameAdapter : FrameAdapterProcess;
+  const adapter = new Adapter({ command: config.adapter.command,
     args: fake ? config.adapter.fakeArgs ?? ['--fake'] : config.adapter.args ?? [], cwd: config.adapter.cwd });
   const publish = () => {
     onState(structuredClone(state));
     preview?.update({ ...(lastFrame ? { frameJpeg: Buffer.from(lastFrame.frameJpeg) } : {}),
       status: { ...state, scheduler: scheduler?.getStatus() } });
   };
+  adapter.on('physical', value => { state.deviceConnected = value.connected; state.usbError = value.error; publish(); });
   const fail = error => {
     if (state.stopping) return;
     failure ??= error; state.errors.push(error.message);
@@ -267,9 +270,11 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
     const discovered = await adapter.request('discover');
     checkpoint();
     const devices = Array.isArray(discovered) ? discovered : discovered.devices;
-    const device = config.deviceId ? devices.find(item => item.id === config.deviceId) : devices.length === 1 ? devices[0] : null;
+    let device = config.deviceId ? devices.find(item => item.id === config.deviceId) : devices.length === 1 ? devices[0] : null;
+    if (!device && config.keepConnected) device = structuredClone(config.knownDevice ?? virtualFrameDevice(config.adapter.id ?? metadata.adapterId, config.target, metadata, config.deviceId));
     if (!device) throw new Error('Select exactly one discovered device');
-    const opened = await adapter.request('open', { deviceId: device.id, brightness: config.brightness ?? 52, generation, sessionId });
+    const opened = await adapter.request('open', { deviceId: device.id, brightness: config.brightness ?? 52, generation, sessionId,
+      ...(config.keepConnected ? { virtualDevice: device } : {}) });
     checkpoint();
     if (opened.firmware) device.firmware = opened.firmware;
     state.firmware = device.firmware;
@@ -279,7 +284,8 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
       await adapter.request('control', { control: 'knobBrightness', value: config.knobBrightness });
     }
     layout = opened.layout ?? metadata.layout;
-    state.deviceConnected = true;
+    state.deviceConnected = adapter.status().physicalConnected !== false;
+    state.layout = structuredClone(layout);
     renderer = new RenderWorker(layout, Boolean(preview));
     await renderer.request('stats');
     checkpoint();
@@ -297,12 +303,14 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
         if (frame.overlayActive !== state.screensaverActive) log('display-layer', { layer: frame.overlayActive ? 'screensaver' : 'normal' });
         state.screensaverActive = frame.overlayActive;
         state.lastSubmitMs = submitted.submitMs ?? null;
-        state.framesSubmitted++; lastFrame = frame; publish();
+        state.framesSubmitted++; lastFrame = frame;
+        onFrame({ jpeg: Buffer.from(frame.frameJpeg ?? frame.wireJpeg), rotation: frame.frameJpeg ? 0 : layout.rotation ?? 0,
+          sequence: state.framesSubmitted, layout: { ...layout, encoderCount: config.target.geometry.encoderCount }, modelId: state.modelId }); publish();
       }, onError: fail });
     adapter.on('failure', fail);
-    adapter.on('event', event => {
+    const forwardInput = event => {
       if (event.event === 'state') log('adapter-state', { detail: event });
-      if (event.event !== 'input' || !state.deviceConnected || state.stopping) return;
+      if (event.event !== 'input' || event.virtual !== true && !state.deviceConnected || state.stopping) return;
       const observedAt = performance.now();
       state.inputObserved++;
       if (event.type === 'key') state.keyInputObserved++;
@@ -321,9 +329,12 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
         }
         publish();
       }).catch(fail);
-    });
+      return inputOps;
+    };
+    adapter.on('event', forwardInput);
     if (!fake) {
-      bridge = createDeviceBridge({ device, target: config.target, sessionId, generation,
+      const { virtual: virtualTransport, ...bridgeDevice } = device;
+      bridge = createDeviceBridge({ device: bridgeDevice, target: config.target, sessionId, generation,
         port: config.port ?? 5343, childPort: config.childPort ?? 5344 });
       bridge.on('output', receive);
       bridge.on('lcdFrameStarted', () => { lcdEpoch = saver.epoch; lcdAssembling = true; });
@@ -348,7 +359,7 @@ async function runFrameSession(config, { fake = false, sharedPreview: preview,
     }
     scheduler.request();
     publish(); log('ready', { previewUrl: preview?.url ?? null, mode: state.mode, layout, sessionId });
-    onReady({ stop, getState: () => structuredClone(state), configure(settings) {
+    onReady({ stop, getState: () => structuredClone(state), input(event) { return forwardInput({ ...event, event: 'input', virtual: true }); }, configure(settings) {
       if (state.stopping) return Promise.reject(new Error('Session is stopping'));
       const operation = sourceOps.then(async () => {
         if (settings.brightness !== undefined) await control({ control: 'brightness', value: settings.brightness });

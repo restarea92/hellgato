@@ -56,4 +56,8 @@ export class FrameSessionSupervisor extends EventEmitter {
     if (!this.#session || this.#state !== 'running' || typeof this.#session.configure !== 'function') return false;
     await this.#session.configure(settings); return true;
   }
+  async input(event) {
+    if (!this.#session || this.#state !== 'running') throw new Error('Virtual device is not connected');
+    return this.#session.input(event);
+  }
 }
