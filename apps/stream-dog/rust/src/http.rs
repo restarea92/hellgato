@@ -164,7 +164,12 @@ mod tests {
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n{\"ok\":true}")
                 .unwrap();
             let mut byte = [0];
-            assert_eq!(socket.read(&mut byte).unwrap(), 0);
+            // Windows can report a client close as a reset rather than EOF.
+            match socket.read(&mut byte) {
+                Ok(0) => {},
+                Err(error) if error.kind()==std::io::ErrorKind::ConnectionReset => {},
+                result => panic!("Client did not close the completed response: {result:?}"),
+            }
         });
         assert_eq!(
             request(&endpoint, "fixture-token", None).unwrap(),
