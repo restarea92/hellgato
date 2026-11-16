@@ -26,6 +26,8 @@ pub struct Status {
     pub stopped: bool,
     pub notice: String,
     pub review: Value,
+    pub endpoint: String,
+    pub token: String,
 }
 pub struct Backend {
     pub commands: SyncSender<Command>,
@@ -81,6 +83,8 @@ fn run(
         if let Ok(mut value) = state.lock() {
             value.starting = false;
             value.error.clear();
+            value.endpoint = core.endpoint.clone();
+            value.token = core.token.clone();
         }
         let mut shutdown = false;
         loop {

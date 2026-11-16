@@ -6,7 +6,7 @@ import { FrameRuntimeManager } from '../apps/stream-dog/node/frame-runtime-manag
 import { createFrameRuntimeApi } from '../apps/stream-dog/node/frame-runtime-api.mjs';
 import { adapterFixture, deferred, until } from './helpers/frame-runtime-fixture.mjs';
 
-async function managerFixture(t, { knobBrightness = false } = {}) {
+async function managerFixture(t, { knobBrightness = false, physicalConnected = true } = {}) {
   const fixture = await adapterFixture(t);
   const config = { stateDir: fixture.root, settingsPath: join(fixture.root, 'settings.json'),
     builtInAdapters: [fixture.path], fake: true, retryMs: () => 5,
@@ -14,22 +14,22 @@ async function managerFixture(t, { knobBrightness = false } = {}) {
   const identity = { dockSerial: 'HGDOCK000001', childSerial: 'HGMOCK000003', macAddress: [2, 0, 0, 0, 0, 1] };
   await writeFile(config.legacyIdentityPath, JSON.stringify({ identity }));
   const devices = [1, 2].map(index => ({ id: `device-${index}`, adapterId: fixture.manifest.id, modelId: 'fixture', capabilities: {} }));
-  const starts = [], configured = [];
+  const starts = [], configured = [], inputs = [];
   const createSession = async (value, options) => {
     starts.push(value); const done = deferred();
-    const state = { deviceConnected: true, hostConnected: true, networkListening: true,
+    const state = { deviceConnected: physicalConnected, hostConnected: physicalConnected, networkListening: true,
       knobBrightnessSupported: knobBrightness, knobBrightness: value.knobBrightness ?? value.brightness,
       followDisplayBrightness: value.knobBrightness === null };
     options.onState(state);
     const stop = async () => { options.onState({ deviceConnected: false, hostConnected: false }); done.resolve(); };
-    return { stop, completion: done.promise, control: async () => {}, ...(knobBrightness ? {
+    return { stop, completion: done.promise, input: async event => {inputs.push(event);}, control: async () => {}, ...(knobBrightness ? {
       configure: async settings => { configured.push(settings); Object.assign(state, settings);
         if (settings.knobBrightness !== undefined) state.followDisplayBrightness = false; options.onState(state); },
     } : {}) };
   };
   const manager = new FrameRuntimeManager(config, { createSession, discover: async () => devices });
   t.after(() => manager.close());
-  return { ...fixture, config, manager, starts, configured, identity, devices, createSession };
+  return { ...fixture, config, manager, starts, configured, identity, devices, createSession, inputs };
 }
 
 test('native knob controls authenticate, save only final values and restore the paired device setting', async t => {
@@ -69,6 +69,27 @@ test('native knob controls authenticate, save only final values and restore the 
   assert.equal(restarted.nativeState().serial, f.identity.childSerial);
 });
 
+test('connection retention defaults on and persists independently of virtual frame visibility', async t => {
+  const f = await managerFixture(t);
+  assert.equal(f.manager.getState().settings.keepConnected, true);
+  assert.equal(f.manager.getState().settings.virtualDeviceScale, 0.5);
+  await f.manager.command('discover', { adapterId: f.manifest.id });
+  await f.manager.command('select', { adapterId: f.manifest.id, deviceId: f.devices[0].id });
+  await f.manager.command('connect');
+  await until(() => f.starts.length === 1);
+  assert.equal(f.starts[0].keepConnected, true);
+  assert.deepEqual(await f.manager.command('virtual-frame', { adapterId: f.manifest.id, deviceId: f.devices[0].id }), { unchanged: true });
+  assert.equal(f.manager.getState().settings.connectionDesired, true);
+  await f.manager.command('settings', { virtualDeviceScale: 0.75 });
+  assert.equal(f.manager.getState().settings.virtualDeviceScale, 0.75);
+  assert.equal(f.starts.length, 1);
+  await assert.rejects(f.manager.command('settings', { virtualDeviceScale: 0.55 }), /Invalid saved/);
+  assert.equal(f.manager.getState().settings.virtualDeviceScale, 0.75);
+  await f.manager.command('device-settings', { adapterId: f.manifest.id, deviceId: f.devices[0].id, keepConnected: false });
+  assert.equal(f.manager.getState().settings.keepConnected, false);
+  assert.equal(JSON.parse(await readFile(f.config.settingsPath, 'utf8')).keepConnected, false);
+});
+
 test('unsupported models keep native knob controls disabled', async t => {
   const f = await managerFixture(t);
   await f.manager.command('discover', { adapterId: f.manifest.id });
@@ -76,6 +97,19 @@ test('unsupported models keep native knob controls disabled', async t => {
   await until(() => f.manager.getState().runtime.state === 'running');
   assert.equal(f.manager.nativeState().available, false);
   await assert.rejects(f.manager.command('native-control', { serial: f.identity.childSerial, action: 'knobBrightness', value: 30 }), /unavailable/);
+});
+
+test('native reconnect remains eligible for a retained virtual device without USB',async t=>{
+  const f=await managerFixture(t,{physicalConnected:false});
+  await f.manager.command('discover',{adapterId:f.manifest.id});
+  await f.manager.command('connect-device',{adapterId:f.manifest.id,deviceId:'device-1'});
+  await until(()=>f.manager.getState().runtime.state==='running');
+  assert.equal(f.manager.nativeState().connected,true);
+  assert.equal(f.manager.nativeState().available,false);
+  assert.equal(f.manager.getState().deviceConnected,false);
+  await f.manager.command('settings',{keepConnected:false});
+  await until(()=>f.manager.getState().runtime.state==='running');
+  assert.equal(f.manager.nativeState().connected,false);
 });
 
 test('optional native UI failure and an untested host do not prevent a device session', async t => {
@@ -162,4 +196,15 @@ test('persistent legacy settings preserve paired IDs after temporary IPC configu
   assert.deepEqual(manager.getState().settings.identity, { dockSerial: 'HGDOCK000001', childSerial: 'HGMOCK000003', macAddress: [2, 0, 0, 0, 0, 1] });
   await writeFile(legacy, JSON.stringify({ version: 1, identity: 0, dockIdentity: 1 }));
   assert.throws(() => new FrameRuntimeManager({ stateDir: f.root, settingsPath: join(f.root, 'invalid-new-settings.json'), legacyIdentityPath: legacy }), /refusing to replace/);
+});
+
+
+test('native virtual input uses the selected session and rejects out-of-range key, touch and dial data',async t=>{
+  const f=await managerFixture(t);await f.manager.command('discover',{adapterId:f.manifest.id});
+  const params={adapterId:f.manifest.id,deviceId:f.devices[0].id};await f.manager.command('select',params);await f.manager.command('connect');
+  await until(()=>f.manager.getState().runtime.state==='running');
+  for(const input of [{type:'key',index:0,state:'down'},{type:'key',index:0,state:'up'},{type:'dial',index:3,kind:'rotate',delta:-2},{type:'touch',gesture:'hold',x:799,y:99}])await f.manager.command('virtual-input',{...params,input});
+  assert.equal(f.inputs.length,4);assert.equal(f.inputs[1].state,'up');
+  for(const input of [{type:'key',index:10,state:'down'},{type:'dial',index:4,kind:'pulse'},{type:'touch',gesture:'tap',x:800,y:0}])await assert.rejects(f.manager.command('virtual-input',{...params,input}),/Invalid virtual/);
+  assert.equal(f.inputs.length,4);
 });

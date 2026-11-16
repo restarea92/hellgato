@@ -41,6 +41,14 @@ must not overlap. `sourceWidth` and `sourceHeight` describe logical host images.
 For a continuous touch strip, add `layout.strip` with
 `x,y,width,height,logicalWidth,logicalHeight`; omit it when absent.
 
+The native virtual device is generated from this layout, with no model-specific
+GUI code. Optional `layout.dials` lists `[x,y]` dial centers in zero-based input
+order, using the same unrotated canvas coordinates; controls may sit outside the
+display canvas. Without centers, the GUI distributes the declared encoder count
+below the display. Optional `layout.screens` lists `[x,y,width,height]` passive
+LCD regions in the composed frame. Body bounds and window proportions follow
+the canvas and controls. Omit absent controls rather than supplying dummy ones.
+
 ## Display and input
 
 The core composes keys, strip, background and screensaver before submitting a
