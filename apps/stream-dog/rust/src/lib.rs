@@ -8,3 +8,4 @@ pub mod ui;
 pub mod smoke;
 pub mod ui_qa;
 pub mod virtual_device;
+mod virtual_device_window;

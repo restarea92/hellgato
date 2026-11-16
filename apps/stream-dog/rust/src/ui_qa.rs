@@ -86,7 +86,7 @@ pub fn run(directory: PathBuf, args: &[String]) -> eframe::Result {
                 virtual_view: scenario.starts_with("virtual-").then(|| {
                     crate::virtual_device::VirtualDevice::fixture(
                         &cc.egui_ctx,
-                        scenario == "virtual-knob",
+                        &scenario,
                     )
                 }),
                 scenario,
@@ -101,7 +101,9 @@ impl eframe::App for RenderQa {
     }
     fn raw_input_hook(&mut self, _: &egui::Context, input: &mut egui::RawInput) {
         if self.scenario.starts_with("virtual-") {
-            input.events.push(if self.scenario == "virtual-knob" {
+            input.events.push(if self.scenario=="virtual-knob-hover" || self.scenario=="virtual-knob-pressed"{
+                egui::Event::PointerMoved(egui::pos2(197.0,308.5))
+            }else if self.scenario == "virtual-knob" {
                 egui::Event::PointerMoved(egui::pos2(172.0,308.5))
             }else if self.scenario == "virtual-hover" {
                 egui::Event::PointerMoved(egui::pos2(350.0, 250.0))

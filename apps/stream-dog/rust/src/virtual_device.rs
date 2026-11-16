@@ -1,6 +1,6 @@
 use crate::{
     backend::{Command, Status},
-    http,
+    http, virtual_device_window as window,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, Stroke, Vec2};
@@ -22,11 +22,15 @@ struct LatestFrame {
     error: String,
 }
 enum Press {
+    Move(window::Drag),
+    Arrow {
+        index: usize,
+        side: usize,
+    },
     Key(usize),
     Dial {
         index: usize,
         previous: Option<f32>,
-        residual: f32,
         angle: f32,
         moved: bool,
     },
@@ -52,7 +56,8 @@ pub struct VirtualDevice {
     commands: SyncSender<Command>,
     interactive: bool,
     native_configured: bool,
-    native_extent: [u32;2],
+    native_alpha: u8,
+    native_extent: [u32; 2],
 }
 
 impl VirtualDevice {
@@ -80,7 +85,8 @@ impl VirtualDevice {
             commands,
             interactive: true,
             native_configured: false,
-            native_extent: [0,0],
+            native_alpha: 255,
+            native_extent: [0, 0],
         }));
         let weak = Arc::downgrade(&state);
         let id = viewport_id(&adapter, &device);
@@ -262,14 +268,15 @@ impl VirtualDevice {
     }
     pub fn paint(&mut self, ui: &mut egui::Ui) {
         let context = ui.ctx().clone();
-        let extent=ui.max_rect().size()*context.pixels_per_point();
-        let native_extent=[extent.x.round() as u32,extent.y.round() as u32];
-        if self.interactive && (!self.native_configured || self.native_extent!=native_extent) {
-            self.native_configured = configure_native_window(
+        let extent = ui.max_rect().size() * context.pixels_per_point();
+        let native_extent = [extent.x.round() as u32, extent.y.round() as u32];
+        if self.interactive && (!self.native_configured || self.native_extent != native_extent) {
+            self.native_configured = window::configure(
                 &self.native_title(),
                 42.0 * self.scale * context.pixels_per_point(),
             );
-            self.native_extent=native_extent;
+            self.native_extent = native_extent;
+            self.native_alpha = 255;
         }
         if let Ok(mut latest) = self.latest.lock() {
             if let Some(pixels) = latest.pixels.take() {
@@ -293,10 +300,20 @@ impl VirtualDevice {
         let hovered = context.input(|i| i.pointer.hover_pos().is_some_and(|p| area.contains(p)));
         let hover = context.animate_bool_with_time(
             egui::Id::new(("virtual-hover", &self.device)),
-            hovered,
+            hovered || self.pressed.is_some(),
             0.16,
         );
-        let opacity = 0.82 + hover * 0.18;
+        let alpha = if self.pressed.is_some() {
+            255
+        } else {
+            ((0.82 + hover * 0.18) * 255.0).round() as u8
+        };
+        if self.interactive
+            && alpha != self.native_alpha
+            && window::opacity(&self.native_title(), alpha)
+        {
+            self.native_alpha = alpha;
+        }
         let transform = Projection {
             origin: area.min + vec2(42.0 * draw_scale, 72.0 * draw_scale),
             scale: draw_scale,
@@ -310,7 +327,7 @@ impl VirtualDevice {
             42.0,
             0.0,
             None,
-            Color32::from_rgb(69, 76, 84).gamma_multiply(opacity),
+            Color32::from_rgb(69, 76, 84),
         );
         let rim = rounded_points(body.shrink(3.0), 40.0)
             .into_iter()
@@ -318,17 +335,14 @@ impl VirtualDevice {
             .collect();
         painter.add(egui::Shape::closed_line(
             rim,
-            Stroke::new(
-                1.0,
-                Color32::from_rgb(110, 119, 128).gamma_multiply(opacity),
-            ),
+            Stroke::new(1.0, Color32::from_rgb(110, 119, 128)),
         ));
         painter.text(
             transform.project(pos2(width / 2.0, -38.0), 0.0),
             egui::Align2::CENTER_CENTER,
             "Stream Dog",
             egui::FontId::proportional(15.0 * draw_scale),
-            Color32::from_gray(170).gamma_multiply(opacity),
+            Color32::from_gray(170),
         );
         surface(
             painter,
@@ -337,7 +351,7 @@ impl VirtualDevice {
             18.0,
             0.0,
             None,
-            Color32::from_rgb(55, 61, 68).gamma_multiply(opacity),
+            Color32::from_rgb(55, 61, 68),
         );
         let keys: Vec<Rect> = self.layout["keys"]
             .as_array()
@@ -356,7 +370,7 @@ impl VirtualDevice {
                 13.0,
                 0.0,
                 None,
-                Color32::from_rgb(22, 25, 29).gamma_multiply(opacity),
+                Color32::from_rgb(22, 25, 29),
             );
             surface(
                 painter,
@@ -365,7 +379,7 @@ impl VirtualDevice {
                 8.0,
                 depth,
                 None,
-                Color32::from_gray(45).gamma_multiply(opacity),
+                Color32::from_gray(45),
             );
             if let Some(texture) = texture {
                 surface(
@@ -375,7 +389,7 @@ impl VirtualDevice {
                     8.0,
                     depth,
                     Some((texture, vec2(width, height))),
-                    Color32::WHITE.gamma_multiply(opacity * if pressed { 0.68 } else { 1.0 }),
+                    Color32::WHITE.gamma_multiply(if pressed { 0.68 } else { 1.0 }),
                 );
             }
             if pressed {
@@ -406,7 +420,7 @@ impl VirtualDevice {
                 13.0,
                 0.0,
                 None,
-                Color32::from_rgb(22, 25, 29).gamma_multiply(opacity),
+                Color32::from_rgb(22, 25, 29),
             );
             surface(
                 painter,
@@ -415,7 +429,7 @@ impl VirtualDevice {
                 7.0,
                 0.5,
                 None,
-                Color32::from_gray(45).gamma_multiply(opacity),
+                Color32::from_gray(45),
             );
             if let Some(texture) = texture {
                 surface(
@@ -425,31 +439,29 @@ impl VirtualDevice {
                     7.0,
                     0.6,
                     Some((texture, vec2(width, height))),
-                    Color32::WHITE.gamma_multiply(opacity),
+                    Color32::WHITE,
                 );
             }
         }
         let dials = self.dials(width, height);
+        let hover_pointer = context.input(|i| i.pointer.hover_pos());
         for (index, point) in dials.iter().enumerate() {
             let center = transform.project(*point, 10.0);
             let radius = 25.0 * draw_scale;
-            painter.circle_filled(
-                center,
-                radius + 3.0,
-                Color32::from_gray(26).gamma_multiply(opacity),
-            );
-            painter.circle_filled(
-                center,
-                radius,
-                Color32::from_rgb(171, 179, 186).gamma_multiply(opacity),
-            );
+            painter.circle_filled(center, radius + 3.0, Color32::from_gray(26));
+            let cap_color = if matches!(self.pressed,Some(Press::Dial{index:active,..}) if active==index)
+            {
+                Color32::from_rgb(139, 151, 163)
+            } else if hover_pointer.is_some_and(|pointer| pointer.distance(center) <= radius) {
+                Color32::from_rgb(192, 201, 210)
+            } else {
+                Color32::from_rgb(171, 179, 186)
+            };
+            painter.circle_filled(center, radius, cap_color);
             painter.circle_stroke(
                 center,
                 radius,
-                Stroke::new(
-                    2.0 * draw_scale,
-                    Color32::from_rgb(218, 224, 229).gamma_multiply(opacity),
-                ),
+                Stroke::new(2.0 * draw_scale, Color32::from_rgb(218, 224, 229)),
             );
             let angle = match self.pressed {
                 Some(Press::Dial {
@@ -467,11 +479,12 @@ impl VirtualDevice {
                 ],
                 Stroke::new(2.0 * draw_scale, Color32::from_rgb(70, 77, 83)),
             );
-            if matches!(self.pressed,Some(Press::Dial{index:active,..}) if active==index) {
-                draw_gauge(painter, center, (radius * 1.9).max(24.0), angle);
+            if let Some(Press::Dial { index: active, .. }) = &self.pressed {
+                if *active == index {
+                    draw_gauge(painter, center, (radius * 1.9).max(24.0), angle);
+                }
             }
         }
-        let hover_pointer = context.input(|i| i.pointer.hover_pos());
         self.hovered_dial = self
             .hovered_dial
             .filter(|index| {
@@ -489,13 +502,16 @@ impl VirtualDevice {
                     })
                 })
             });
-        let arrows = self
-            .hovered_dial
+        let active_dial = match self.pressed {
+            Some(Press::Arrow { index, .. }) => Some(index),
+            _ => self.hovered_dial,
+        };
+        let arrows = active_dial
             .filter(|_| !matches!(self.pressed, Some(Press::Dial { .. })))
             .map(|index| {
                 let center = transform.project(dials[index], 0.0);
                 let bounds = dial_arrows(center, draw_scale);
-                for (side, (rect, text)) in bounds.iter().zip(["−", "+"]).enumerate() {
+                for (side, rect) in bounds.iter().enumerate() {
                     let points = if side == 0 {
                         vec![
                             pos2(rect.min.x, rect.center().y),
@@ -509,34 +525,62 @@ impl VirtualDevice {
                             rect.left_top(),
                         ]
                     };
-                    painter.add(egui::Shape::convex_polygon(
-                        points,
-                        Color32::from_rgb(25, 30, 35),
-                        Stroke::new(1.0, Color32::from_rgb(120, 131, 141)),
-                    ));
+                    let pressed=matches!(self.pressed,Some(Press::Arrow{index:active,side:active_side}) if active==index && side==active_side);
+                    let hovered=hover_pointer.is_some_and(|point|dial_arrow_contains(*rect,side,point));
+                    let color=if pressed{Color32::from_rgb(137,149,160)}else if hovered{Color32::from_rgb(99,111,123)}else{Color32::from_rgb(71,80,90)};
+                    painter.add(egui::Shape::convex_polygon(rounded_triangle(&points,2.5),color,Stroke::NONE));
                     let label = pos2(
                         rect.min.x + rect.width() * if side == 0 { 0.66 } else { 0.34 },
                         rect.center().y,
                     );
-                    painter.text(
-                        label,
-                        egui::Align2::CENTER_CENTER,
-                        text,
-                        egui::FontId::proportional(12.0),
-                        Color32::from_rgb(210, 220, 229),
-                    );
+                    let label=label+vec2(0.0,if pressed{0.5}else{0.0});
+                    let stroke=Stroke::new(1.5,Color32::from_gray(245));
+                    painter.line_segment([label-vec2(3.0,0.0),label+vec2(3.0,0.0)],stroke);
+                    if side==1{painter.line_segment([label-vec2(0.0,3.0),label+vec2(0.0,3.0)],stroke);}
                 }
                 (index, bounds)
             });
-        let pointer = context.input(|i| i.pointer.interact_pos());
+        let pointer = if self.interactive && self.pressed.is_some() {
+            window::pointer(&self.native_title(), context.pixels_per_point())
+                .map(|p| pos2(p[0], p[1]))
+        } else {
+            None
+        }
+        .or_else(|| context.input(|i| i.pointer.interact_pos()));
         let down = context.input(|i| i.pointer.primary_pressed());
-        let native_up = self.interactive
-            && self.pressed.is_some()
-            && !context.input(|i| i.focused)
-            && native_button_released();
+        let cursor = match self.pressed {
+            Some(Press::Move(_)) | Some(Press::Dial { .. }) => egui::CursorIcon::Grabbing,
+            Some(Press::Arrow { .. }) | Some(Press::Key(_)) => egui::CursorIcon::PointingHand,
+            _ => pointer
+                .map(|pointer| {
+                    let point = transform.inverse(pointer);
+                    if arrows.is_some_and(|(_, bounds)| {
+                        bounds
+                            .iter()
+                            .enumerate()
+                            .any(|(side, rect)| dial_arrow_contains(*rect, side, pointer))
+                    }) || keys.iter().any(|rect| rect.contains(point))
+                        || strip.is_some_and(|rect| rect.contains(point))
+                    {
+                        egui::CursorIcon::PointingHand
+                    } else if dials.iter().any(|center| center.distance(point) < 35.0)
+                        || body.contains(point)
+                    {
+                        egui::CursorIcon::Grab
+                    } else {
+                        egui::CursorIcon::Default
+                    }
+                })
+                .unwrap_or(egui::CursorIcon::Default),
+        };
+        context.set_cursor_icon(cursor);
         let up = self.interactive
-            && context
-                .input(|i| i.pointer.primary_released() || !i.pointer.primary_down() || native_up);
+            && self.pressed.is_some()
+            && if context.input(|i| i.focused) {
+                context.input(|i| i.pointer.primary_released() || !i.pointer.primary_down())
+            } else {
+                window::button_released()
+            };
         if down && self.pressed.is_none() {
             if let Some(pointer) = pointer {
                 let point = transform.inverse(pointer);
@@ -551,6 +595,10 @@ impl VirtualDevice {
                     } else {
                         1
                     };
+                    self.pressed = Some(Press::Arrow {
+                        index,
+                        side: if delta < 0 { 0 } else { 1 },
+                    });
                     self.event(json!({"type":"dial","kind":"rotate","index":index,"delta":delta}));
                 } else if let Some(index) = keys.iter().position(|rect| rect.contains(point)) {
                     self.pressed = Some(Press::Key(index));
@@ -560,11 +608,14 @@ impl VirtualDevice {
                     .position(|center| center.distance(point) < 35.0)
                 {
                     let center = transform.project(dials[index], 0.0);
-                    let angle = (pointer.y - center.y).atan2(pointer.x - center.x);
+                    let angle = if pointer.distance(center) >= 8.0 * draw_scale {
+                        snap_dial_angle((pointer.y - center.y).atan2(pointer.x - center.x))
+                    } else {
+                        -std::f32::consts::FRAC_PI_2
+                    };
                     self.pressed = Some(Press::Dial {
                         index,
                         previous: (pointer.distance(center) >= 8.0 * draw_scale).then_some(angle),
-                        residual: 0.0,
                         angle,
                         moved: false,
                     });
@@ -574,7 +625,9 @@ impl VirtualDevice {
                         at: Instant::now(),
                     });
                 } else if body.contains(point) {
-                    context.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    if self.interactive {
+                        self.pressed = window::Drag::begin(&self.native_title()).map(Press::Move);
+                    }
                 }
             }
         }
@@ -582,7 +635,6 @@ impl VirtualDevice {
             Some(Press::Dial {
                 index,
                 previous,
-                residual,
                 angle,
                 moved,
             }),
@@ -593,20 +645,24 @@ impl VirtualDevice {
             if pointer.distance(center) < 8.0 * draw_scale {
                 *previous = None;
             } else {
-                *angle = (pointer.y - center.y).atan2(pointer.x - center.x);
-                if let Some(last) = previous {
-                    *residual += wrapped_angle(*angle - *last);
-                }
-                *previous = Some(*angle);
-                let step = std::f32::consts::TAU / 8.0;
-                let ticks = (*residual / step + residual.signum() * 0.00001).trunc() as i32;
+                let snapped = snap_dial_angle((pointer.y - center.y).atan2(pointer.x - center.x));
+                let ticks = previous
+                    .map(|last| {
+                        (wrapped_angle(snapped - last) / (std::f32::consts::TAU / 8.0)).round()
+                            as i32
+                    })
+                    .unwrap_or(0);
+                *previous = Some(snapped);
+                *angle = snapped;
                 if ticks != 0 {
-                    *residual -= ticks as f32 * step;
                     *moved = true;
                     let index = *index;
-                    self.event(json!({"type":"dial","kind":"rotate","index":index,"delta":ticks.clamp(-30,30)}));
+                    self.event(json!({"type":"dial","kind":"rotate","index":index,"delta":ticks}));
                 }
             }
+        }
+        if let Some(Press::Move(drag)) = &self.pressed {
+            drag.update();
         }
         if up {
             if let Some(press) = self.pressed.take() {
@@ -619,7 +675,7 @@ impl VirtualDevice {
                         moved: false,
                         ..
                     } => self.event(json!({"type":"dial","kind":"pulse","index":index})),
-                    Press::Dial { .. } => {}
+                    Press::Dial { .. } | Press::Arrow { .. } | Press::Move(_) => {}
                     Press::Touch { start, at } => {
                         if let Some(rect) = strip {
                             let end = pointer.map(|p| transform.inverse(p)).unwrap_or(start);
@@ -692,7 +748,7 @@ impl VirtualDevice {
                 .collect()
         }
     }
-    pub fn fixture(context: &egui::Context, gauge: bool) -> Self {
+    pub fn fixture(context: &egui::Context, scenario: &str) -> Self {
         let (commands, _) = std::sync::mpsc::sync_channel(16);
         let keys:Vec<_>=(0..10).map(|index|json!({"id":format!("key:{index}"),"rect":[7+index%5*169,5+index/5*174,112,112]})).collect();
         let mut pixels = egui::ColorImage::filled([800, 480], Color32::from_gray(42));
@@ -726,13 +782,15 @@ impl VirtualDevice {
             )),
             layout: json!({"width":800,"height":480,"encoderCount":4,"keys":keys,"strip":{"x":0,"y":353,"width":800,"height":112,"logicalWidth":800,"logicalHeight":100}}),
             model: "n4-pro".into(),
-            pressed: None,
-            hovered_dial: gauge.then_some(1),
+            pressed: (scenario == "virtual-knob-pressed")
+                .then_some(Press::Arrow { index: 1, side: 1 }),
+            hovered_dial: scenario.starts_with("virtual-knob").then_some(1),
             pending: VecDeque::new(),
             commands,
             interactive: false,
             native_configured: false,
-            native_extent: [0,0],
+            native_alpha: 255,
+            native_extent: [0, 0],
         }
     }
 }
@@ -825,8 +883,29 @@ fn dial_arrow_contains(rect: Rect, side: usize, point: Pos2) -> bool {
         point.x <= rect.max.x - inset
     }
 }
+fn rounded_triangle(points: &[Pos2], radius: f32) -> Vec<Pos2> {
+    let mut result = Vec::new();
+    for i in 0..3 {
+        let corner = points[i];
+        let a = corner + (points[(i + 2) % 3] - corner).normalized() * radius;
+        let b = corner + (points[(i + 1) % 3] - corner).normalized() * radius;
+        for sample in 0..=4 {
+            let t = sample as f32 / 4.0;
+            result.push(pos2(
+                (1.0 - t).powi(2) * a.x + 2.0 * (1.0 - t) * t * corner.x + t * t * b.x,
+                (1.0 - t).powi(2) * a.y + 2.0 * (1.0 - t) * t * corner.y + t * t * b.y,
+            ));
+        }
+    }
+    result
+}
 fn dial_zone(center: Pos2, scale: f32) -> Rect {
-    Rect::from_center_size(center, vec2((80.0 * scale).clamp(24.0, 42.0) * 2.0, 28.0))
+    let arrows = dial_arrows(center, scale);
+    arrows[0].union(arrows[1])
+}
+fn snap_dial_angle(angle: f32) -> f32 {
+    let step = std::f32::consts::TAU / 8.0;
+    (wrapped_angle(angle) / step).round() * step
 }
 fn wrapped_angle(value: f32) -> f32 {
     (value + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
@@ -840,7 +919,7 @@ fn draw_gauge(painter: &egui::Painter, center: Pos2, radius: f32, angle: f32) {
     );
     painter.circle_stroke(center, radius, Stroke::new(1.0, color));
     for tick in 0..8 {
-        let a = tick as f32 * std::f32::consts::TAU / 8.0;
+        let a = -std::f32::consts::FRAC_PI_2 + tick as f32 * std::f32::consts::TAU / 8.0;
         let direction = vec2(a.cos(), a.sin());
         painter.line_segment(
             [
@@ -861,11 +940,15 @@ fn draw_gauge(painter: &egui::Painter, center: Pos2, radius: f32, angle: f32) {
     painter.circle_filled(center + direction * radius * 0.60, 2.5, Color32::WHITE);
 }
 fn dial_arrows(center: Pos2, scale: f32) -> [Rect; 2] {
-    let zone = dial_zone(center, scale);
-    let radius = 25.0 * scale + 3.0;
+    let width = (22.0 * (scale / 0.5).sqrt()).clamp(18.0, 30.0);
+    let height = (24.0 * (scale / 0.5).sqrt()).clamp(20.0, 32.0);
+    let radius = 25.0 * scale + 5.0;
     [
-        Rect::from_min_max(zone.min, pos2(center.x - radius, zone.max.y)),
-        Rect::from_min_max(pos2(center.x + radius, zone.min.y), zone.max),
+        Rect::from_min_size(
+            center + vec2(-radius - width, -height / 2.0),
+            vec2(width, height),
+        ),
+        Rect::from_min_size(center + vec2(radius, -height / 2.0), vec2(width, height)),
     ]
 }
 
@@ -887,7 +970,7 @@ mod tests {
     #[test]
     fn preferred_size_defaults_to_half_and_resizes_without_changing_aspect() {
         let context = egui::Context::default();
-        let mut device = VirtualDevice::fixture(&context, false);
+        let mut device = VirtualDevice::fixture(&context, "virtual-2d");
         assert_eq!(device.scale, 0.5);
         let half = device.window_size();
         device.set_preferred_scale(1.0, &context);
@@ -900,9 +983,20 @@ mod tests {
         assert!((wrapped_angle(358.0f32.to_radians()) + 2.0f32.to_radians()).abs() < 0.0001);
     }
     #[test]
+    fn dial_indicator_uses_the_same_fixed_grid_for_every_mouse_position() {
+        for (pointer, expected) in [
+            (31.0f32, 45.0f32),
+            (52.0, 45.0),
+            (350.0, 0.0),
+            (-101.0, -90.0),
+        ] {
+            assert!((snap_dial_angle(pointer.to_radians()) - expected.to_radians()).abs() < 0.0001);
+        }
+    }
+    #[test]
     fn native_pointer_releases_keys_and_distinguishes_dial_click_from_rotation() {
         let context = egui::Context::default();
-        let mut device = VirtualDevice::fixture(&context, false);
+        let mut device = VirtualDevice::fixture(&context, "virtual-2d");
         let (commands, events) = std::sync::mpsc::sync_channel(16);
         device.commands = commands;
         device.interactive = true;
@@ -926,7 +1020,15 @@ mod tests {
                     .frame(egui::Frame::NONE)
                     .show(ui, |ui| device.paint(ui));
             });
+            let observation = (
+                output.platform_output.cursor_icon,
+                match device.pressed {
+                    Some(Press::Dial { angle, .. }) => Some(angle),
+                    _ => None,
+                },
+            );
             output.textures_delta.clear();
+            observation
         };
         draw(pos2(40.0, 60.0), true);
         draw(pos2(10.0, 530.0), false);
@@ -959,6 +1061,16 @@ mod tests {
         draw(center + vec2(30.0, 0.0), true);
         draw(center + vec2(30.0, 0.0), false);
         draw(center + vec2(12.0, 0.0), true);
+        let before_tick = draw(
+            center
+                + vec2(
+                    12.0 * 20.0f32.to_radians().cos(),
+                    12.0 * 20.0f32.to_radians().sin(),
+                ),
+            true,
+        );
+        assert_eq!(before_tick.0, egui::CursorIcon::Grabbing);
+        assert_eq!(before_tick.1, Some(0.0));
         draw(center + vec2(0.0, 24.0), true);
         draw(center + vec2(0.0, 24.0), false);
         let rotations: Vec<_> = events
@@ -974,71 +1086,4 @@ mod tests {
         assert_eq!(&rotations[..2], &[-1, 1]);
         assert_eq!(rotations[2..].iter().sum::<i64>(), 2);
     }
-}
-
-#[cfg(windows)]
-fn configure_native_window(title: &str, radius: f32) -> bool {
-    use windows_sys::Win32::{
-        Foundation::RECT,
-        Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, SetWindowRgn},
-        System::Threading::GetCurrentProcessId,
-        UI::WindowsAndMessaging::{
-            FindWindowW, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId,
-            SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-        },
-    };
-    let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
-    unsafe {
-        let window = FindWindowW(std::ptr::null(), title.as_ptr());
-        if window.is_null() {
-            return false;
-        }
-        let mut process = 0;
-        GetWindowThreadProcessId(window, &mut process);
-        if process != GetCurrentProcessId() {
-            return false;
-        }
-        let style = GetWindowLongPtrW(window, GWL_EXSTYLE);
-        SetWindowLongPtrW(
-            window,
-            GWL_EXSTYLE,
-            style | WS_EX_NOACTIVATE as isize | WS_EX_TOOLWINDOW as isize,
-        );
-        let mut rect = RECT::default();
-        if GetWindowRect(window, &mut rect) == 0 {
-            return false;
-        }
-        let diameter = (radius * 2.0).round() as i32;
-        let region = CreateRoundRectRgn(
-            0,
-            0,
-            rect.right - rect.left + 1,
-            rect.bottom - rect.top + 1,
-            diameter,
-            diameter,
-        );
-        if region.is_null() {
-            return false;
-        }
-        if SetWindowRgn(window, region, 1) == 0 {
-            DeleteObject(region);
-            return false;
-        }
-        true
-    }
-}
-#[cfg(not(windows))]
-fn configure_native_window(_title: &str, _radius: f32) -> bool {
-    true
-}
-
-#[cfg(windows)]
-fn native_button_released() -> bool {
-    unsafe {
-        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(1) as u16 & 0x8000 == 0
-    }
-}
-#[cfg(not(windows))]
-fn native_button_released() -> bool {
-    false
 }
