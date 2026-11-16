@@ -133,7 +133,7 @@ export class FrameRuntimeManager {
     const session = this.#sessionState;
     const available = session?.deviceConnected === true && session.knobBrightnessSupported === true && this.#supervisor.status().state === 'running';
     return { serial: this.#settings.identity.childSerial, model: session?.modelId ?? '',
-      connected: session?.deviceConnected === true, hostConnected: session?.hostConnected === true,
+      connected: session?.deviceConnected === true || this.#settings.keepConnected && session?.networkListening === true && this.#supervisor.status().state === 'running', hostConnected: session?.hostConnected === true,
       networkListening: session?.networkListening === true, connectionDesired: this.#supervisor.status().desired,
       available, capabilities: { knobBrightness: available },
       knobBrightness: session?.knobBrightness ?? this.#settings.knobBrightness ?? this.#settings.brightness,

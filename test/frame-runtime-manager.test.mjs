@@ -6,7 +6,7 @@ import { FrameRuntimeManager } from '../apps/stream-dog/node/frame-runtime-manag
 import { createFrameRuntimeApi } from '../apps/stream-dog/node/frame-runtime-api.mjs';
 import { adapterFixture, deferred, until } from './helpers/frame-runtime-fixture.mjs';
 
-async function managerFixture(t, { knobBrightness = false } = {}) {
+async function managerFixture(t, { knobBrightness = false, physicalConnected = true } = {}) {
   const fixture = await adapterFixture(t);
   const config = { stateDir: fixture.root, settingsPath: join(fixture.root, 'settings.json'),
     builtInAdapters: [fixture.path], fake: true, retryMs: () => 5,
@@ -17,7 +17,7 @@ async function managerFixture(t, { knobBrightness = false } = {}) {
   const starts = [], configured = [], inputs = [];
   const createSession = async (value, options) => {
     starts.push(value); const done = deferred();
-    const state = { deviceConnected: true, hostConnected: true, networkListening: true,
+    const state = { deviceConnected: physicalConnected, hostConnected: physicalConnected, networkListening: true,
       knobBrightnessSupported: knobBrightness, knobBrightness: value.knobBrightness ?? value.brightness,
       followDisplayBrightness: value.knobBrightness === null };
     options.onState(state);
@@ -97,6 +97,19 @@ test('unsupported models keep native knob controls disabled', async t => {
   await until(() => f.manager.getState().runtime.state === 'running');
   assert.equal(f.manager.nativeState().available, false);
   await assert.rejects(f.manager.command('native-control', { serial: f.identity.childSerial, action: 'knobBrightness', value: 30 }), /unavailable/);
+});
+
+test('native reconnect remains eligible for a retained virtual device without USB',async t=>{
+  const f=await managerFixture(t,{physicalConnected:false});
+  await f.manager.command('discover',{adapterId:f.manifest.id});
+  await f.manager.command('connect-device',{adapterId:f.manifest.id,deviceId:'device-1'});
+  await until(()=>f.manager.getState().runtime.state==='running');
+  assert.equal(f.manager.nativeState().connected,true);
+  assert.equal(f.manager.nativeState().available,false);
+  assert.equal(f.manager.getState().deviceConnected,false);
+  await f.manager.command('settings',{keepConnected:false});
+  await until(()=>f.manager.getState().runtime.state==='running');
+  assert.equal(f.manager.nativeState().connected,false);
 });
 
 test('optional native UI failure and an untested host do not prevent a device session', async t => {
