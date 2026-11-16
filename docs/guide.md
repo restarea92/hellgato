@@ -1,11 +1,11 @@
 # Stream Dog user guide
 
-The Windows x64 **0.2.1 public beta** bundles a Rust management app, Node core and independent Rust device adapters. No Python installation or StreamDock app is required.
+The Windows x64 **0.3.0 public beta** bundles a Rust management app, Node core and independent Rust device adapters. No Python installation or StreamDock app is required.
 
 ## Installation and updates
 
 1. Install the official [Stream Deck app](https://www.elgato.com/downloads).
-2. Download the installer and checksum from the [0.2.1 release](https://github.com/restarea92/hellgato/releases/tag/v0.2.1), finish active work, then run setup. The installer is unsigned.
+2. Download the installer and checksum from the [0.3.0 release](https://github.com/restarea92/hellgato/releases/tag/v0.3.0), finish active work, then run setup. The installer is unsigned.
 3. Setup automatically closes Hellgato and Stream Deck. It removes verified Hellgato-owned legacy Python workers and runtime files from the registered installation while preserving settings, profiles and plugins. Stream Deck reopens afterward if it was running; the desktop apps launch without installer elevation.
 4. Open Stream Dog, select the matching adapter, discover the USB device and connect it. Close other software using the same USB device, including REA Bridge.
 5. If Stream Deck does not find it, add a Network Device at `127.0.0.1:5343` and confirm pairing. Additional devices use their own connection details.
@@ -20,7 +20,11 @@ The sidebar lists devices and connection state. Select a device to see its model
 
 X and Alt+F4 hide the window to the tray and keep the connection alive. Click the tray icon or launch Stream Dog again to reopen it. **Quit** from the tray or File menu stops the core and releases devices. `--background` starts hidden; `--stop` requests shutdown.
 
-Each device retains its own virtual identity, session and canvas. The core composes keys, the continuous touch strip and screensavers before submitting frames. Unchanged screens submit no frames; active output is capped at 60 fps. USB submission time excludes plugin execution and physical LCD scanout. The management app has no live preview.
+Each device retains its own virtual identity, session and canvas. The core composes keys, the continuous touch strip and screensavers before submitting frames. Unchanged screens submit no frames; active output is capped at 60 fps. USB submission time excludes plugin execution and physical LCD scanout.
+
+**Keep connected without physical hardware** is on by default in Settings. Unplugging USB retains the paired virtual device and canvas in Stream Deck. Showing or hiding the floating controller is a separate choice; open it from the selected device or its adapter card, including when no USB device is present.
+
+The native virtual controller displays the composed canvas using the adapter's coordinates. Click keys and dial centers, use dial minus/plus triangles, or drag a dial along its fixed eight-direction grid. Touch regions support tap, hold and swipe. Drag empty body areas to move the window without changing the active application. Idle opacity applies to the whole window and stays fully visible during a held gesture. Settings controls its DPI-aware size in 25% steps, with 50% as the default.
 
 ## Device backups
 
