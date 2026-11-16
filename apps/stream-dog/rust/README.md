@@ -39,6 +39,22 @@ Build the installer from a verified bundle with the existing Inno Setup compiler
 
 ## Verification
 
+The development app keeps the virtual host connection alive without hardware by
+default. This per-device setting is independent of showing/hiding the native
+virtual controller. `--virtual-device` opens the selected controller, including
+when an instance is already running. The floating window retains application
+focus for action targets, supports key down/up and touch gestures, and turns a
+dial by angular dragging or its hover minus/plus arrows. The drag gauge follows
+the pointer from its starting direction, with eight marks and 45-degree input steps. Click without
+dragging sends a dial click. The N4 Pro
+controller uses a rounded gunmetal 2D body with key bezels, a continuous strip and
+dials. Its default size is 50%; Settings offers DPI-aware 25% steps without
+changing the stream or disconnecting the host. Only the device body is shown;
+drag its empty areas to move it, and show/hide it from the management app.
+
+Native fixture cases `virtual-2d`, `virtual-hover` and `virtual-knob`
+can be rendered with the existing `--ui-qa` command. They do not send host input.
+
 ```powershell
 node --test test/frame-*.test.mjs test/full-frame-*.test.mjs
 cargo test --manifest-path adapters/mirabox-rust/Cargo.toml

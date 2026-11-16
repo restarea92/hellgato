@@ -4,6 +4,7 @@ use std::path::Path;
 pub enum Event {
     Show,
     Quit,
+    Virtual,
 }
 
 #[cfg(windows)]
@@ -20,6 +21,7 @@ mod native {
     const CALLBACK: u32 = WM_APP + 1;
     const SHOW: u32 = WM_APP + 2;
     const QUIT: u32 = WM_APP + 3;
+    const VIRTUAL: u32 = WM_APP + 4;
     fn wide(text: &str) -> Vec<u16> {
         text.encode_utf16().chain(Some(0)).collect()
     }
@@ -34,7 +36,16 @@ mod native {
         unsafe {
             let window = FindWindowW(class_name(path).as_ptr(), ptr::null());
             !window.is_null()
-                && PostMessageW(window, if event == Event::Show { SHOW } else { QUIT }, 0, 0) != 0
+                && PostMessageW(
+                    window,
+                    match event {
+                        Event::Show => SHOW,
+                        Event::Quit => QUIT,
+                        Event::Virtual => VIRTUAL,
+                    },
+                    0,
+                    0,
+                ) != 0
         }
     }
     pub fn running(path: &Path) -> bool {
@@ -74,6 +85,9 @@ mod native {
         if !state.is_null() {
             let state = &*state;
             let mut action = None;
+            if message == VIRTUAL {
+                action = Some(Event::Virtual);
+            }
             if message == SHOW {
                 action = Some(Event::Show);
             }

@@ -46,12 +46,13 @@ function initialSettings(config) {
     childSerial: `HGMOCK${String(randomBytes(3).readUIntBE(0, 3) % 999999 + 1).padStart(6, '0')}`,
     macAddress: [2, ...randomBytes(5)] };
   return { schemaVersion: 1, adapters: [], selectedAdapterId: null, selectedDeviceId: null,
-    connectionDesired: false, keepConnected: true, identity, brightness: 52, maxFps: 60 };
+    connectionDesired: false, keepConnected: true, virtualDeviceScale: 0.5, identity, brightness: 52, maxFps: 60 };
 }
 
 function validateSettings(value) {
   if (value?.schemaVersion !== 1 || !Array.isArray(value.adapters) || value.adapters.length > 64 ||
       typeof value.connectionDesired !== 'boolean' || typeof value.keepConnected !== 'boolean' ||
+      ![0.25, 0.5, 0.75, 1, 1.25, 1.5].includes(value.virtualDeviceScale) ||
       !/^HGDOCK\d{6}$/.test(value.identity?.dockSerial) || !/^HGMOCK\d{6}$/.test(value.identity?.childSerial) ||
       !Array.isArray(value.identity.macAddress) || value.identity.macAddress.length !== 6 ||
       !value.identity.macAddress.every(byte => Number.isInteger(byte) && byte >= 0 && byte <= 255) ||
@@ -74,6 +75,7 @@ export class FrameRuntimeManager {
     this.#config = config; this.#preview = preview; this.#createSession = createSession; this.#discover = discover;
     const settings = existsSync(config.settingsPath) ? readJson(config.settingsPath) : initialSettings(config);
     settings.keepConnected ??= true;
+    settings.virtualDeviceScale ??= 0.5;
     if (!Object.hasOwn(settings, 'knobBrightness')) {
       settings.knobBrightness = null;
       validateSettings(settings);
@@ -331,8 +333,11 @@ export class FrameRuntimeManager {
         this.#settings.connectionDesired = false; this.#save(); await this.#supervisor.disconnect(); break;
       case 'settings': {
         const next = { ...this.#settings };
-        for (const key of ['brightness', 'maxFps', 'keepConnected']) if (Object.hasOwn(params, key)) next[key] = params[key];
+        for (const key of ['brightness', 'maxFps', 'keepConnected', 'virtualDeviceScale']) if (Object.hasOwn(params, key)) next[key] = params[key];
         validateSettings(next);
+        if (Object.keys(params).every(key => key === 'virtualDeviceScale')) {
+          this.#settings = next; this.#save(); break;
+        }
         const reconnect = this.#settings.connectionDesired;
         if (next.keepConnected === this.#settings.keepConnected && await this.#supervisor.configure({ ...(Object.hasOwn(params, 'brightness') ? { brightness: next.brightness } : {}),
           ...(Object.hasOwn(params, 'maxFps') ? { maxFps: next.maxFps } : {}) })) {

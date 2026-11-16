@@ -24,7 +24,16 @@ fn main() {
         }
         return;
     }
-    if !smoke && !args.iter().any(|arg| arg == "--ui-qa") && tray::signal(&state, tray::Event::Show)
+    if !smoke
+        && !args.iter().any(|arg| arg == "--ui-qa")
+        && tray::signal(
+            &state,
+            if args.iter().any(|arg| arg == "--virtual-device") {
+                tray::Event::Virtual
+            } else {
+                tray::Event::Show
+            },
+        )
     {
         return;
     }
@@ -66,6 +75,7 @@ fn main() {
             .with_inner_size([960.0, 660.0])
             .with_min_inner_size([720.0, 500.0])
             .with_decorations(false)
+            .with_transparent(true)
             .with_icon(
                 eframe::icon_data::from_png_bytes(chrome::APP_ICON).expect("embedded app icon"),
             ),
@@ -81,6 +91,7 @@ fn main() {
                 state,
                 fake,
                 args.iter().any(|arg| arg == "--background"),
+                args.iter().any(|arg| arg == "--virtual-device"),
             )))
         }),
     );

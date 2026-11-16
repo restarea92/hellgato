@@ -20,6 +20,7 @@ pub enum Action {
     Quit,
     DismissPackage,
     DismissError,
+    VirtualDevice(Value),
 }
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
@@ -49,6 +50,10 @@ pub struct StreamDog {
     view: View,
     closing: bool,
     tray: Option<crate::tray::Tray>,
+    virtuals:
+        BTreeMap<String, std::sync::Arc<std::sync::Mutex<crate::virtual_device::VirtualDevice>>>,
+    pending_virtual: Option<String>,
+    open_virtual_requested: bool,
 }
 pub fn string<'a>(value: &'a Value, key: &str) -> &'a str {
     value[key].as_str().unwrap_or("")
@@ -65,6 +70,8 @@ fn status(value: &Value) -> (&'static str, Color32) {
     if value["deviceConnected"] == true && (value["hostConnected"] == true || value["fake"] == true)
     {
         ("연결됨", SUCCESS)
+    } else if value["hostConnected"] == true {
+        ("가상 연결", SUCCESS)
     } else if value["runtime"]["desired"] == true {
         ("연결 대기", Color32::from_rgb(0xdf, 0xc0, 0x8e))
     } else {
@@ -94,6 +101,7 @@ impl StreamDog {
         state: PathBuf,
         fake: bool,
         background: bool,
+        virtual_on_start: bool,
     ) -> Self {
         chrome::configure(&cc.egui_ctx);
         let tray = crate::tray::Tray::new(&state, cc.egui_ctx.clone()).ok();
@@ -106,6 +114,9 @@ impl StreamDog {
             view: View::new(&cc.egui_ctx),
             closing: false,
             tray,
+            virtuals: BTreeMap::new(),
+            pending_virtual: None,
+            open_virtual_requested: virtual_on_start,
         }
     }
     fn close(&mut self) {
@@ -323,7 +334,16 @@ impl View {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for entry in value["devices"].as_array().into_iter().flatten() {
+                        for entry in
+                            value["devices"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter(|entry| {
+                                    value["fake"] == true
+                                        || string(entry, "adapterId") != "hellgato-simulator"
+                                })
+                        {
                             let id =
                                 format!("{}:{}", string(entry, "adapterId"), string(entry, "id"));
                             let row = owner(value, entry).unwrap_or(&Value::Null);
@@ -473,14 +493,25 @@ impl View {
                     Page::Adapters=>{
                         ui.heading("어댑터 관리");ui.add_space(16.0);ui.horizontal(|ui|{if self.button(ui,"check-adapters","설치 상태 검사",available){actions.push(Action::Api("check-adapters",json!({})));}
 if self.button(ui,"register",".hga 추가…",available){actions.push(Action::Register);}});ui.add_space(12.0);
-                        for adapter in value["adapters"].as_array().into_iter().flatten(){card(ui,string(adapter,"name"),|ui|{
+                        for adapter in value["adapters"].as_array().into_iter().flatten().filter(|adapter|value["fake"]==true || string(adapter,"id")!="hellgato-simulator"){card(ui,string(adapter,"name"),|ui|{
                             ui.horizontal_wrapped(|ui|{ui.label(format!("v{}",string(adapter,"version")));ui.weak(if adapter["source"]=="official" {"공식 제공"}else{"사용자 추가 · 안전성 미확인"});ui.colored_label(if adapter["available"]==true {SUCCESS}else{ERROR},if adapter["available"]==true {"설치 정상"}else{"파일 확인 필요"});});
                             if let Some(error)=adapter["error"].as_str(){ui.colored_label(ERROR,error);}
                             if self.button(ui,&format!("discover:{}",string(adapter,"id")),"기기 검색",available && adapter["available"]==true){actions.push(Action::Api("discover",json!({"adapterId":adapter["id"]})));}
+                            if self.button(ui,&format!("virtual:{}",string(adapter,"id")),"가상 기기 보기",available && adapter["available"]==true){actions.push(Action::VirtualDevice(json!({"adapterId":adapter["id"]})));}
                         });ui.add_space(10.0);}
                     }
                     Page::Settings=>{
-                        ui.heading("설정");ui.add_space(16.0);card(ui,"스트림",|ui|{
+                        ui.heading("설정");ui.add_space(16.0);card(ui,"연결",|ui|{
+                            let mut keep=if session.is_null(){value["settings"]["keepConnected"].as_bool().unwrap_or(true)}else{session["settings"]["keepConnected"].as_bool().unwrap_or(true)};
+                            let response=ui.add_enabled(available,egui::Checkbox::new(&mut keep,"물리 기기가 없어도 연결 유지"));self.hitboxes.insert("keep-connected".into(),response.rect);
+                            if response.changed(){if session.is_null(){actions.push(Action::Api("settings",json!({"keepConnected":keep})));}else{actions.push(Action::Api("device-settings",json!({"adapterId":device["adapterId"],"deviceId":device["id"],"keepConnected":keep})));}}
+                            ui.weak("기기를 분리해도 Stream Deck 연결과 합성 화면을 유지합니다. 기본값: 켜짐.");ui.weak("가상 기기 창의 보기·숨기기는 연결 유지 설정과 별개입니다.");
+                        });ui.add_space(14.0);card(ui,"가상 기기",|ui|{
+                            let mut scale=value["settings"]["virtualDeviceScale"].as_f64().unwrap_or(0.5);let previous=scale;
+                            ui.horizontal(|ui|{ui.label("크기");egui::ComboBox::from_id_salt("virtual-device-scale").selected_text(format!("{}%",(scale*100.0) as u32)).show_ui(ui,|ui|{for percent in [25,50,75,100,125,150]{ui.selectable_value(&mut scale,percent as f64/100.0,format!("{percent}%"));}});});
+                            ui.weak("기본값: 50% · DPI에 맞춰 선명하게 표시합니다.");
+                            if scale!=previous{actions.push(Action::Api("settings",json!({"virtualDeviceScale":scale})));}
+                        });ui.add_space(14.0);card(ui,"스트림",|ui|{
                             ui.label(selected.map(|device|string(device,"displayName")).unwrap_or("기기를 선택하세요."));ui.horizontal(|ui|{ui.label("최대 프레임 속도");let response=ui.add(egui::Slider::new(&mut self.max_fps,1..=60).suffix(" fps"));self.hitboxes.insert("fps".into(),response.rect);});
                             ui.weak("화면이 바뀔 때만 전송합니다.");if self.button(ui,"save","저장·적용",available && !session.is_null()){actions.push(Action::Api("device-settings",json!({"adapterId":device["adapterId"],"deviceId":device["id"],"maxFps":self.max_fps})));}
                         });ui.add_space(14.0);card(ui,"Stream Deck",|ui|{ui.label("밝기·버튼 동작은 Stream Deck에서 설정합니다.");if self.button(ui,"prepare","Stream Deck 준비",available && value["fake"]!=true){actions.push(Action::PrepareHost);}});
@@ -495,6 +526,8 @@ if self.button(ui,"register",".hga 추가…",available){actions.push(Action::Re
                                 else if self.button(ui,"connect","연결",available){actions.push(Action::Api("connect-device",json!({"adapterId":device["adapterId"],"deviceId":device["id"]})));}
                                 if let Some(error)=session["runtime"]["error"].as_str(){ui.colored_label(ERROR,local_error(error));}
                                 if let Some(firmware)=session["firmware"].as_str(){ui.weak(format!("펌웨어  {firmware}"));}
+                                if self.button(ui,"virtual-device","가상 기기 보기 / 숨기기",available){actions.push(Action::VirtualDevice(json!({"adapterId":device["adapterId"],"deviceId":device["id"],"displayName":device["displayName"]})));}
+                                if session["hostConnected"]==true && session["deviceConnected"]!=true{ui.weak("USB 기기 대기 중 · 가상 기기 연결 유지");}
                                 for warning in session["warnings"].as_array().into_iter().flatten(){if let Some(message)=compatibility_warning(string(warning,"code")){ui.colored_label(Color32::from_rgb(0xdf,0xc0,0x8e),message);}}
                             });ui.add_space(14.0);card(ui,"스트림",|ui|{
                                 let resolution=match(session["display"]["width"].as_u64(),session["display"]["height"].as_u64()){(Some(w),Some(h))=>format!("{w} × {h}"),_=>"연결 대기".into()};
@@ -552,15 +585,15 @@ if self.button(ui,"register",".hga 추가…",available){actions.push(Action::Re
                     ui.weak(env!("CARGO_PKG_VERSION"));
                 });
         }
-        if let Some((id,mut name))=self.rename_backup.clone(){
-            let mut done=false;
+        if let Some((id, mut name)) = self.rename_backup.clone() {
+            let mut done = false;
             egui::Modal::new(egui::Id::new("rename-backup")).show(ui.ctx(),|ui|{ui.heading("백업 이름 변경");ui.text_edit_singleline(&mut name);ui.horizontal(|ui|{
                 if ui.button("취소").clicked(){done=true;}
                 if ui.add_enabled(!name.trim().is_empty() && name.chars().count()<=100,egui::Button::new("저장")).clicked(){actions.push(Action::Api("backup-rename",json!({"adapterId":device["adapterId"],"deviceId":device["id"],"id":id,"name":name})));done=true;}
             });});
-            self.rename_backup=if done{None}else{Some((id,name))};
+            self.rename_backup = if done { None } else { Some((id, name)) };
         }
-        if let Some((id,name))=self.delete_backup.clone(){
+        if let Some((id, name)) = self.delete_backup.clone() {
             egui::Modal::new(egui::Id::new("delete-backup")).show(ui.ctx(),|ui|{ui.heading("백업 삭제");ui.label(format!("‘{name}’ 백업을 삭제하시겠습니까?"));ui.weak("현재 프로필과 플러그인은 유지됩니다.");ui.horizontal(|ui|{
                 if ui.button("취소").clicked(){self.delete_backup=None;}
                 if ui.button("삭제").clicked(){actions.push(Action::Api("backup-delete",json!({"adapterId":device["adapterId"],"deviceId":device["id"],"id":id})));self.delete_backup=None;}
@@ -671,7 +704,10 @@ fn card(ui: &mut egui::Ui, title: &str, contents: impl FnOnce(&mut egui::Ui)) {
         });
 }
 impl eframe::App for StreamDog {
-    fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0, 0.0, 0.0, 0.0]
+    }
+    fn logic(&mut self, context: &egui::Context, _: &mut eframe::Frame) {
         for event in self
             .tray
             .as_ref()
@@ -680,15 +716,24 @@ impl eframe::App for StreamDog {
         {
             match event {
                 crate::tray::Event::Show => {
-                    ui.ctx()
+                    context
                         .send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                    ui.ctx()
+                    context
                         .send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Focus);
+                    context.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
                 crate::tray::Event::Quit => self.close(),
+                crate::tray::Event::Virtual => {
+                    self.open_virtual_requested = true;
+                    context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                },
             }
         }
+        let preferred_scale=self.backend.state.lock().map(|state|state.value["settings"]["virtualDeviceScale"].as_f64().unwrap_or(0.5) as f32).unwrap_or(0.5);
+        for window in self.virtuals.values(){if let Ok(mut window)=window.lock(){window.set_preferred_scale(preferred_scale,context);window.flush();}}
+        if self.backend.state.lock().is_ok_and(|state|state.stopped){context.send_viewport_cmd(egui::ViewportCommand::Close);}
+    }
+    fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
         let state = self
             .backend
             .state
@@ -705,6 +750,44 @@ impl eframe::App for StreamDog {
         if state.stopped {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
+        if self.open_virtual_requested && state.value["schemaVersion"] == 1 {
+            if let Some(adapter) = state.value["settings"]["selectedAdapterId"]
+                .as_str()
+                .or_else(|| {
+                    state.value["adapters"]
+                        .as_array()
+                        .and_then(|a| a.first())
+                        .and_then(|a| a["id"].as_str())
+                })
+            {
+                self.pending_virtual = Some(adapter.into());
+                self.backend
+                    .send(Command::Api("virtual-device", json!({"adapterId":adapter})));
+                self.open_virtual_requested = false;
+            }
+        }
+        if let Some(adapter) = self.pending_virtual.clone() {
+            if let Some(device) = state.value["devices"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|device| string(device, "adapterId") == adapter)
+            {
+                let key = format!("{}:{}", adapter, string(device, "id"));
+                let window = crate::virtual_device::VirtualDevice::start(
+                    adapter,
+                    string(device, "id").into(),
+                    self.backend.commands.clone(),
+                    self.backend.state.clone(),
+                    ui.ctx().clone(),
+                );
+                self.virtuals.insert(key, window);
+                self.pending_virtual = None;
+            }
+        }
+        for window in self.virtuals.values() {
+            crate::virtual_device::VirtualDevice::show_viewport(window.clone(), ui.ctx());
+        }
         let mut actions = Vec::new();
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
@@ -714,6 +797,40 @@ impl eframe::App for StreamDog {
         for action in actions {
             match action {
                 Action::Api(name, params) => self.backend.send(Command::Api(name, params)),
+                Action::VirtualDevice(params) => {
+                    let adapter = string(&params, "adapterId").to_string();
+                    if params["deviceId"].is_null() {
+                        self.pending_virtual = Some(adapter);
+                        self.backend.send(Command::Api("virtual-device", params));
+                    } else {
+                        let key = format!("{}:{}", adapter, string(&params, "deviceId"));
+                        if let Some(window) = self.virtuals.get(&key) {
+                            if let Ok(mut window) = window.lock() {
+                                if window.visible {
+                                    window.hide();
+                                } else {
+                                    window.visible = true;
+                                }
+                            }
+                        } else {
+                            self.virtuals.insert(
+                                key,
+                                crate::virtual_device::VirtualDevice::start(
+                                    adapter,
+                                    string(&params, "deviceId").into(),
+                                    self.backend.commands.clone(),
+                                    self.backend.state.clone(),
+                                    ui.ctx().clone(),
+                                ),
+                            );
+                            if owner(&state.value, &params)
+                                .is_none_or(|session| session["runtime"]["desired"] != true)
+                            {
+                                self.backend.send(Command::Api("connect-device", params));
+                            }
+                        }
+                    }
+                }
                 Action::PrepareHost => self.backend.send(Command::PrepareHost),
                 Action::Register => {
                     if let Some(path) = rfd::FileDialog::new()
@@ -724,9 +841,12 @@ impl eframe::App for StreamDog {
                     }
                 }
                 Action::BackupElsewhere(mut params) => {
-                    if let Some(path)=rfd::FileDialog::new().set_title("백업을 저장할 폴더 선택").pick_folder(){
-                        params["destination"]=json!(path);
-                        self.backend.send(Command::Api("backup-create",params));
+                    if let Some(path) = rfd::FileDialog::new()
+                        .set_title("백업을 저장할 폴더 선택")
+                        .pick_folder()
+                    {
+                        params["destination"] = json!(path);
+                        self.backend.send(Command::Api("backup-create", params));
                     }
                 }
                 Action::Close => self.hide(ui.ctx()),

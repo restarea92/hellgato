@@ -7,3 +7,4 @@ pub mod backend;
 pub mod ui;
 pub mod smoke;
 pub mod ui_qa;
+pub mod virtual_device;

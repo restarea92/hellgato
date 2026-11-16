@@ -31,6 +31,7 @@ struct RenderQa {
     requested: bool,
     started: Instant,
     scenario: String,
+    virtual_view: Option<crate::virtual_device::VirtualDevice>,
 }
 
 pub fn run(directory: PathBuf, args: &[String]) -> eframe::Result {
@@ -53,14 +54,15 @@ pub fn run(directory: PathBuf, args: &[String]) -> eframe::Result {
         .expect("QA pixel scale");
     let scenario = option("--qa-case", "connected");
     assert!(
-        (720.0..=1920.0).contains(&width)
-            && (500.0..=1200.0).contains(&height)
+        ((if scenario.starts_with("virtual-"){200.0}else{720.0})..=1920.0).contains(&width)
+            && ((if scenario.starts_with("virtual-"){180.0}else{500.0})..=1200.0).contains(&height)
             && (1.0..=2.0).contains(&scale)
     );
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([width * scale, height * scale])
             .with_decorations(false)
+            .with_transparent(scenario.starts_with("virtual-"))
             .with_icon(eframe::icon_data::from_png_bytes(chrome::APP_ICON).expect("app icon")),
         ..Default::default()
     };
@@ -81,6 +83,12 @@ pub fn run(directory: PathBuf, args: &[String]) -> eframe::Result {
                 frames: 0,
                 requested: false,
                 started: Instant::now(),
+                virtual_view: scenario.starts_with("virtual-").then(|| {
+                    crate::virtual_device::VirtualDevice::fixture(
+                        &cc.egui_ctx,
+                        scenario == "virtual-knob",
+                    )
+                }),
                 scenario,
             }))
         }),
@@ -88,7 +96,19 @@ pub fn run(directory: PathBuf, args: &[String]) -> eframe::Result {
 }
 
 impl eframe::App for RenderQa {
+    fn clear_color(&self, _visuals: &egui::Visuals)->[f32;4]{
+        if self.virtual_view.is_some(){[0.0;4]}else{egui::Color32::from_rgba_unmultiplied(12,12,12,180).to_normalized_gamma_f32()}
+    }
     fn raw_input_hook(&mut self, _: &egui::Context, input: &mut egui::RawInput) {
+        if self.scenario.starts_with("virtual-") {
+            input.events.push(if self.scenario == "virtual-knob" {
+                egui::Event::PointerMoved(egui::pos2(172.0,308.5))
+            }else if self.scenario == "virtual-hover" {
+                egui::Event::PointerMoved(egui::pos2(350.0, 250.0))
+            } else {
+                egui::Event::PointerGone
+            });
+        }
         if self.scenario == "menu" && (self.frames == 2 || self.frames == 3) {
             if let Some(rect) = self.view.hitboxes.get("menu:file") {
                 let pos = rect.center();
@@ -107,8 +127,12 @@ impl eframe::App for RenderQa {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
-                let actions = self.view.show(ui, &self.state, false);
-                assert!(!actions.contains(&Action::Close));
+                if let Some(view) = &mut self.virtual_view {
+                    view.paint(ui);
+                } else {
+                    let actions = self.view.show(ui, &self.state, false);
+                    assert!(!actions.contains(&Action::Close));
+                }
             });
         if self.frames == 2 && self.scenario == "settings" {
             self.view.open_settings();
@@ -140,6 +164,10 @@ impl eframe::App for RenderQa {
                 image::ColorType::Rgba8,
             )
             .expect("rendered image");
+            if self.virtual_view.is_some() {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                return;
+            }
             let layout = self.view.layout.expect("shell layout");
             let rectangle =
                 |rect: egui::Rect| json!([rect.min.x, rect.min.y, rect.max.x, rect.max.y]);
@@ -278,6 +306,8 @@ mod tests {
         assert!(!view.hitboxes.contains_key("disconnect"));
         click(&context, &mut view, &state, "settings");
         draw(&context, &mut view, &state, vec![]);
+        draw(&context,&mut view,&state,vec![egui::Event::PointerMoved(egui::pos2(600.0,400.0)),egui::Event::MouseWheel{unit:egui::MouseWheelUnit::Point,delta:vec2(0.0,-250.0),phase:egui::TouchPhase::Move,modifiers:egui::Modifiers::NONE}]);
+        for _ in 0..20{draw(&context,&mut view,&state,vec![]);}
         assert_eq!(
             click(&context, &mut view, &state, "save"),
             vec![Action::Api(

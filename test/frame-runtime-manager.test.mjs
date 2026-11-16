@@ -72,6 +72,7 @@ test('native knob controls authenticate, save only final values and restore the 
 test('connection retention defaults on and persists independently of virtual frame visibility', async t => {
   const f = await managerFixture(t);
   assert.equal(f.manager.getState().settings.keepConnected, true);
+  assert.equal(f.manager.getState().settings.virtualDeviceScale, 0.5);
   await f.manager.command('discover', { adapterId: f.manifest.id });
   await f.manager.command('select', { adapterId: f.manifest.id, deviceId: f.devices[0].id });
   await f.manager.command('connect');
@@ -79,6 +80,11 @@ test('connection retention defaults on and persists independently of virtual fra
   assert.equal(f.starts[0].keepConnected, true);
   assert.deepEqual(await f.manager.command('virtual-frame', { adapterId: f.manifest.id, deviceId: f.devices[0].id }), { unchanged: true });
   assert.equal(f.manager.getState().settings.connectionDesired, true);
+  await f.manager.command('settings', { virtualDeviceScale: 0.75 });
+  assert.equal(f.manager.getState().settings.virtualDeviceScale, 0.75);
+  assert.equal(f.starts.length, 1);
+  await assert.rejects(f.manager.command('settings', { virtualDeviceScale: 0.55 }), /Invalid saved/);
+  assert.equal(f.manager.getState().settings.virtualDeviceScale, 0.75);
   await f.manager.command('device-settings', { adapterId: f.manifest.id, deviceId: f.devices[0].id, keepConnected: false });
   assert.equal(f.manager.getState().settings.keepConnected, false);
   assert.equal(JSON.parse(await readFile(f.config.settingsPath, 'utf8')).keepConnected, false);
