@@ -53,6 +53,8 @@ changing the stream or disconnecting the host. Only the device body is shown;
 drag its empty areas to move it, and show/hide it from the management app.
 Moving the window does not require activation. Idle opacity is applied once to
 the entire native window, and stays fully visible throughout a held gesture.
+Held gestures follow window mouse-down/up events, including when an elevated
+application is active; global button polling is not used to cancel them.
 
 Native fixture cases `virtual-2d`, `virtual-hover`, `virtual-knob`,
 `virtual-knob-hover`, `virtual-knob-pressed`, `virtual-293s` and `virtual-custom`

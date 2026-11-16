@@ -4,7 +4,7 @@ use windows_sys::Win32::{
     Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, ScreenToClient, SetWindowRgn},
     System::Threading::GetCurrentProcessId,
     UI::{
-        Input::KeyboardAndMouse::{GetAsyncKeyState, GetCapture, ReleaseCapture, SetCapture},
+        Input::KeyboardAndMouse::{GetCapture, ReleaseCapture, SetCapture},
         WindowsAndMessaging::{
             FindWindowW, GetCursorPos, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId,
             SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, LWA_ALPHA,
@@ -82,15 +82,27 @@ pub fn opacity(title: &str, alpha: u8) -> bool {
     }
 }
 
-pub fn button_released() -> bool {
+pub fn capture(title: &str) {
     #[cfg(windows)]
     unsafe {
-        GetAsyncKeyState(1) as u16 & 0x8000 == 0
+        if let Some(window) = owned_window(title) {
+            SetCapture(window);
+        }
     }
     #[cfg(not(windows))]
-    {
-        false
+    let _ = title;
+}
+pub fn release(title: &str) {
+    #[cfg(windows)]
+    unsafe {
+        if let Some(window) = owned_window(title) {
+            if GetCapture() == window {
+                ReleaseCapture();
+            }
+        }
     }
+    #[cfg(not(windows))]
+    let _ = title;
 }
 
 pub fn pointer(title: &str, pixels_per_point: f32) -> Option<[f32; 2]> {
@@ -241,6 +253,10 @@ mod tests {
             assert_eq!([rect.left, rect.top], [-2976, -3017]);
             assert_eq!(GetForegroundWindow(), foreground);
             drop(drag);
+            capture(&title);
+            assert_eq!(GetCapture(), handle);
+            release(&title);
+            assert_ne!(GetCapture(), handle);
         }
     }
 }

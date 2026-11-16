@@ -200,6 +200,7 @@ impl VirtualDevice {
         }
     }
     pub fn hide(&mut self) {
+        window::release(&self.native_title());
         if let Some(Press::Key(index)) = self.pressed.take() {
             self.event(json!({"type":"key","index":index,"state":"up"}));
         }
@@ -338,7 +339,7 @@ impl VirtualDevice {
             Stroke::new(1.0, Color32::from_rgb(110, 119, 128)),
         ));
         painter.text(
-            transform.project(pos2(body.center().x, body.top()+34.0*unit), 0.0),
+            transform.project(pos2(body.center().x, body.top() + 34.0 * unit), 0.0),
             egui::Align2::CENTER_CENTER,
             "Stream Dog",
             egui::FontId::proportional(15.0 * self.scale),
@@ -623,13 +624,8 @@ impl VirtualDevice {
                 .unwrap_or(egui::CursorIcon::Default),
         };
         context.set_cursor_icon(cursor);
-        let up = self.interactive
-            && self.pressed.is_some()
-            && if context.input(|i| i.focused) {
-                context.input(|i| i.pointer.primary_released() || !i.pointer.primary_down())
-            } else {
-                window::button_released()
-            };
+        // Global button polling may return zero under UIPI while the button is held.
+        let up = self.interactive && context.input(|i| i.pointer.primary_released());
         if down && self.pressed.is_none() {
             if let Some(pointer) = pointer {
                 let point = transform.inverse(pointer);
@@ -681,6 +677,9 @@ impl VirtualDevice {
                 }
             }
         }
+        if down && self.interactive && self.pressed.is_some() {
+            window::capture(&self.native_title());
+        }
         if let (
             Some(Press::Dial {
                 index,
@@ -715,6 +714,7 @@ impl VirtualDevice {
             drag.update();
         }
         if up {
+            window::release(&self.native_title());
             if let Some(press) = self.pressed.take() {
                 match press {
                     Press::Key(index) => {
@@ -797,7 +797,7 @@ impl VirtualDevice {
                             point.get(1)?.as_f64()? as f32,
                         ))
                     })
-                    .filter(|point|point.x.is_finite() && point.y.is_finite())
+                    .filter(|point| point.x.is_finite() && point.y.is_finite())
                     .unwrap_or_else(|| {
                         pos2(
                             width * (index as f32 + 0.5) / count as f32,
@@ -1070,6 +1070,89 @@ fn dial_arrows(center: Pos2, scale: f32) -> [Rect; 2] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn inactive_frame(
+        context: &egui::Context,
+        device: &mut VirtualDevice,
+        events: Vec<egui::Event>,
+    ) {
+        {
+            let mut latest = device.latest.lock().unwrap();
+            latest.layout = device.layout.clone();
+            latest.pixels = Some(egui::ColorImage::filled([800, 480], Color32::from_gray(55)));
+        }
+        let mut output = context.run_ui(
+            egui::RawInput {
+                focused: false,
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(442.0, 358.0))),
+                events,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(context, |ui| device.paint(ui));
+            },
+        );
+        output.textures_delta.clear();
+    }
+    #[test]
+    fn inactive_animation_keeps_gestures_until_mouse_up_and_handles_batched_clicks() {
+        let context = egui::Context::default();
+        let mut device = VirtualDevice::fixture(&context, "virtual-2d");
+        let (commands, events) = std::sync::mpsc::sync_channel(16);
+        device.commands = commands;
+        device.interactive = true;
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let key = pos2(40.0, 60.0);
+        inactive_frame(&context, &mut device, vec![button(key, true)]);
+        for _ in 0..8 {
+            inactive_frame(&context, &mut device, vec![]);
+            assert!(matches!(device.pressed, Some(Press::Key(0))));
+        }
+        inactive_frame(&context,&mut device,vec![egui::Event::PointerGone]);
+        assert!(matches!(device.pressed,Some(Press::Key(0))));
+        inactive_frame(&context, &mut device, vec![button(key, false)]);
+        assert!(device.pressed.is_none());
+        let take = || {
+            events
+                .try_iter()
+                .map(|command| match command {
+                    Command::Api(_, value) => value["input"].clone(),
+                    _ => panic!("unexpected command"),
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            take(),
+            vec![
+                json!({"type":"key","index":0,"state":"down"}),
+                json!({"type":"key","index":0,"state":"up"})
+            ]
+        );
+        inactive_frame(
+            &context,
+            &mut device,
+            vec![button(key, true), button(key, false)],
+        );
+        assert!(device.pressed.is_none());
+        assert_eq!(take().len(), 2);
+        let dial = pos2(73.0, 308.5);
+        inactive_frame(&context, &mut device, vec![button(dial, true)]);
+        for _ in 0..8 {
+            inactive_frame(&context, &mut device, vec![]);
+            assert!(matches!(device.pressed, Some(Press::Dial { index: 0, .. })));
+        }
+        inactive_frame(&context, &mut device, vec![button(dial, false)]);
+        assert_eq!(
+            take(),
+            vec![json!({"type":"dial","kind":"pulse","index":0})]
+        );
+    }
     #[test]
     fn projection_round_trip_keeps_native_hit_targets_aligned() {
         for scale in [0.25, 0.5, 1.5] {
@@ -1143,7 +1226,7 @@ mod tests {
         let mut draw = |point: Pos2, pressed: bool| {
             let input = egui::RawInput {
                 screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(720.0, 546.0))),
-                focused: true,
+                focused: false,
                 events: vec![
                     egui::Event::PointerMoved(point),
                     egui::Event::PointerButton {
