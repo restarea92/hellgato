@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use std::{
     collections::VecDeque,
     sync::{
+        atomic::{AtomicBool, Ordering},
         mpsc::{SyncSender, TrySendError},
         Arc, Mutex,
     },
@@ -41,6 +42,7 @@ enum Press {
 
 pub struct VirtualDevice {
     pub visible: bool,
+    stopped: Arc<AtomicBool>,
     adapter: String,
     device: String,
     scale: f32,
@@ -67,8 +69,10 @@ impl VirtualDevice {
         context: egui::Context,
     ) -> Arc<Mutex<Self>> {
         let latest = Arc::new(Mutex::new(LatestFrame::default()));
+        let stopped = Arc::new(AtomicBool::new(false));
         let state = Arc::new(Mutex::new(Self {
             visible: true,
+            stopped: stopped.clone(),
             adapter: adapter.clone(),
             device: device.clone(),
             scale: 0.5,
@@ -91,6 +95,7 @@ impl VirtualDevice {
             let mut after = 0;
             let mut endpoint = (String::new(), String::new());
             loop {
+                if stopped.load(Ordering::Acquire) { break; }
                 let Some(state) = weak.upgrade() else { break };
                 let visible = state.lock().map(|s| s.visible).unwrap_or(false);
                 drop(state);
@@ -119,6 +124,7 @@ impl VirtualDevice {
                     )),
                 ) {
                     Ok(value) => {
+                        if stopped.load(Ordering::Acquire) { break; }
                         let value = &value["result"];
                         if let (Some(sequence), Some(encoded)) =
                             (value["sequence"].as_u64(), value["jpeg"].as_str())
@@ -145,6 +151,7 @@ impl VirtualDevice {
                                     let size = [image.width() as usize, image.height() as usize];
                                     if size[0] * size[1] <= 16_777_216 {
                                         if let Ok(mut latest) = latest.lock() {
+                                            if stopped.load(Ordering::Acquire) { break; }
                                             latest.pixels =
                                                 Some(egui::ColorImage::from_rgba_unmultiplied(
                                                     size,
@@ -208,6 +215,14 @@ impl VirtualDevice {
         self.native_configured = false;
         self.flush();
     }
+    pub fn shutdown(&mut self, context: &egui::Context) {
+        self.stopped.store(true, Ordering::Release);
+        self.hide();
+        self.texture = None;
+        self.layout = Value::Null;
+        if let Ok(mut latest) = self.latest.lock() { *latest = LatestFrame::default(); }
+        context.send_viewport_cmd_to(viewport_id(&self.adapter, &self.device), egui::ViewportCommand::Close);
+    }
     pub fn show_viewport(state: Arc<Mutex<Self>>, context: &egui::Context) {
         let (id, title, size, visible) = {
             let Ok(mut state) = state.lock() else { return };
@@ -235,6 +250,7 @@ impl VirtualDevice {
                 .with_resizable(false),
             move |context, _| {
                 let Ok(mut state) = state.lock() else { return };
+                if state.stopped.load(Ordering::Acquire) { return; }
                 if context.input(|i| i.viewport().close_requested()) {
                     state.hide();
                     return;
@@ -886,6 +902,7 @@ impl VirtualDevice {
         }
         Self {
             visible: true,
+            stopped: Arc::new(AtomicBool::new(false)),
             adapter: "mirabox".into(),
             device: "native-qa".into(),
             scale: 0.5,
@@ -1070,6 +1087,22 @@ fn dial_arrows(center: Pos2, scale: f32) -> [Rect; 2] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn disabling_releases_prepared_frames_and_sends_a_held_key_up() {
+        let context = egui::Context::default();
+        let mut device = VirtualDevice::fixture(&context, "virtual-2d");
+        let (commands, events) = std::sync::mpsc::sync_channel(16);
+        device.commands = commands;
+        device.pressed = Some(Press::Key(2));
+        device.latest.lock().unwrap().pixels = Some(egui::ColorImage::filled([2, 2], Color32::WHITE));
+        device.shutdown(&context);
+        assert!(!device.visible);
+        assert!(device.stopped.load(Ordering::Acquire));
+        assert!(device.texture.is_none());
+        assert!(device.latest.lock().unwrap().pixels.is_none());
+        assert!(device.layout.is_null());
+        assert!(matches!(events.try_recv(), Ok(Command::Api("virtual-input", value)) if value["input"] == json!({"type":"key","index":2,"state":"up"})));
+    }
     fn inactive_frame(
         context: &egui::Context,
         device: &mut VirtualDevice,

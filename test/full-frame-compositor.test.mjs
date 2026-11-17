@@ -33,6 +33,25 @@ const keyLayout = () => ({ ...layout, keys: Array.from({ length: 10 }, (_, index
   sourceWidth: 120, sourceHeight: 120,
 })) });
 
+test('resized key pixels preserve RGB channels, sampling positions and surrounding bezel', async () => {
+  for (const [sourceWidth, sourceHeight, columns, rows] of [
+    [5, 3, [0, 2, 4], [0, 2]],
+    [3, 2, [0, 0, 1, 2, 2], [0, 1, 1]],
+  ]) {
+    const width = columns.length + 2, height = rows.length + 2;
+    const display = new FullFrameCompositor({ layout: { width, height, keys: [
+      { id: 'key:0', sourceWidth, sourceHeight, rect: [1, 1, columns.length, rows.length] },
+    ] }, decodeImage });
+    const color = (x, y) => [x * 31, y * 47, (x + y) * 19];
+    await display.applyKey('key:0', image(sourceWidth, sourceHeight, color));
+    const frame = display.snapshot();
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const expected = x && y && x < width - 1 && y < height - 1 ? color(columns[x - 1], rows[y - 1]) : black;
+      assert.deepEqual(pixel(frame, x, y), expected);
+    }
+  }
+});
+
 test('a key-only independent adapter needs no invented touch strip or fixed canvas dimensions', async () => {
   const display = new FullFrameCompositor({ layout: { width: 240, height: 120, keys: [
     { id: 'key:0', rect: [0, 0, 100, 100], sourceWidth: 100, sourceHeight: 100 },

@@ -13,7 +13,7 @@ use std::{
 pub fn fixture(connected: bool) -> Status {
     Status {
         value: json!({"schemaVersion":1,"fake":false,
-        "settings":{"selectedAdapterId":"mirabox","selectedDeviceId":"n4-test","maxFps":60,"identity":{"childSerial":"HGMOCK000003"}},
+        "settings":{"selectedAdapterId":"mirabox","selectedDeviceId":"n4-test","maxFps":60,"virtualDeviceEnabled":true,"identity":{"childSerial":"HGMOCK000003"}},
         "adapters":[{"id":"mirabox","name":"Mirabox N4 Pro","version":"0.1.0","source":"official","available":true},{"id":"hellgato-simulator","name":"8-key simulator","version":"0.1.0","source":"official","available":true}],
         "devices":[{"id":"n4-test","adapterId":"mirabox","displayName":"N4 Pro · USB","modelId":"n4-pro"}],
         "runtime":{"desired":connected,"state":if connected { "running" } else { "idle" }},
@@ -242,6 +242,28 @@ mod tests {
             vec![egui::Event::PointerMoved(position), event(true)],
         );
         draw(context, view, state, vec![event(false)])
+    }
+    #[test]
+    fn virtual_use_is_independent_of_visibility_and_offline_retention() {
+        let context = egui::Context::default();
+        chrome::configure(&context);
+        let mut view = View::new(&context);
+        let mut state = fixture(true);
+        for _ in 0..3 { draw(&context, &mut view, &state, vec![]); }
+        assert!(view.hitboxes["virtual-enabled"].bottom() <= view.hitboxes["virtual-device"].top());
+        assert_eq!(click(&context, &mut view, &state, "virtual-enabled"), vec![Action::Api("settings", json!({"virtualDeviceEnabled":false}))]);
+        state.value["settings"]["virtualDeviceEnabled"] = json!(false);
+        draw(&context, &mut view, &state, vec![]);
+        assert!(click(&context, &mut view, &state, "virtual-device").is_empty());
+        assert_eq!(click(&context, &mut view, &state, "virtual-enabled"), vec![Action::Api("settings", json!({"virtualDeviceEnabled":true}))]);
+        click(&context, &mut view, &state, "settings");
+        for _ in 0..3 { draw(&context, &mut view, &state, vec![]); }
+        assert_eq!(click(&context, &mut view, &state, "keep-connected"), vec![Action::Api("device-settings", json!({"adapterId":"mirabox","deviceId":"n4-test","keepConnected":false}))]);
+        state.value["settings"]["keepConnected"] = json!(false);
+        state.value["deviceConnected"] = json!(false);
+        state.value["hostConnected"] = json!(false);
+        state.value["runtime"]["state"] = json!("waiting");
+        assert_eq!(crate::ui::status(&state.value).0, "연결 안 됨");
     }
     #[test]
     fn backups_use_the_selected_device_and_keep_export_explicit() {

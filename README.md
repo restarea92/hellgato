@@ -4,7 +4,7 @@
 
 **Unofficial hardware. Official software.** Use compatible controllers with the official Elgato Stream Deck app. Stream Dog manages the connection; Stream Deck runs your profiles, actions and plugins. No StreamDock app is required.
 
-[Download 0.3.0 Beta for Windows x64](https://github.com/restarea92/hellgato/releases/download/v0.3.0/Hellgato-0.3.0-Setup.exe) · [Release notes and SHA-256](https://github.com/restarea92/hellgato/releases/tag/v0.3.0) · [Website](https://hellgato-streamdog.vercel.app)
+[Download 0.3.1 for Windows x64](https://github.com/restarea92/hellgato/releases/download/v0.3.1/Hellgato-0.3.1-Setup.exe) · [Release notes and SHA-256](https://github.com/restarea92/hellgato/releases/tag/v0.3.1) · [Website](https://hellgato-streamdog.vercel.app)
 
 ## Get started
 
@@ -26,7 +26,7 @@ Connection retention is on by default. The optional native virtual controller sh
 
 Tested with Stream Deck **7.6.0.23012** and N4 Pro E firmware **V4.N4 Pro E.02.010**. Untested versions show compatibility warnings. Multiple physical devices remain unverified. Simultaneous use with a genuine Stream Deck +, physical dial holds and standby-image upload are unsupported.
 
-The unsigned installer adds owned startup support that adjusts Stream Deck process memory on launch; it does not rewrite `StreamDeck.exe`. This beta does not enable automatic updates. Read the [user guide](docs/guide.md) before installation.
+The unsigned installer adds owned startup support that adjusts Stream Deck process memory on launch; it does not rewrite `StreamDeck.exe`. Automatic updates are not enabled. Read the [user guide](docs/guide.md) before installation.
 
 ## How it works
 

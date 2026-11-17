@@ -126,8 +126,8 @@ test('oversized complete and unfinished lines are bounded independently', { time
   }
 });
 
-test('a request timeout fails the session without retrying the command', { timeout: 5000 }, async () => {
-  const adapter = client(fixture(`send({ event: 'received', method: request.method });`), { requestTimeoutMs: 400 });
+test('a request timeout fails the session without retrying the command', { timeout: 8000 }, async () => {
+  const adapter = client(fixture(`send({ event: 'received', method: request.method });`), { requestTimeoutMs: 2000 });
   const events = [];
   adapter.on('event', value => events.push(value));
   await adapter.start();

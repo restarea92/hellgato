@@ -1,18 +1,18 @@
 # Stream Dog user guide
 
-The Windows x64 **0.3.0 public beta** bundles a Rust management app, Node core and independent Rust device adapters. No Python installation or StreamDock app is required.
+The Windows x64 **0.3.1 release** bundles a Rust management app, Node core and independent Rust device adapters. No Python installation or StreamDock app is required.
 
 ## Installation and updates
 
 1. Install the official [Stream Deck app](https://www.elgato.com/downloads).
-2. Download the installer and checksum from the [0.3.0 release](https://github.com/restarea92/hellgato/releases/tag/v0.3.0), finish active work, then run setup. The installer is unsigned.
+2. Download the installer and checksum from the [0.3.1 release](https://github.com/restarea92/hellgato/releases/tag/v0.3.1), finish active work, then run setup. The installer is unsigned.
 3. Setup automatically closes Hellgato and Stream Deck. It removes verified Hellgato-owned legacy Python workers and runtime files from the registered installation while preserving settings, profiles and plugins. Stream Deck reopens afterward if it was running; the desktop apps launch without installer elevation.
 4. Open Stream Dog, select the matching adapter, discover the USB device and connect it. Close other software using the same USB device, including REA Bridge.
 5. If Stream Deck does not find it, add a Network Device at `127.0.0.1:5343` and confirm pairing. Additional devices use their own connection details.
 
 Use **Prepare Stream Deck** when startup support needs installation or repair. Hellgato checks ownership and will not overwrite another product's startup DLL. Resolve that conflict through the owning product. Untested host versions warn rather than being rejected solely by version or hash; native layout changes still depend on compatible executable structures.
 
-Automatic updating is not enabled. Install a later beta over the existing installation. A real installed 0.2.1 upgrade and unelevated restart have been verified; a complete uninstall cycle has not. Older releases remain available for rollback.
+Automatic updating is not enabled. Install a later release over the existing installation. A real installed 0.2.1 upgrade and unelevated restart have been verified; a complete uninstall cycle has not. Older releases remain available for rollback.
 
 ## Everyday use
 
@@ -22,7 +22,9 @@ X and Alt+F4 hide the window to the tray and keep the connection alive. Click th
 
 Each device retains its own virtual identity, session and canvas. The core composes keys, the continuous touch strip and screensavers before submitting frames. Unchanged screens submit no frames; active output is capped at 60 fps. USB submission time excludes plugin execution and physical LCD scanout.
 
-**Keep connected without physical hardware** is on by default in Settings. Unplugging USB retains the paired virtual device and canvas in Stream Deck. Showing or hiding the floating controller is a separate choice; open it from the selected device or its adapter card, including when no USB device is present.
+**Keep Stream Deck connected after device disconnection** is on by default in Settings. Unplugging USB retains the paired virtual device and canvas in Stream Deck. Turn it off to disconnect from Stream Deck while USB is absent; Hellgato automatically retries when the device returns, preserving its identity. Manual **Disconnect** stops those retries.
+
+**Use virtual device** is off by default and independently enables the floating controller. Turn it off to close its windows and release their frame polling, decoded images and textures; physical output and connection retention are unaffected. When enabled, **Show / hide** controls visibility without changing the connection. Open it from the selected device or its adapter card, including when no USB device is present.
 
 The native virtual controller displays the composed canvas using the adapter's coordinates. Click keys and dial centers, use dial minus/plus triangles, or drag a dial along its fixed eight-direction grid. Touch regions support tap, hold and swipe. Drag empty body areas to move the window without changing the active application. Idle opacity applies to the whole window and stays fully visible during a held gesture. Settings controls its DPI-aware size in 25% steps, with 50% as the default.
 
