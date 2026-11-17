@@ -1,4 +1,4 @@
-# Windows Rust beta releases
+# Windows Rust releases
 
 Version changes remain grouped through Changesets. The version workflow refreshes
 one draft metadata PR; ordinary source changes run whitespace and JavaScript
@@ -22,12 +22,15 @@ publishes automatically. The installer, SHA-256 sidecar and build provenance
 manifest are the only release assets.
 
 For a reviewed local build, use the same staging and installer scripts, record
-the exact source SHA and artifact digests, and upload those files to a beta draft.
+the exact source SHA and artifact digests, and upload those files to a release draft.
 Verify the version, source, runtime inventory, checksum and release notes before
 publication. A local build is not a successful GitHub Actions build.
 
 Public beta releases use GitHub's prerelease flag even when the version is
-`0.2.1`. They do not replace the latest stable release or activate automatic
-updates. Publish the beta explicitly, verify anonymous downloads and checksums,
-then make the versioned download prominent in the main README. Preserve older
-releases for rollback. Do not publish npm packages as part of desktop releases.
+`0.3.0`; they do not replace the latest stable release. A general public release
+uses `prerelease: false` and becomes the latest stable GitHub release. The manual
+workflow still creates beta drafts; an explicitly authorized stable publication
+must set the final release flags accordingly. Neither channel activates automatic
+updates. Verify anonymous downloads and checksums after publication, then update
+the README and website download links. Preserve older releases for rollback.
+Do not publish npm packages as part of desktop releases.

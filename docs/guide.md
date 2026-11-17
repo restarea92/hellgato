@@ -1,18 +1,18 @@
 # Stream Dog user guide
 
-The Windows x64 **0.3.0 public beta** bundles a Rust management app, Node core and independent Rust device adapters. No Python installation or StreamDock app is required.
+The Windows x64 **0.3.1 release** bundles a Rust management app, Node core and independent Rust device adapters. No Python installation or StreamDock app is required.
 
 ## Installation and updates
 
 1. Install the official [Stream Deck app](https://www.elgato.com/downloads).
-2. Download the installer and checksum from the [0.3.0 release](https://github.com/restarea92/hellgato/releases/tag/v0.3.0), finish active work, then run setup. The installer is unsigned.
+2. Download the installer and checksum from the [0.3.1 release](https://github.com/restarea92/hellgato/releases/tag/v0.3.1), finish active work, then run setup. The installer is unsigned.
 3. Setup automatically closes Hellgato and Stream Deck. It removes verified Hellgato-owned legacy Python workers and runtime files from the registered installation while preserving settings, profiles and plugins. Stream Deck reopens afterward if it was running; the desktop apps launch without installer elevation.
 4. Open Stream Dog, select the matching adapter, discover the USB device and connect it. Close other software using the same USB device, including REA Bridge.
 5. If Stream Deck does not find it, add a Network Device at `127.0.0.1:5343` and confirm pairing. Additional devices use their own connection details.
 
 Use **Prepare Stream Deck** when startup support needs installation or repair. Hellgato checks ownership and will not overwrite another product's startup DLL. Resolve that conflict through the owning product. Untested host versions warn rather than being rejected solely by version or hash; native layout changes still depend on compatible executable structures.
 
-Automatic updating is not enabled. Install a later beta over the existing installation. A real installed 0.2.1 upgrade and unelevated restart have been verified; a complete uninstall cycle has not. Older releases remain available for rollback.
+Automatic updating is not enabled. Install a later release over the existing installation. A real installed 0.2.1 upgrade and unelevated restart have been verified; a complete uninstall cycle has not. Older releases remain available for rollback.
 
 ## Everyday use
 
