@@ -22,7 +22,9 @@ X and Alt+F4 hide the window to the tray and keep the connection alive. Click th
 
 Each device retains its own virtual identity, session and canvas. The core composes keys, the continuous touch strip and screensavers before submitting frames. Unchanged screens submit no frames; active output is capped at 60 fps. USB submission time excludes plugin execution and physical LCD scanout.
 
-**Keep connected without physical hardware** is on by default in Settings. Unplugging USB retains the paired virtual device and canvas in Stream Deck. Showing or hiding the floating controller is a separate choice; open it from the selected device or its adapter card, including when no USB device is present.
+**Keep Stream Deck connected after device disconnection** is on by default in Settings. Unplugging USB retains the paired virtual device and canvas in Stream Deck. Turn it off to disconnect from Stream Deck while USB is absent; Hellgato automatically retries when the device returns, preserving its identity. Manual **Disconnect** stops those retries.
+
+**Use virtual device** is off by default and independently enables the floating controller. Turn it off to close its windows and release their frame polling, decoded images and textures; physical output and connection retention are unaffected. When enabled, **Show / hide** controls visibility without changing the connection. Open it from the selected device or its adapter card, including when no USB device is present.
 
 The native virtual controller displays the composed canvas using the adapter's coordinates. Click keys and dial centers, use dial minus/plus triangles, or drag a dial along its fixed eight-direction grid. Touch regions support tap, hold and swipe. Drag empty body areas to move the window without changing the active application. Idle opacity applies to the whole window and stays fully visible during a held gesture. Settings controls its DPI-aware size in 25% steps, with 50% as the default.
 

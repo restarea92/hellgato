@@ -40,8 +40,11 @@ Build the installer from a verified bundle with the existing Inno Setup compiler
 ## Verification
 
 The development app keeps the virtual host connection alive without hardware by
-default. This per-device setting is independent of showing/hiding the native
-virtual controller. `--virtual-device` opens the selected controller, including
+default. Turning retention off closes the host connection on USB loss and retries
+automatically when USB returns. The native virtual controller is disabled by
+default; enable **Use virtual device** before showing it. Disabling it releases
+its frame polling, images and textures without interrupting physical output.
+`--virtual-device` opens an enabled selected controller, including
 when an instance is already running. The floating window retains application
 focus for action targets, supports key down/up and touch gestures, and turns a
 dial by angular dragging or its hover minus/plus arrows. The drag gauge follows

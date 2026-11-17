@@ -46,12 +46,12 @@ function initialSettings(config) {
     childSerial: `HGMOCK${String(randomBytes(3).readUIntBE(0, 3) % 999999 + 1).padStart(6, '0')}`,
     macAddress: [2, ...randomBytes(5)] };
   return { schemaVersion: 1, adapters: [], selectedAdapterId: null, selectedDeviceId: null,
-    connectionDesired: false, keepConnected: true, virtualDeviceScale: 0.5, identity, brightness: 52, maxFps: 60 };
+    connectionDesired: false, keepConnected: true, virtualDeviceEnabled: false, virtualDeviceScale: 0.5, identity, brightness: 52, maxFps: 60 };
 }
 
 function validateSettings(value) {
   if (value?.schemaVersion !== 1 || !Array.isArray(value.adapters) || value.adapters.length > 64 ||
-      typeof value.connectionDesired !== 'boolean' || typeof value.keepConnected !== 'boolean' ||
+      typeof value.connectionDesired !== 'boolean' || typeof value.keepConnected !== 'boolean' || typeof value.virtualDeviceEnabled !== 'boolean' ||
       ![0.25, 0.5, 0.75, 1, 1.25, 1.5].includes(value.virtualDeviceScale) ||
       !/^HGDOCK\d{6}$/.test(value.identity?.dockSerial) || !/^HGMOCK\d{6}$/.test(value.identity?.childSerial) ||
       !Array.isArray(value.identity.macAddress) || value.identity.macAddress.length !== 6 ||
@@ -75,6 +75,7 @@ export class FrameRuntimeManager {
     this.#config = config; this.#preview = preview; this.#createSession = createSession; this.#discover = discover;
     const settings = existsSync(config.settingsPath) ? readJson(config.settingsPath) : initialSettings(config);
     settings.keepConnected ??= true;
+    settings.virtualDeviceEnabled ??= false;
     settings.virtualDeviceScale ??= 0.5;
     if (!Object.hasOwn(settings, 'knobBrightness')) {
       settings.knobBrightness = null;
@@ -197,11 +198,13 @@ export class FrameRuntimeManager {
     if (this.#closing) throw new Error('Runtime is closing');
     switch (action) {
       case 'virtual-frame': {
+        if (!this.#settings.virtualDeviceEnabled) return { unchanged: true };
         const frame = this.frame(params);
         if (!frame || frame.sequence === params.after) return { unchanged: true };
         return { sequence: frame.sequence, jpeg: frame.jpeg.toString('base64'), rotation: frame.rotation, layout: frame.layout, modelId: frame.modelId };
       }
       case 'virtual-input': {
+        if (!this.#settings.virtualDeviceEnabled && !(params.input?.type === 'key' && params.input.state === 'up')) throw new Error('Virtual device is disabled');
         const owner = [this, ...this.#children.values()].find(manager => manager.#settings.selectedAdapterId === params.adapterId && manager.#settings.selectedDeviceId === params.deviceId);
         if (!owner) throw new Error('Unknown virtual device');
         const event = params.input, geometry = owner.#registry.resolve(params.adapterId).target.geometry;
@@ -215,6 +218,7 @@ export class FrameRuntimeManager {
         await owner.#supervisor.input(input); return { ok: true };
       }
       case 'virtual-device': {
+        if (!this.#settings.virtualDeviceEnabled) throw new Error('Virtual device is disabled');
         const adapter = this.#registry.resolve(params.adapterId);
         const device = this.#devices.find(item => item.adapterId === adapter.id) ?? { ...virtualFrameDevice(adapter.id, adapter.target), displayName: adapter.name };
         if (!this.#devices.some(item => item.id === device.id && item.adapterId === device.adapterId)) {
@@ -333,9 +337,9 @@ export class FrameRuntimeManager {
         this.#settings.connectionDesired = false; this.#save(); await this.#supervisor.disconnect(); break;
       case 'settings': {
         const next = { ...this.#settings };
-        for (const key of ['brightness', 'maxFps', 'keepConnected', 'virtualDeviceScale']) if (Object.hasOwn(params, key)) next[key] = params[key];
+        for (const key of ['brightness', 'maxFps', 'keepConnected', 'virtualDeviceEnabled', 'virtualDeviceScale']) if (Object.hasOwn(params, key)) next[key] = params[key];
         validateSettings(next);
-        if (Object.keys(params).every(key => key === 'virtualDeviceScale')) {
+        if (Object.keys(params).every(key => ['virtualDeviceScale', 'virtualDeviceEnabled'].includes(key))) {
           this.#settings = next; this.#save(); break;
         }
         const reconnect = this.#settings.connectionDesired;

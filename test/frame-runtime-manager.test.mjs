@@ -14,9 +14,10 @@ async function managerFixture(t, { knobBrightness = false, physicalConnected = t
   const identity = { dockSerial: 'HGDOCK000001', childSerial: 'HGMOCK000003', macAddress: [2, 0, 0, 0, 0, 1] };
   await writeFile(config.legacyIdentityPath, JSON.stringify({ identity }));
   const devices = [1, 2].map(index => ({ id: `device-${index}`, adapterId: fixture.manifest.id, modelId: 'fixture', capabilities: {} }));
-  const starts = [], configured = [], inputs = [];
+  const starts = [], configured = [], inputs = [], frames = [];
   const createSession = async (value, options) => {
     starts.push(value); const done = deferred();
+    frames.push(options.onFrame);
     const state = { deviceConnected: physicalConnected, hostConnected: physicalConnected, networkListening: true,
       knobBrightnessSupported: knobBrightness, knobBrightness: value.knobBrightness ?? value.brightness,
       followDisplayBrightness: value.knobBrightness === null };
@@ -29,7 +30,7 @@ async function managerFixture(t, { knobBrightness = false, physicalConnected = t
   };
   const manager = new FrameRuntimeManager(config, { createSession, discover: async () => devices });
   t.after(() => manager.close());
-  return { ...fixture, config, manager, starts, configured, identity, devices, createSession, inputs };
+  return { ...fixture, config, manager, starts, configured, identity, devices, createSession, inputs, frames };
 }
 
 test('native knob controls authenticate, save only final values and restore the paired device setting', async t => {
@@ -99,6 +100,35 @@ test('unsupported models keep native knob controls disabled', async t => {
   await assert.rejects(f.manager.command('native-control', { serial: f.identity.childSerial, action: 'knobBrightness', value: 30 }), /unavailable/);
 });
 
+test('disabling the virtual controller persists without restarting the physical session or host retention', async t => {
+  const f = await managerFixture(t);
+  const device = { adapterId: f.manifest.id, deviceId: 'device-1' };
+  assert.equal(f.manager.getState().settings.virtualDeviceEnabled, false);
+  await f.manager.command('settings', { virtualDeviceEnabled: true });
+  await f.manager.command('discover', device);
+  await f.manager.command('connect-device', device);
+  await until(() => f.manager.getState().runtime.state === 'running');
+  f.frames[0]({ jpeg: Buffer.from('latest'), rotation: 0, layout: {} });
+  assert.equal((await f.manager.command('virtual-frame', device)).jpeg, Buffer.from('latest').toString('base64'));
+  await f.manager.command('settings', { virtualDeviceEnabled: false });
+  assert.equal(f.starts.length, 1);
+  assert.equal(f.manager.getState().deviceConnected, true);
+  assert.equal(f.manager.getState().settings.keepConnected, true);
+  assert.equal(JSON.parse(await readFile(f.config.settingsPath, 'utf8')).virtualDeviceEnabled, false);
+  assert.deepEqual(await f.manager.command('virtual-frame', device), { unchanged: true });
+  await assert.rejects(f.manager.command('virtual-device', device), /disabled/);
+  await assert.rejects(f.manager.command('virtual-input', { ...device, input: { type: 'key', index: 0, state: 'down' } }), /disabled/);
+  // A held key must still be released when its window is closed by disabling it.
+  await f.manager.command('virtual-input', { ...device, input: { type: 'key', index: 0, state: 'up' } });
+  await assert.rejects(f.manager.command('settings', { virtualDeviceEnabled: 'false' }), /Invalid saved/);
+  const restarted = new FrameRuntimeManager(f.config);
+  t.after(() => restarted.close());
+  assert.equal(restarted.getState().settings.virtualDeviceEnabled, false);
+  await f.manager.command('settings', { virtualDeviceEnabled: true });
+  assert.equal((await f.manager.command('virtual-frame', device)).jpeg, Buffer.from('latest').toString('base64'));
+  assert.equal(f.starts.length, 1);
+});
+
 test('native reconnect remains eligible for a retained virtual device without USB',async t=>{
   const f=await managerFixture(t,{physicalConnected:false});
   await f.manager.command('discover',{adapterId:f.manifest.id});
@@ -128,13 +158,15 @@ test('optional native UI failure and an untested host do not prevent a device se
 test('existing serial-scoped knob brightness migrates without overwriting the original file', async t => {
   const f = await managerFixture(t);
   await f.manager.close();
-  const saved = JSON.parse(await readFile(f.config.settingsPath, 'utf8')); delete saved.knobBrightness;
+  const saved = JSON.parse(await readFile(f.config.settingsPath, 'utf8')); delete saved.knobBrightness; delete saved.virtualDeviceEnabled;
   await writeFile(f.config.settingsPath, JSON.stringify(saved));
   const path = join(f.root, `device-controls-${f.identity.childSerial}.json`);
   const legacy = JSON.stringify({ version: 1, serial: f.identity.childSerial, knobBrightness: 31 });
   await writeFile(path, legacy);
   const restarted = new FrameRuntimeManager(f.config); t.after(() => restarted.close());
   assert.equal(restarted.getState().settings.knobBrightness, 31);
+  assert.equal(restarted.getState().settings.virtualDeviceEnabled, false);
+  assert.deepEqual(restarted.getState().settings.identity, f.identity);
   assert.equal(await readFile(path, 'utf8'), legacy);
 });
 
@@ -201,6 +233,7 @@ test('persistent legacy settings preserve paired IDs after temporary IPC configu
 
 test('native virtual input uses the selected session and rejects out-of-range key, touch and dial data',async t=>{
   const f=await managerFixture(t);await f.manager.command('discover',{adapterId:f.manifest.id});
+  await f.manager.command('settings', { virtualDeviceEnabled: true });
   const params={adapterId:f.manifest.id,deviceId:f.devices[0].id};await f.manager.command('select',params);await f.manager.command('connect');
   await until(()=>f.manager.getState().runtime.state==='running');
   for(const input of [{type:'key',index:0,state:'down'},{type:'key',index:0,state:'up'},{type:'dial',index:3,kind:'rotate',delta:-2},{type:'touch',gesture:'hold',x:799,y:99}])await f.manager.command('virtual-input',{...params,input});

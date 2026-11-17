@@ -66,12 +66,14 @@ fn owner<'a>(value: &'a Value, device: &Value) -> Option<&'a Value> {
                 && string(&state["settings"], "selectedAdapterId") == string(device, "adapterId")
         })
 }
-fn status(value: &Value) -> (&'static str, Color32) {
+pub(crate) fn status(value: &Value) -> (&'static str, Color32) {
     if value["deviceConnected"] == true && (value["hostConnected"] == true || value["fake"] == true)
     {
         ("연결됨", SUCCESS)
     } else if value["hostConnected"] == true {
         ("가상 연결", SUCCESS)
+    } else if value["settings"]["keepConnected"] == false && value["runtime"]["state"] == "waiting" {
+        ("연결 안 됨", MUTED)
     } else if value["runtime"]["desired"] == true {
         ("연결 대기", Color32::from_rgb(0xdf, 0xc0, 0x8e))
     } else {
@@ -134,6 +136,14 @@ impl StreamDog {
     }
 }
 impl View {
+    fn virtual_device_setting(&mut self, ui: &mut egui::Ui, value: &Value, available: bool, actions: &mut Vec<Action>) {
+        let mut enabled = value["settings"]["virtualDeviceEnabled"].as_bool().unwrap_or(false);
+        let response = ui.add_enabled(available, egui::Checkbox::new(&mut enabled, "가상 기기 사용"));
+        self.hitboxes.insert("virtual-enabled".into(), response.rect);
+        if response.changed() {
+            actions.push(Action::Api("settings", json!({"virtualDeviceEnabled":enabled})));
+        }
+    }
     pub fn new(context: &egui::Context) -> Self {
         Self {
             selected: String::new(),
@@ -497,16 +507,18 @@ if self.button(ui,"register",".hga 추가…",available){actions.push(Action::Re
                             ui.horizontal_wrapped(|ui|{ui.label(format!("v{}",string(adapter,"version")));ui.weak(if adapter["source"]=="official" {"공식 제공"}else{"사용자 추가 · 안전성 미확인"});ui.colored_label(if adapter["available"]==true {SUCCESS}else{ERROR},if adapter["available"]==true {"설치 정상"}else{"파일 확인 필요"});});
                             if let Some(error)=adapter["error"].as_str(){ui.colored_label(ERROR,error);}
                             if self.button(ui,&format!("discover:{}",string(adapter,"id")),"기기 검색",available && adapter["available"]==true){actions.push(Action::Api("discover",json!({"adapterId":adapter["id"]})));}
-                            if self.button(ui,&format!("virtual:{}",string(adapter,"id")),"가상 기기 보기",available && adapter["available"]==true){actions.push(Action::VirtualDevice(json!({"adapterId":adapter["id"]})));}
+                            if self.button(ui,&format!("virtual:{}",string(adapter,"id")),"가상 기기 보기",available && adapter["available"]==true && value["settings"]["virtualDeviceEnabled"]==true){actions.push(Action::VirtualDevice(json!({"adapterId":adapter["id"]})));}
                         });ui.add_space(10.0);}
                     }
                     Page::Settings=>{
                         ui.heading("설정");ui.add_space(16.0);card(ui,"연결",|ui|{
                             let mut keep=if session.is_null(){value["settings"]["keepConnected"].as_bool().unwrap_or(true)}else{session["settings"]["keepConnected"].as_bool().unwrap_or(true)};
-                            let response=ui.add_enabled(available,egui::Checkbox::new(&mut keep,"물리 기기가 없어도 연결 유지"));self.hitboxes.insert("keep-connected".into(),response.rect);
+                            let response=ui.add_enabled(available,egui::Checkbox::new(&mut keep,"기기 연결이 해제되어도 Stream Deck 연결 유지"));self.hitboxes.insert("keep-connected".into(),response.rect);
                             if response.changed(){if session.is_null(){actions.push(Action::Api("settings",json!({"keepConnected":keep})));}else{actions.push(Action::Api("device-settings",json!({"adapterId":device["adapterId"],"deviceId":device["id"],"keepConnected":keep})));}}
-                            ui.weak("기기를 분리해도 Stream Deck 연결과 합성 화면을 유지합니다. 기본값: 켜짐.");ui.weak("가상 기기 창의 보기·숨기기는 연결 유지 설정과 별개입니다.");
+                            ui.weak("기본값: 켜짐. 끄면 USB 분리 시 연결을 해제하고, 다시 연결하면 자동으로 연결합니다.");
                         });ui.add_space(14.0);card(ui,"가상 기기",|ui|{
+                            self.virtual_device_setting(ui,value,available,&mut actions);
+                            ui.weak("미사용 시 가상 창의 프레임 수신·디코딩을 중지합니다. 실제 기기의 출력과 연결은 유지합니다.");
                             let mut scale=value["settings"]["virtualDeviceScale"].as_f64().unwrap_or(0.5);let previous=scale;
                             ui.horizontal(|ui|{ui.label("크기");egui::ComboBox::from_id_salt("virtual-device-scale").selected_text(format!("{}%",(scale*100.0) as u32)).show_ui(ui,|ui|{for percent in [25,50,75,100,125,150]{ui.selectable_value(&mut scale,percent as f64/100.0,format!("{percent}%"));}});});
                             ui.weak("기본값: 50% · DPI에 맞춰 선명하게 표시합니다.");
@@ -526,8 +538,10 @@ if self.button(ui,"register",".hga 추가…",available){actions.push(Action::Re
                                 else if self.button(ui,"connect","연결",available){actions.push(Action::Api("connect-device",json!({"adapterId":device["adapterId"],"deviceId":device["id"]})));}
                                 if let Some(error)=session["runtime"]["error"].as_str(){ui.colored_label(ERROR,local_error(error));}
                                 if let Some(firmware)=session["firmware"].as_str(){ui.weak(format!("펌웨어  {firmware}"));}
-                                if self.button(ui,"virtual-device","가상 기기 보기 / 숨기기",available){actions.push(Action::VirtualDevice(json!({"adapterId":device["adapterId"],"deviceId":device["id"],"displayName":device["displayName"]})));}
+                                self.virtual_device_setting(ui,value,available,&mut actions);
+                                if self.button(ui,"virtual-device","가상 기기 보기 / 숨기기",available && value["settings"]["virtualDeviceEnabled"]==true){actions.push(Action::VirtualDevice(json!({"adapterId":device["adapterId"],"deviceId":device["id"],"displayName":device["displayName"]})));}
                                 if session["hostConnected"]==true && session["deviceConnected"]!=true{ui.weak("USB 기기 대기 중 · 가상 기기 연결 유지");}
+                                if session["settings"]["keepConnected"]==false && session["runtime"]["desired"]==true && session["deviceConnected"]!=true{ui.weak("USB 재연결 시 자동으로 연결합니다.");}
                                 for warning in session["warnings"].as_array().into_iter().flatten(){if let Some(message)=compatibility_warning(string(warning,"code")){ui.colored_label(Color32::from_rgb(0xdf,0xc0,0x8e),message);}}
                             });ui.add_space(14.0);card(ui,"스트림",|ui|{
                                 let resolution=match(session["display"]["width"].as_u64(),session["display"]["height"].as_u64()){(Some(w),Some(h))=>format!("{w} × {h}"),_=>"연결 대기".into()};
@@ -729,7 +743,14 @@ impl eframe::App for StreamDog {
                 },
             }
         }
-        let preferred_scale=self.backend.state.lock().map(|state|state.value["settings"]["virtualDeviceScale"].as_f64().unwrap_or(0.5) as f32).unwrap_or(0.5);
+        let (preferred_scale, virtual_enabled)=self.backend.state.lock().map(|state|(state.value["settings"]["virtualDeviceScale"].as_f64().unwrap_or(0.5) as f32,state.value["settings"]["virtualDeviceEnabled"]==true)).unwrap_or((0.5,false));
+        if !virtual_enabled {
+            self.pending_virtual = None;
+            self.open_virtual_requested = false;
+            for window in std::mem::take(&mut self.virtuals).into_values() {
+                if let Ok(mut window) = window.lock() { window.shutdown(context); }
+            }
+        }
         for window in self.virtuals.values(){if let Ok(mut window)=window.lock(){window.set_preferred_scale(preferred_scale,context);window.flush();}}
         if self.backend.state.lock().is_ok_and(|state|state.stopped){context.send_viewport_cmd(egui::ViewportCommand::Close);}
     }
@@ -750,7 +771,9 @@ impl eframe::App for StreamDog {
         if state.stopped {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        if self.open_virtual_requested && state.value["schemaVersion"] == 1 {
+        let virtual_enabled = state.value["settings"]["virtualDeviceEnabled"] == true;
+        if self.open_virtual_requested && !virtual_enabled { self.open_virtual_requested = false; }
+        if self.open_virtual_requested && virtual_enabled && state.value["schemaVersion"] == 1 {
             if let Some(adapter) = state.value["settings"]["selectedAdapterId"]
                 .as_str()
                 .or_else(|| {
@@ -766,7 +789,7 @@ impl eframe::App for StreamDog {
                 self.open_virtual_requested = false;
             }
         }
-        if let Some(adapter) = self.pending_virtual.clone() {
+        if let Some(adapter) = self.pending_virtual.clone().filter(|_| virtual_enabled) {
             if let Some(device) = state.value["devices"]
                 .as_array()
                 .into_iter()
@@ -798,6 +821,7 @@ impl eframe::App for StreamDog {
             match action {
                 Action::Api(name, params) => self.backend.send(Command::Api(name, params)),
                 Action::VirtualDevice(params) => {
+                    if !virtual_enabled { continue; }
                     let adapter = string(&params, "adapterId").to_string();
                     if params["deviceId"].is_null() {
                         self.pending_virtual = Some(adapter);
