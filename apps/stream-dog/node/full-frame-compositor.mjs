@@ -29,7 +29,10 @@ function paintSurface(canvas, canvasWidth, pixels, width, height, [x, y, targetW
     for (let column = 0; column < targetWidth; column++) {
       const sourceX = Math.min(width - 1, Math.floor((column + .5) * width / targetWidth));
       const source = (sourceY * width + sourceX) * 3;
-      pixels.copy(canvas, target + column * 3, source, source + 3);
+      const offset = target + column * 3;
+      canvas[offset] = pixels[source];
+      canvas[offset + 1] = pixels[source + 1];
+      canvas[offset + 2] = pixels[source + 2];
     }
   }
 }
